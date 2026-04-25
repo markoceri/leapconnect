@@ -63,7 +63,6 @@ import { ref, reactive } from 'vue'
 import { useAppStore } from '../stores/appStore'
 import { useToast } from '../composables/useToast'
 
-const emit = defineEmits(['logged-in'])
 const store = useAppStore()
 const { toast } = useToast()
 
@@ -85,7 +84,6 @@ async function handleLogin() {
   try {
     await store.login(form)
     toast('Connected successfully', 'success')
-    emit('logged-in')
   } catch (err) {
     error.value = err.message
   } finally {
@@ -102,19 +100,14 @@ async function handleLogin() {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--bg-primary);
+  background: var(--bg);
 }
 
 .login-container {
   width: 100%;
   max-width: 480px;
   padding: 2rem;
-  animation: loginReveal 0.8s ease both;
-}
-
-@keyframes loginReveal {
-  from { opacity: 0; transform: translateY(30px) scale(0.97); }
-  to { opacity: 1; transform: translateY(0) scale(1); }
+  animation: lm-slideup 0.5s ease both;
 }
 
 .login-brand {
@@ -123,76 +116,71 @@ async function handleLogin() {
 }
 
 .login-brand-icon {
-  width: 64px;
-  height: 64px;
+  width: 44px;
+  height: 44px;
   margin: 0 auto 1.2rem;
-  border-radius: 18px;
-  background: linear-gradient(135deg, var(--accent), var(--accent-deep));
+  border-radius: 12px;
+  background: linear-gradient(135deg, #00d4ff22, #00d4ff44);
+  border: 1px solid #00d4ff55;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 8px 32px rgba(0, 210, 230, 0.2);
 }
-.login-brand-icon svg { width: 32px; height: 32px; color: white; }
+.login-brand-icon svg { width: 22px; height: 22px; color: #00d4ff; }
 
 .login-brand h1 {
-  font-size: 1.8rem;
-  font-weight: 600;
+  font-size: 18px;
+  font-weight: 700;
   letter-spacing: -0.02em;
-  color: var(--text-primary);
+  color: var(--text);
 }
 .login-brand p {
-  color: var(--text-secondary);
-  font-size: 0.9rem;
+  color: var(--muted);
+  font-size: 13px;
   margin-top: 0.4rem;
-  font-weight: 300;
 }
 
 .login-card {
-  background: var(--bg-card);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-lg);
-  padding: 2rem;
-  box-shadow: var(--shadow-card);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 32px 28px;
 }
 
-.form-group { margin-bottom: 1.2rem; }
+.form-group { margin-bottom: 1.1rem; }
 
 .form-group label {
   display: block;
-  font-size: 0.75rem;
+  font-size: 11px;
   font-weight: 500;
-  color: var(--text-secondary);
+  color: var(--muted);
   text-transform: uppercase;
-  letter-spacing: 0.08em;
-  margin-bottom: 0.5rem;
+  letter-spacing: 0.06em;
+  margin-bottom: 7px;
 }
 
 .form-group input {
   width: 100%;
-  padding: 0.75rem 1rem;
-  background: var(--bg-input);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-sm);
-  color: var(--text-primary);
-  font-family: var(--font-mono);
-  font-size: 0.85rem;
-  transition: var(--transition);
+  padding: 13px 16px;
+  background: var(--input);
+  border: 1px solid #1c2240;
+  border-radius: 10px;
+  color: var(--text);
+  font-size: 14px;
+  transition: border-color 0.2s;
   outline: none;
 }
 .form-group input:focus {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-glow);
+  border-color: #00d4ff55;
 }
 .form-group input::placeholder {
-  color: var(--text-tertiary);
-  font-family: var(--font-display);
+  color: var(--muted2);
 }
 .form-group small {
   display: block;
   margin-top: 0.3rem;
-  font-size: 0.72rem;
-  color: var(--text-tertiary);
+  font-size: 11px;
+  color: var(--muted2);
 }
 
 .form-divider {
@@ -200,8 +188,8 @@ async function handleLogin() {
   align-items: center;
   gap: 1rem;
   margin: 1.5rem 0;
-  color: var(--text-tertiary);
-  font-size: 0.72rem;
+  color: var(--muted2);
+  font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.1em;
 }
@@ -209,37 +197,35 @@ async function handleLogin() {
   content: '';
   flex: 1;
   height: 1px;
-  background: var(--border-default);
+  background: var(--border);
 }
 
 .btn-login {
   width: 100%;
-  padding: 0.85rem;
-  background: linear-gradient(135deg, var(--accent), var(--accent-deep));
-  color: #fff;
-  font-family: var(--font-display);
-  font-size: 0.95rem;
+  padding: 14px;
+  margin-top: 6px;
+  background: linear-gradient(135deg, #00d4ff22, #00d4ff44);
+  border: 1px solid #00d4ff55;
+  border-radius: 10px;
+  color: #00d4ff;
+  font-size: 14px;
   font-weight: 600;
-  border: none;
-  border-radius: var(--radius-sm);
   cursor: pointer;
-  transition: var(--transition);
-  margin-top: 0.5rem;
+  transition: all 0.2s;
+  letter-spacing: 0.04em;
 }
 .btn-login:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 8px 24px rgba(0, 210, 230, 0.25);
+  background: linear-gradient(135deg, #00d4ff33, #00d4ff55);
 }
-.btn-login:active { transform: translateY(0); }
-.btn-login:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+.btn-login:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .login-error {
   margin-top: 1rem;
-  padding: 0.75rem 1rem;
-  background: rgba(255, 61, 90, 0.08);
-  border: 1px solid rgba(255, 61, 90, 0.2);
-  border-radius: var(--radius-sm);
-  color: var(--accent-red);
-  font-size: 0.82rem;
+  padding: 9px 12px;
+  background: #ff525210;
+  border: 1px solid #ff525230;
+  border-radius: 8px;
+  color: var(--red);
+  font-size: 12px;
 }
 </style>

@@ -3,12 +3,18 @@ import { ref, computed } from 'vue'
 import { api } from '../composables/useApi'
 
 export const useAppStore = defineStore('app', () => {
+  // Screen: 'login' | 'vehicles' | 'app'
+  const screen = ref('login')
+  // Active sidebar tab: 'dashboard' | 'details' | 'history' | 'settings'
+  const activeTab = ref('dashboard')
+
   const connected = ref(false)
   const vehicles = ref([])
   const selectedVin = ref(null)
   const vehicleData = ref({})
   const hasPin = ref(false)
   const loading = ref(false)
+  const refreshing = ref(false)
 
   const selectedVehicle = computed(() =>
     vehicles.value.find((v) => v.vin === selectedVin.value) || null,
@@ -18,13 +24,18 @@ export const useAppStore = defineStore('app', () => {
     selectedVin.value ? vehicleData.value[selectedVin.value] || null : null,
   )
 
+  const currentStatus = computed(() => currentData.value?.status || null)
+
   async function login(credentials) {
     const result = await api('POST', '/api/login', credentials)
     connected.value = true
     vehicles.value = result.vehicles || []
     hasPin.value = !!credentials.operation_password
-    if (vehicles.value.length > 0) {
+    if (vehicles.value.length === 1) {
       selectedVin.value = vehicles.value[0].vin
+      screen.value = 'app'
+    } else {
+      screen.value = 'vehicles'
     }
     return result
   }
@@ -40,6 +51,8 @@ export const useAppStore = defineStore('app', () => {
     selectedVin.value = null
     vehicleData.value = {}
     hasPin.value = false
+    screen.value = 'login'
+    activeTab.value = 'dashboard'
   }
 
   async function checkStatus() {
@@ -49,7 +62,12 @@ export const useAppStore = defineStore('app', () => {
         connected.value = true
         vehicles.value = data.vehicles
         hasPin.value = data.has_pin
-        selectedVin.value = data.vehicles[0].vin
+        if (data.vehicles.length === 1) {
+          selectedVin.value = data.vehicles[0].vin
+          screen.value = 'app'
+        } else {
+          screen.value = 'vehicles'
+        }
         return true
       }
     } catch {
@@ -70,13 +88,24 @@ export const useAppStore = defineStore('app', () => {
 
   async function refreshCurrent() {
     if (selectedVin.value) {
-      delete vehicleData.value[selectedVin.value]
-      await loadVehicleData(selectedVin.value)
+      refreshing.value = true
+      try {
+        delete vehicleData.value[selectedVin.value]
+        await loadVehicleData(selectedVin.value)
+      } finally {
+        refreshing.value = false
+      }
     }
   }
 
   function selectVehicle(vin) {
     selectedVin.value = vin
+    activeTab.value = 'dashboard'
+    screen.value = 'app'
+  }
+
+  function goToVehicleSelector() {
+    screen.value = 'vehicles'
   }
 
   async function execControl(vin, action) {
@@ -88,20 +117,25 @@ export const useAppStore = defineStore('app', () => {
   }
 
   return {
+    screen,
+    activeTab,
     connected,
     vehicles,
     selectedVin,
     vehicleData,
     hasPin,
     loading,
+    refreshing,
     selectedVehicle,
     currentData,
+    currentStatus,
     login,
     logout,
     checkStatus,
     loadVehicleData,
     refreshCurrent,
     selectVehicle,
+    goToVehicleSelector,
     execControl,
     setChargeLimit,
   }
