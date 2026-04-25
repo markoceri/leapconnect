@@ -27,11 +27,7 @@
           @click="$emit('select', v.vin)"
         >
           <div class="vs-card-hero">
-            <img
-              :src="`/api/vehicles/${v.vin}/picture/image`"
-              alt="Vehicle"
-              class="vs-car-img"
-            />
+            <CarImage :vin="v.vin" :status="store.vehicleData[v.vin]?.status" />
           </div>
           <div class="vs-card-info">
             <div class="vs-card-top">
@@ -72,6 +68,7 @@
 
 <script setup>
 import { useAppStore } from '../stores/appStore'
+import CarImage from '../components/CarImage.vue'
 
 defineProps({
   vehicles: { type: Array, required: true },
@@ -171,13 +168,6 @@ function formatOdo(vin) {
   border-bottom: 1px solid var(--border);
   display: flex;
   justify-content: center;
-}
-.vs-car-img {
-  width: 100%;
-  max-width: 340px;
-  height: auto;
-  object-fit: contain;
-  filter: drop-shadow(0 6px 16px rgba(0,0,0,0.5));
 }
 .vs-card-info { padding: 16px 20px; }
 .vs-card-top {

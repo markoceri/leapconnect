@@ -15,6 +15,7 @@ export const useAppStore = defineStore('app', () => {
   const hasPin = ref(false)
   const loading = ref(false)
   const refreshing = ref(false)
+  const picturePackages = ref({})
 
   const selectedVehicle = computed(() =>
     vehicles.value.find((v) => v.vin === selectedVin.value) || null,
@@ -56,6 +57,7 @@ export const useAppStore = defineStore('app', () => {
     selectedVin.value = null
     vehicleData.value = {}
     hasPin.value = false
+    picturePackages.value = {}
     screen.value = 'login'
     activeTab.value = 'dashboard'
   }
@@ -88,6 +90,19 @@ export const useAppStore = defineStore('app', () => {
       vehicleData.value[vin] = data
     } finally {
       loading.value = false
+    }
+    // Load picture package in background (once)
+    if (!picturePackages.value[vin]) {
+      loadPicturePackage(vin)
+    }
+  }
+
+  async function loadPicturePackage(vin) {
+    try {
+      const data = await api('GET', `/api/vehicles/${vin}/picture/package`)
+      picturePackages.value[vin] = data
+    } catch {
+      // ignore — fallback to single image
     }
   }
 
@@ -131,6 +146,7 @@ export const useAppStore = defineStore('app', () => {
     hasPin,
     loading,
     refreshing,
+    picturePackages,
     selectedVehicle,
     currentData,
     currentStatus,
@@ -144,5 +160,6 @@ export const useAppStore = defineStore('app', () => {
     execControl,
     setChargeLimit,
     submitPin,
+    loadPicturePackage,
   }
 })

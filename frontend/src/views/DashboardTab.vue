@@ -4,12 +4,7 @@
     <div class="hero">
       <div class="hero-glow" :class="{ charging: s.battery?.is_charging, ac: s.climate?.ac_switch }" />
       <div class="hero-car">
-        <img
-          :src="`/api/vehicles/${vehicle.vin}/picture/image`"
-          alt="Vehicle"
-          class="hero-car-img"
-          :class="{ 'glow-charging': s.battery?.is_charging, 'glow-ac': s.climate?.ac_switch }"
-        />
+        <CarImage :vin="vehicle.vin" :status="s" />
         <div class="hero-badges">
           <span v-if="s.battery?.is_charging" class="badge badge-charging">⚡</span>
           <span v-if="s.climate?.ac_switch" class="badge badge-ac">❄</span>
@@ -142,6 +137,7 @@ import { useToast } from '../composables/useToast'
 import { formatTime } from '../utils/formatters'
 import StatCard from '../components/StatCard.vue'
 import PinDialog from '../components/PinDialog.vue'
+import CarImage from '../components/CarImage.vue'
 
 const props = defineProps({
   vehicle: { type: Object, required: true },
@@ -284,16 +280,6 @@ async function doSetChargeLimit() {
 .hero-glow.charging { background: radial-gradient(circle, rgba(0,230,118,0.04) 0%, transparent 70%); }
 .hero-glow.ac { background: radial-gradient(circle, rgba(0,212,255,0.04) 0%, transparent 70%); }
 .hero-car { display: flex; flex-direction: column; align-items: center; margin-bottom: 8px; }
-.hero-car-img {
-  width: 100%;
-  max-width: 480px;
-  height: auto;
-  object-fit: contain;
-  filter: drop-shadow(0 8px 20px rgba(0,0,0,0.6));
-  transition: filter 0.6s ease;
-}
-.hero-car-img.glow-charging { filter: drop-shadow(0 0 14px rgba(0,230,118,0.6)); }
-.hero-car-img.glow-ac { filter: drop-shadow(0 0 14px rgba(0,212,255,0.6)); }
 .hero-badges {
   display: flex;
   gap: 8px;

@@ -7,6 +7,7 @@ the Vue.js SPA frontend in production.
 from __future__ import annotations
 
 import asyncio
+import base64
 import io
 import logging
 import os
@@ -43,6 +44,7 @@ _sync_client: LeapmotorApiClient | None = None
 _client: AsyncLeapmotorApiClient | None = None
 _vehicles: list[Vehicle] = []
 _connected: bool = False
+_picture_cache: dict[str, dict[str, str]] = {}  # vin -> {filename: data-URI}
 
 
 def _get_client() -> AsyncLeapmotorApiClient:
@@ -173,6 +175,7 @@ async def logout():
     _client = None
     _vehicles = []
     _connected = False
+    _picture_cache.clear()
     return {"status": "ok"}
 
 
@@ -270,6 +273,45 @@ async def get_picture_image(vin: str):
     media_type = media_types.get(ext, "image/png")
 
     return Response(content=img_data, media_type=media_type, headers={"Cache-Control": "public, max-age=3600"})
+
+
+@app.get("/api/vehicles/{vin}/picture/package")
+async def get_picture_package(vin: str):
+    """Download the picture ZIP, extract all images, and return as {name: dataURI}.
+
+    Cached per VIN for the lifetime of the session.
+    """
+    if vin in _picture_cache:
+        return _picture_cache[vin]
+
+    client = _get_client()
+    vehicle = _find_vehicle(vin)
+    picture_data = await client.get_car_picture(vehicle)
+    key = (picture_data.get("data") or {}).get("key")
+    if not key:
+        raise HTTPException(status_code=404, detail="No picture key available")
+
+    zip_bytes = await client.download_car_picture_package(picture_key=key)
+
+    images: dict[str, str] = {}
+    try:
+        with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
+            for entry in zf.namelist():
+                lower = entry.lower()
+                if not lower.endswith((".png", ".jpg", ".jpeg", ".webp")):
+                    continue
+                # Use the bare filename without directory prefix
+                basename = entry.rsplit("/", 1)[-1]
+                raw = zf.read(entry)
+                ext = basename.rsplit(".", 1)[-1].lower()
+                mime = {"png": "image/png", "jpg": "image/jpeg",
+                        "jpeg": "image/jpeg", "webp": "image/webp"}.get(ext, "image/png")
+                images[basename] = f"data:{mime};base64,{base64.b64encode(raw).decode()}"
+    except zipfile.BadZipFile:
+        raise HTTPException(status_code=500, detail="Invalid picture package")
+
+    _picture_cache[vin] = images
+    return images
 
 
 @app.get("/api/vehicles/{vin}/full")
