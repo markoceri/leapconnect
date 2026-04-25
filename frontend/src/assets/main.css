@@ -1,0 +1,216 @@
+/* ================================================================
+   LEAPMOTOR COMMAND CENTER — Dark cinematic automotive dashboard
+   Aesthetic: Instrument-cluster meets luxury control room
+   ================================================================ */
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg-primary: #0a0c10;
+  --bg-secondary: #111318;
+  --bg-card: #161922;
+  --bg-card-hover: #1c2030;
+  --bg-elevated: #1e2235;
+  --bg-input: #0d0f14;
+
+  --border-subtle: rgba(255, 255, 255, 0.04);
+  --border-default: rgba(255, 255, 255, 0.07);
+  --border-accent: rgba(0, 210, 230, 0.25);
+
+  --text-primary: #e8eaf0;
+  --text-secondary: #8a8fa8;
+  --text-tertiary: #555a70;
+  --text-accent: #00d2e6;
+
+  --accent: #00d2e6;
+  --accent-glow: rgba(0, 210, 230, 0.15);
+  --accent-deep: #0097a7;
+  --accent-warm: #ff6b35;
+  --accent-green: #00e676;
+  --accent-red: #ff3d5a;
+  --accent-yellow: #ffc400;
+  --accent-purple: #b388ff;
+
+  --radius-sm: 8px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+  --radius-xl: 28px;
+
+  --font-display: 'Outfit', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+
+  --shadow-card: 0 2px 20px rgba(0,0,0,0.4), 0 0 0 1px var(--border-subtle);
+  --shadow-glow: 0 0 40px rgba(0, 210, 230, 0.08);
+  --transition: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+html {
+  font-size: 15px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  font-family: var(--font-display);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 80% 60% at 20% 10%, rgba(0, 210, 230, 0.03), transparent),
+    radial-gradient(ellipse 60% 80% at 80% 90%, rgba(255, 107, 53, 0.02), transparent);
+  pointer-events: none;
+  z-index: 0;
+}
+
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  opacity: 0.025;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ================================================================
+   SHARED UTILITIES
+   ================================================================ */
+
+.spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid var(--border-default);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border-default); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-tertiary); }
+
+/* Data rows */
+.data-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.7rem 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.data-row:last-child { border-bottom: none; }
+
+.data-label {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.data-value {
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  color: var(--text-primary);
+  text-align: right;
+}
+.data-value.good { color: var(--accent-green); }
+.data-value.warn { color: var(--accent-yellow); }
+.data-value.bad { color: var(--accent-red); }
+
+/* Status dots */
+.status-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 0.3rem;
+}
+.status-dot.green { background: var(--accent-green); box-shadow: 0 0 6px var(--accent-green); }
+.status-dot.red { background: var(--accent-red); box-shadow: 0 0 6px var(--accent-red); }
+.status-dot.yellow { background: var(--accent-yellow); box-shadow: 0 0 6px var(--accent-yellow); }
+.status-dot.blue { background: var(--accent); box-shadow: 0 0 6px var(--accent); }
+.status-dot.off { background: var(--text-tertiary); }
+
+/* Card system */
+.card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  transition: var(--transition);
+}
+.card:hover { border-color: var(--border-accent); }
+
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.4rem;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.card-title {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.card-title-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.card-title-icon svg { width: 16px; height: 16px; }
+
+.card-body { padding: 1.2rem 1.4rem; }
+
+/* Dashboard grid */
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  gap: 1rem;
+  animation: fadeInUp 0.6s ease both;
+  animation-delay: 0.15s;
+}
+.card-full { grid-column: span 12; }
+.card-half { grid-column: span 6; }
+.card-third { grid-column: span 4; }
+.card-quarter { grid-column: span 3; }
+
+@media (max-width: 1100px) {
+  .card-half, .card-third { grid-column: span 6; }
+  .card-quarter { grid-column: span 6; }
+}
+@media (max-width: 768px) {
+  .card-half, .card-third, .card-quarter { grid-column: span 12; }
+}

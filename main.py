@@ -1,7 +1,7 @@
 """Leapmotor Vehicle Dashboard — FastAPI backend.
 
 Exposes the full Leapmotor API client through a REST interface and serves
-the single-page dashboard frontend.
+the Vue.js SPA frontend in production.
 """
 
 from __future__ import annotations
@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
@@ -66,19 +67,25 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Leapmotor Dashboard", lifespan=lifespan)
 
-# Serve static files
-STATIC_DIR = Path(__file__).parent / "static"
-STATIC_DIR.mkdir(exist_ok=True)
-app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
-
+# CORS — allow Vue dev server during development
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # ---------------------------------------------------------------------------
-# Routes — Pages
+# Serve Vue SPA in production (built files in frontend/dist)
 # ---------------------------------------------------------------------------
+FRONTEND_DIST = Path(__file__).parent / "frontend" / "dist"
 
-@app.get("/")
-async def index():
-    return FileResponse(str(STATIC_DIR / "index.html"))
+if FRONTEND_DIST.is_dir():
+    app.mount("/assets", StaticFiles(directory=str(FRONTEND_DIST / "assets")), name="assets")
 
 
 # ---------------------------------------------------------------------------
@@ -452,6 +459,20 @@ def _vehicle_status_to_dict(status: VehicleStatus) -> dict[str, Any]:
             "create_time": status.create_time.isoformat() if status.create_time else None,
         },
     }
+
+
+# ---------------------------------------------------------------------------
+# SPA Fallback — must be last
+# ---------------------------------------------------------------------------
+
+if FRONTEND_DIST.is_dir():
+    @app.get("/{path:path}")
+    async def serve_spa_fallback(path: str):
+        """Serve Vue SPA for any non-API route (client-side routing)."""
+        file = FRONTEND_DIST / path
+        if file.is_file():
+            return FileResponse(str(file))
+        return FileResponse(str(FRONTEND_DIST / "index.html"))
 
 
 # ---------------------------------------------------------------------------

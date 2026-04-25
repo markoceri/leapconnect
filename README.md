@@ -22,17 +22,37 @@ Web dashboard for monitoring and controlling Leapmotor vehicles via the Leapmoto
 
 ## Quick Start
 
+### Backend
+
 ```bash
-# From the project root
 cd webapp
 pip install -r requirements.txt
 pip install -e ..
 
-# Run the server
+# Run the API server
 python main.py
 ```
 
-Then open **http://localhost:8099** in your browser.
+The API runs at **http://localhost:8099**.
+
+### Frontend (development)
+
+```bash
+cd webapp/frontend
+npm install
+npm run dev
+```
+
+The Vue dev server runs at **http://localhost:5173** and proxies `/api` calls to the backend.
+
+### Production build
+
+```bash
+cd webapp/frontend
+npm run build
+```
+
+This outputs to `frontend/dist/`. The FastAPI backend will automatically serve the built SPA.
 
 ## Login
 
