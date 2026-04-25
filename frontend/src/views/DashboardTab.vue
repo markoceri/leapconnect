@@ -4,12 +4,18 @@
     <div class="hero">
       <div class="hero-glow" :class="{ charging: s.battery?.is_charging, ac: s.climate?.ac_switch }" />
       <div class="hero-car">
-        <CarSVG
-          :locked="s.doors?.is_locked"
-          :charging="s.battery?.is_charging"
-          :ac-on="s.climate?.ac_switch"
-          :trunk-open="s.doors?.trunk"
+        <img
+          :src="`/api/vehicles/${vehicle.vin}/picture/image`"
+          alt="Vehicle"
+          class="hero-car-img"
+          :class="{ 'glow-charging': s.battery?.is_charging, 'glow-ac': s.climate?.ac_switch }"
         />
+        <div class="hero-badges">
+          <span v-if="s.battery?.is_charging" class="badge badge-charging">⚡</span>
+          <span v-if="s.climate?.ac_switch" class="badge badge-ac">❄</span>
+          <span v-if="s.doors?.is_locked" class="badge badge-lock">🔒</span>
+          <span v-if="s.doors?.trunk" class="badge badge-trunk">📦</span>
+        </div>
       </div>
       <div class="hero-info">
         <div class="hero-name">{{ vehicle.nickname || vehicle.car_type || 'Leapmotor' }}</div>
@@ -134,7 +140,6 @@ import { ref, computed } from 'vue'
 import { useAppStore } from '../stores/appStore'
 import { useToast } from '../composables/useToast'
 import { formatTime } from '../utils/formatters'
-import CarSVG from '../components/CarSVG.vue'
 import StatCard from '../components/StatCard.vue'
 import PinDialog from '../components/PinDialog.vue'
 
@@ -278,7 +283,36 @@ async function doSetChargeLimit() {
 }
 .hero-glow.charging { background: radial-gradient(circle, rgba(0,230,118,0.04) 0%, transparent 70%); }
 .hero-glow.ac { background: radial-gradient(circle, rgba(0,212,255,0.04) 0%, transparent 70%); }
-.hero-car { display: flex; justify-content: center; margin-bottom: 8px; }
+.hero-car { display: flex; flex-direction: column; align-items: center; margin-bottom: 8px; }
+.hero-car-img {
+  width: 100%;
+  max-width: 480px;
+  height: auto;
+  object-fit: contain;
+  filter: drop-shadow(0 8px 20px rgba(0,0,0,0.6));
+  transition: filter 0.6s ease;
+}
+.hero-car-img.glow-charging { filter: drop-shadow(0 0 14px rgba(0,230,118,0.6)); }
+.hero-car-img.glow-ac { filter: drop-shadow(0 0 14px rgba(0,212,255,0.6)); }
+.hero-badges {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+.badge {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  backdrop-filter: blur(6px);
+}
+.badge-charging { background: rgba(0,230,118,0.15); border: 1px solid rgba(0,230,118,0.5); }
+.badge-ac { background: rgba(0,212,255,0.12); border: 1px solid rgba(0,212,255,0.45); }
+.badge-lock { background: rgba(255,171,64,0.15); border: 1px solid rgba(255,171,64,0.5); }
+.badge-trunk { background: rgba(255,171,64,0.15); border: 1px solid rgba(255,171,64,0.5); }
 .hero-info { margin-top: 4px; }
 .hero-name { font-size: 18px; font-weight: 700; color: var(--text); }
 .hero-vin { font-size: 11px; color: var(--muted2); font-family: var(--mono); margin-top: 2px; }

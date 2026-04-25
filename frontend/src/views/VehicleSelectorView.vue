@@ -27,10 +27,10 @@
           @click="$emit('select', v.vin)"
         >
           <div class="vs-card-hero">
-            <CarSVG
-              :locked="getStatus(v.vin, 'doors', 'is_locked')"
-              :charging="getStatus(v.vin, 'battery', 'is_charging')"
-              :ac-on="getStatus(v.vin, 'climate', 'ac_switch')"
+            <img
+              :src="`/api/vehicles/${v.vin}/picture/image`"
+              alt="Vehicle"
+              class="vs-car-img"
             />
           </div>
           <div class="vs-card-info">
@@ -72,7 +72,6 @@
 
 <script setup>
 import { useAppStore } from '../stores/appStore'
-import CarSVG from '../components/CarSVG.vue'
 
 defineProps({
   vehicles: { type: Array, required: true },
@@ -80,7 +79,6 @@ defineProps({
 defineEmits(['select'])
 
 const store = useAppStore()
-
 function getStatus(vin, section, key) {
   const data = store.vehicleData[vin]
   if (!data?.status?.[section]) return null
@@ -173,6 +171,13 @@ function formatOdo(vin) {
   border-bottom: 1px solid var(--border);
   display: flex;
   justify-content: center;
+}
+.vs-car-img {
+  width: 100%;
+  max-width: 340px;
+  height: auto;
+  object-fit: contain;
+  filter: drop-shadow(0 6px 16px rgba(0,0,0,0.5));
 }
 .vs-card-info { padding: 16px 20px; }
 .vs-card-top {
