@@ -24,30 +24,6 @@
             <input v-model="form.password" type="password" placeholder="Account password" required />
           </div>
 
-          <div class="form-divider">Certificates</div>
-
-          <div class="form-group">
-            <label>App Certificate Path</label>
-            <input v-model="form.app_cert_path" type="text" placeholder="/path/to/app-cert.pem" required />
-          </div>
-          <div class="form-group">
-            <label>App Key Path</label>
-            <input v-model="form.app_key_path" type="text" placeholder="/path/to/app-key.pem" required />
-          </div>
-
-          <div class="form-divider">Optional</div>
-
-          <div class="form-group">
-            <label>Vehicle PIN</label>
-            <input v-model="form.operation_password" type="password" placeholder="Required for remote control" />
-            <small>Without a PIN, only read-only data is available</small>
-          </div>
-          <div class="form-group">
-            <label>P12 Password</label>
-            <input v-model="form.account_p12_password" type="password" placeholder="Auto-derived if empty" />
-            <small>Account certificate password (usually auto-detected)</small>
-          </div>
-
           <button type="submit" class="btn-login" :disabled="submitting">
             {{ submitting ? 'Connecting…' : 'Connect to Leapmotor' }}
           </button>
@@ -72,10 +48,6 @@ const error = ref('')
 const form = reactive({
   username: '',
   password: '',
-  app_cert_path: '',
-  app_key_path: '',
-  operation_password: '',
-  account_p12_password: '',
 })
 
 async function handleLogin() {

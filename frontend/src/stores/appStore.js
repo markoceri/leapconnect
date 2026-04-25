@@ -30,7 +30,7 @@ export const useAppStore = defineStore('app', () => {
     const result = await api('POST', '/api/login', credentials)
     connected.value = true
     vehicles.value = result.vehicles || []
-    hasPin.value = !!credentials.operation_password
+    hasPin.value = false
     if (vehicles.value.length === 1) {
       selectedVin.value = vehicles.value[0].vin
       screen.value = 'app'
@@ -38,6 +38,11 @@ export const useAppStore = defineStore('app', () => {
       screen.value = 'vehicles'
     }
     return result
+  }
+
+  async function submitPin(pin) {
+    await api('POST', '/api/set-pin', { pin })
+    hasPin.value = true
   }
 
   async function logout() {
@@ -138,5 +143,6 @@ export const useAppStore = defineStore('app', () => {
     goToVehicleSelector,
     execControl,
     setChargeLimit,
+    submitPin,
   }
 })

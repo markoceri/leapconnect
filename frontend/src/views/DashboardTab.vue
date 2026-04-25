@@ -85,7 +85,6 @@
       <div class="controls-header">
         <span class="controls-icon">🛡</span>
         <span class="controls-title">Remote Controls</span>
-        <span v-if="!hasPin" class="controls-warn">⚠ PIN required</span>
       </div>
       <div class="controls-grid">
         <button
@@ -120,6 +119,13 @@
         </div>
       </div>
     </div>
+
+    <PinDialog
+      ref="pinDialogRef"
+      :visible="showPinDialog"
+      @confirmed="onPinConfirmed"
+      @cancelled="onPinCancelled"
+    />
   </div>
 </template>
 
@@ -130,6 +136,7 @@ import { useToast } from '../composables/useToast'
 import { formatTime } from '../utils/formatters'
 import CarSVG from '../components/CarSVG.vue'
 import StatCard from '../components/StatCard.vue'
+import PinDialog from '../components/PinDialog.vue'
 
 const props = defineProps({
   vehicle: { type: Object, required: true },
@@ -155,6 +162,10 @@ const chargeTimeStr = computed(() => {
 })
 
 const hasPin = computed(() => store.hasPin)
+
+const showPinDialog = ref(false)
+const pendingAction = ref(null)
+const pinDialogRef = ref(null)
 
 const pendingLimit = ref(props.status?.battery?.charge_soc_setting ?? 80)
 
@@ -183,11 +194,38 @@ function isActive(action) {
   return false
 }
 
-async function exec(action) {
-  if (!hasPin.value) {
-    toast('Vehicle PIN required for remote controls', 'error')
-    return
+async function requirePin() {
+  if (hasPin.value) return true
+  return new Promise((resolve) => {
+    pendingAction.value = { resolve }
+    showPinDialog.value = true
+  })
+}
+
+async function onPinConfirmed({ pin, remember }) {
+  try {
+    await store.submitPin(pin)
+    showPinDialog.value = false
+    if (pendingAction.value?.resolve) {
+      pendingAction.value.resolve(true)
+      pendingAction.value = null
+    }
+  } catch (err) {
+    pinDialogRef.value?.setError(err.message || 'Invalid PIN')
   }
+}
+
+function onPinCancelled() {
+  showPinDialog.value = false
+  if (pendingAction.value?.resolve) {
+    pendingAction.value.resolve(false)
+    pendingAction.value = null
+  }
+}
+
+async function exec(action) {
+  const ok = await requirePin()
+  if (!ok) return
   loadingAction.value = action
   try {
     await store.execControl(props.vehicle.vin, action)
@@ -201,10 +239,8 @@ async function exec(action) {
 }
 
 async function doSetChargeLimit() {
-  if (!hasPin.value) {
-    toast('Vehicle PIN required', 'error')
-    return
-  }
+  const ok = await requirePin()
+  if (!ok) return
   try {
     await store.setChargeLimit(props.vehicle.vin, pendingLimit.value)
     toast(`Charge limit set to ${pendingLimit.value}%`, 'success')

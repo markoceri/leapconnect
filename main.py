@@ -17,7 +17,11 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
+from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
+
+# Load .env from the webapp directory
+load_dotenv(Path(__file__).resolve().parent / ".env")
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -99,19 +103,24 @@ async def login(request: Request):
     body = await request.json()
     username = body.get("username", "").strip()
     password = body.get("password", "").strip()
-    app_cert_path = body.get("app_cert_path", "").strip()
-    app_key_path = body.get("app_key_path", "").strip()
-    operation_password = body.get("operation_password", "").strip() or None
-    account_p12_password = body.get("account_p12_password", "").strip() or None
 
-    if not all([username, password, app_cert_path, app_key_path]):
-        raise HTTPException(status_code=422, detail="Missing required fields")
+    if not all([username, password]):
+        raise HTTPException(status_code=422, detail="Missing email or password")
 
-    # Validate paths exist
+    # Certificate paths from .env
+    app_cert_path = os.environ.get("APP_CERT_PATH", "").strip()
+    app_key_path = os.environ.get("APP_KEY_PATH", "").strip()
+    account_p12_password = os.environ.get("ACCOUNT_P12_PASSWORD", "").strip() or None
+
+    if not app_cert_path or not app_key_path:
+        raise HTTPException(
+            status_code=500,
+            detail="Server misconfigured: APP_CERT_PATH and APP_KEY_PATH must be set in .env",
+        )
     if not Path(app_cert_path).is_file():
-        raise HTTPException(status_code=422, detail=f"App cert not found: {app_cert_path}")
+        raise HTTPException(status_code=500, detail=f"App cert not found: {app_cert_path}")
     if not Path(app_key_path).is_file():
-        raise HTTPException(status_code=422, detail=f"App key not found: {app_key_path}")
+        raise HTTPException(status_code=500, detail=f"App key not found: {app_key_path}")
 
     # Close existing client
     if _sync_client:
@@ -123,7 +132,6 @@ async def login(request: Request):
             password=password,
             app_cert_path=app_cert_path,
             app_key_path=app_key_path,
-            operation_password=operation_password,
             account_p12_password=account_p12_password,
         )
         _client = AsyncLeapmotorApiClient(_sync_client)
@@ -141,6 +149,19 @@ async def login(request: Request):
         _client = None
         _vehicles = []
         raise HTTPException(status_code=401, detail=str(exc))
+
+
+@app.post("/api/set-pin")
+async def set_pin(request: Request):
+    """Set the vehicle operation PIN after login."""
+    if not _sync_client:
+        raise HTTPException(status_code=400, detail="Not connected")
+    body = await request.json()
+    pin = body.get("pin", "").strip()
+    if not pin:
+        raise HTTPException(status_code=422, detail="PIN is required")
+    _sync_client.operation_password = pin
+    return {"status": "ok", "has_pin": True}
 
 
 @app.post("/api/logout")

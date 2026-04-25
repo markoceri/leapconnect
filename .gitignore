@@ -26,3 +26,9 @@ htmlcov/
 
 # Log files
 *.log
+
+# Cert files
+*.pem
+
+# Environment variables
+.env
