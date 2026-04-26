@@ -51,8 +51,11 @@
       <div class="chart-area tall"><canvas ref="tempCanvas" /></div>
     </div>
 
-    <div class="history-note">
-      I dati storici sono generati localmente a scopo dimostrativo. In futuro verranno raccolti dal backend.
+    <div class="history-note" v-if="dataSource === 'mock'">
+      I dati mostrati sono simulati. Attiva la raccolta automatica nelle Impostazioni per popolare lo storico reale.
+    </div>
+    <div class="history-note real" v-else>
+      Dati reali raccolti dal veicolo · {{ allData.length }} giorni disponibili
     </div>
   </div>
 </template>
@@ -60,11 +63,13 @@
 <script setup>
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { Chart, registerables } from 'chart.js'
+import { api } from '../composables/useApi'
 
 Chart.register(...registerables)
 
 const props = defineProps({
   status: { type: Object, required: true },
+  vin: { type: String, default: null },
 })
 
 const periods = [
@@ -74,15 +79,57 @@ const periods = [
 ]
 const period = ref(1)
 
-// Generate synthetic history data based on current status
+// ---------------------------------------------------------------------------
+// Data source: real API → fallback to mock
+// ---------------------------------------------------------------------------
 const allData = ref([])
-onMounted(() => {
+const dataSource = ref('loading') // 'real' | 'mock' | 'loading'
+
+async function fetchHistory() {
+  if (!props.vin) {
+    useMockData()
+    return
+  }
+  try {
+    // Fetch 90 days (max period) from the backend
+    const res = await api('GET', `/api/vehicles/${props.vin}/history/daily?days=90`)
+    const daily = res.daily || []
+    if (daily.length >= 2) {
+      // Map backend daily summary → chart data shape
+      allData.value = daily.map(d => ({
+        date: formatDate(d.date),
+        battery: d.avg_soc ?? 0,
+        range: d.max_range ?? 0,
+        kmDriven: d.km_driven ?? 0,
+        energy: d.energy_delta ?? 0,
+        temp: d.avg_temp ?? 0,
+        chargeSessions: d.charge_sessions ?? 0,
+        sampleCount: d.sample_count ?? 0,
+      }))
+      dataSource.value = 'real'
+    } else {
+      // Not enough real data — fall back to mock
+      useMockData()
+    }
+  } catch {
+    useMockData()
+  }
+}
+
+function useMockData() {
   const soc = props.status?.battery?.soc ?? 60
   const odo = props.status?.driving?.total_mileage ?? 3000
-  allData.value = generateHistory(odo, soc)
-})
+  allData.value = generateMockHistory(odo, soc)
+  dataSource.value = 'mock'
+}
 
-function generateHistory(startOdo, startBattery) {
+function formatDate(isoDate) {
+  // "2026-04-20" → "20/04"
+  const [, m, d] = isoDate.split('-')
+  return `${d}/${m}`
+}
+
+function generateMockHistory(startOdo, startBattery) {
   const data = []
   let battery = startBattery || 75
   let odo = startOdo || 0
@@ -101,25 +148,34 @@ function generateHistory(startOdo, startBattery) {
       kmDriven: Math.round(driven),
       energy: parseFloat((driven * (0.12 + Math.random() * 0.10)).toFixed(1)),
       temp: Math.round(8 + Math.random() * 14),
-      odometer: Math.round(odo),
+      chargeSessions: charged ? 1 : 0,
+      sampleCount: 1,
     })
   }
   return data
 }
 
+// Reload when vin changes
+watch(() => props.vin, fetchHistory)
+onMounted(fetchHistory)
+
+// ---------------------------------------------------------------------------
+// Visible slice based on selected period
+// ---------------------------------------------------------------------------
 const data = computed(() => allData.value.slice(-periods[period.value].days))
 
 const summaryCards = computed(() => {
   const d = data.value
+  if (!d.length) return []
   const totalKm = d.reduce((s, x) => s + x.kmDriven, 0)
   const totalEnergy = d.reduce((s, x) => s + x.energy, 0)
-  const avgBattery = Math.round(d.reduce((s, x) => s + x.battery, 0) / (d.length || 1))
-  const sessions = d.filter(x => x.kmDriven > 1).length
+  const avgBattery = Math.round(d.reduce((s, x) => s + x.battery, 0) / d.length)
+  const chargeSessions = d.reduce((s, x) => s + (x.chargeSessions || 0), 0)
   return [
     { label: 'km percorsi', value: Math.round(totalKm).toLocaleString(), color: '#00d4ff' },
     { label: 'Energia usata', value: `${totalEnergy.toFixed(1)} kWh`, color: '#ffab40' },
     { label: 'Batteria media', value: `${avgBattery}%`, color: '#00e676' },
-    { label: 'Sessioni guida', value: sessions, color: '#7c6aff' },
+    { label: 'Sessioni ricarica', value: chargeSessions, color: '#7c6aff' },
   ]
 })
 
@@ -357,6 +413,11 @@ onBeforeUnmount(destroyCharts)
   padding: 8px;
   background: #0d1018;
   border-radius: 8px;
+}
+.history-note.real {
+  color: #00e676;
+  background: rgba(0, 230, 118, 0.06);
+  border: 1px solid rgba(0, 230, 118, 0.15);
 }
 
 @media (max-width: 768px) {

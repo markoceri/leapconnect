@@ -87,6 +87,7 @@
           <HistoryTab
             v-else-if="store.activeTab === 'history'"
             :status="status"
+            :vin="store.selectedVin"
           />
           <SettingsTab
             v-else-if="store.activeTab === 'settings'"
