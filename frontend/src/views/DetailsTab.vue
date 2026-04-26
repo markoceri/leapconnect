@@ -53,6 +53,7 @@
       <InfoRow label="Charge Limit" :value="bat.charge_soc_setting != null ? `${bat.charge_soc_setting}%` : '—'" color="#e2e6f0" />
       <InfoRow label="Battery Voltage" :value="bat.battery_voltage != null ? `${bat.battery_voltage} V` : '—'" color="#8892a8" />
       <InfoRow label="Battery Current" :value="bat.battery_current != null ? `${bat.battery_current} A` : '—'" :color="bat.battery_current < 0 ? '#00e676' : '#ffab40'" />
+      <InfoRow label="Battery Power" :value="bat.battery_power != null ? `${bat.battery_power} kW` : '—'" color="#ff9100" />
       <InfoRow label="Energy Available" :value="bat.dump_energy != null ? `${bat.dump_energy} kWh` : '—'" color="#00d4ff" />
       <div class="batt-bar">
         <div class="batt-bar-fill" :style="{ width: `${bat.soc ?? 0}%`, boxShadow: bat.is_charging ? '0 0 10px #00e67688' : 'none' }" />

@@ -70,6 +70,10 @@
             <div class="charging-sub">Rimanente</div>
           </div>
           <div class="charging-stat">
+            <div class="charging-val" style="color:#ff9100">{{ s.battery?.battery_power ?? '—' }} kW</div>
+            <div class="charging-sub">Potenza</div>
+          </div>
+          <div class="charging-stat">
             <div class="charging-val" style="color:#00d4ff">{{ Math.abs(s.battery?.battery_current ?? 0) }} A</div>
             <div class="charging-sub">Corrente</div>
           </div>

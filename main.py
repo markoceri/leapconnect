@@ -476,6 +476,7 @@ def _vehicle_status_to_dict(status: VehicleStatus) -> dict[str, Any]:
             "dump_energy": status.battery.dump_energy,
             "battery_current": status.battery.battery_current,
             "battery_voltage": status.battery.battery_voltage,
+            "battery_power": status.battery.battery_power,
         },
         "driving": {
             "speed": status.driving.speed,
