@@ -1,10 +1,10 @@
 <template>
   <div class="car-image">
     <img
-      :src="imgSrc"
+      :src="displaySrc"
       class="car-img"
       alt="Vehicle"
-      @load="loaded = true"
+      @load="onLoad"
       :class="{ visible: loaded }"
     />
   </div>
@@ -15,51 +15,92 @@ import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
 
 const props = defineProps({
   vin: { type: String, required: true },
-  /** Pass the vehicle status object so we know if it's charging. */
   status: { type: Object, default: null },
-  /** Bump this to force a re-fetch (e.g. after a remote-control action). */
   refreshKey: { type: Number, default: 0 },
 })
 
 const loaded = ref(false)
-const chargeFrame = ref(0)
-let chargeTimer = null
 
-const charging = computed(() => !!props.status?.battery?.is_charging)
-
-const imgSrc = computed(() => {
-  const params = new URLSearchParams()
-  if (chargeFrame.value > 0) params.set('charge_frame', chargeFrame.value)
-  params.set('_t', props.refreshKey || Date.now())
-  return `/api/vehicles/${props.vin}/picture/dynamic?${params}`
+// --- Static image (non-charging or base) ---
+const staticSrc = computed(() => {
+  const ts = props.refreshKey || Date.now()
+  return `/api/vehicles/${props.vin}/picture/dynamic?_t=${ts}`
 })
 
-// Reset loaded state when the source changes so the fade-in replays
-watch(imgSrc, () => { loaded.value = false })
+// --- Charging animation ---
+const charging = computed(() => !!props.status?.battery?.is_charging)
+const chargeFrameUrls = ref([])   // Object URLs for frames 1-15
+const chargeIndex = ref(0)
+let chargeTimer = null
+let preloadAbort = null
 
-function startChargeAnimation() {
+const displaySrc = computed(() => {
+  if (charging.value && chargeFrameUrls.value.length === 15) {
+    return chargeFrameUrls.value[chargeIndex.value]
+  }
+  return staticSrc.value
+})
+
+function onLoad() { loaded.value = true }
+watch(staticSrc, () => { if (!charging.value) loaded.value = false })
+
+async function preloadChargeFrames() {
+  // Abort any previous preload
+  revokeFrames()
+  const controller = new AbortController()
+  preloadAbort = controller
+
+  const urls = []
+  const ts = props.refreshKey || Date.now()
+  try {
+    // Fetch all 15 frames in parallel
+    const fetches = []
+    for (let i = 1; i <= 15; i++) {
+      fetches.push(
+        fetch(`/api/vehicles/${props.vin}/picture/dynamic?charge_frame=${i}&_t=${ts}`, {
+          signal: controller.signal,
+        }).then(r => r.blob())
+      )
+    }
+    const blobs = await Promise.all(fetches)
+    if (controller.signal.aborted) return
+    for (const blob of blobs) {
+      urls.push(URL.createObjectURL(blob))
+    }
+    chargeFrameUrls.value = urls
+    startAnimation()
+  } catch {
+    // aborted or network error — ignore
+  }
+}
+
+function revokeFrames() {
+  if (preloadAbort) { preloadAbort.abort(); preloadAbort = null }
+  stopAnimation()
+  for (const url of chargeFrameUrls.value) URL.revokeObjectURL(url)
+  chargeFrameUrls.value = []
+  chargeIndex.value = 0
+}
+
+function startAnimation() {
   if (chargeTimer) return
-  chargeFrame.value = 1
   chargeTimer = setInterval(() => {
-    chargeFrame.value = (chargeFrame.value % 15) + 1
+    chargeIndex.value = (chargeIndex.value + 1) % 15
   }, 200)
 }
 
-function stopChargeAnimation() {
-  if (chargeTimer) {
-    clearInterval(chargeTimer)
-    chargeTimer = null
-  }
-  chargeFrame.value = 0
+function stopAnimation() {
+  if (chargeTimer) { clearInterval(chargeTimer); chargeTimer = null }
+  chargeIndex.value = 0
 }
 
 watch(charging, (val) => {
-  if (val) startChargeAnimation()
-  else stopChargeAnimation()
-}, { immediate: true })
+  if (val) preloadChargeFrames()
+  else revokeFrames()
+})
 
-onMounted(() => { if (charging.value) startChargeAnimation() })
-onUnmounted(() => stopChargeAnimation())
+onMounted(() => { if (charging.value) preloadChargeFrames() })
+onUnmounted(() => revokeFrames())
 </script>
 
 <style scoped>
