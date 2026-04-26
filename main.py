@@ -15,6 +15,7 @@ import sys
 import zipfile
 from contextlib import asynccontextmanager
 from dataclasses import asdict
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -35,6 +36,10 @@ from leapmotor_api.async_client import AsyncLeapmotorApiClient  # noqa: E402
 from leapmotor_api.image import CarImagePackage  # noqa: E402
 from leapmotor_api.models import Vehicle, VehicleStatus  # noqa: E402
 
+from persistence.repository import VehicleHistoryRepository, VehicleSnapshot  # noqa: E402
+from persistence.scheduler import VehicleDataScheduler  # noqa: E402
+from persistence.sqlite_adapter import SQLAlchemyVehicleHistoryRepository  # noqa: E402
+
 logging.basicConfig(level=logging.INFO)
 _LOGGER = logging.getLogger(__name__)
 
@@ -47,6 +52,8 @@ _vehicles: list[Vehicle] = []
 _connected: bool = False
 _picture_cache: dict[str, dict[str, str]] = {}  # vin -> {filename: data-URI}
 _image_packages: dict[str, CarImagePackage] = {}  # vin -> CarImagePackage
+_history_repo: SQLAlchemyVehicleHistoryRepository | None = None
+_scheduler: VehicleDataScheduler | None = None
 
 
 def _get_client() -> AsyncLeapmotorApiClient:
@@ -68,7 +75,25 @@ def _find_vehicle(vin: str) -> Vehicle:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    global _history_repo, _scheduler
+    db_path = os.environ.get("HISTORY_DB_PATH", str(Path(__file__).parent / "history.db"))
+    db_url = f"sqlite+aiosqlite:///{db_path}"
+    _history_repo = SQLAlchemyVehicleHistoryRepository(db_url)
+    await _history_repo.init_db()
+    _LOGGER.info("History DB initialised at %s", db_path)
+
+    # Restore scheduler settings from DB
+    _scheduler = VehicleDataScheduler(_history_repo)
+    saved = await _history_repo.load_scheduler_settings()
+    _scheduler.update_settings(enabled=saved.enabled, interval_minutes=saved.interval_minutes)
+    _LOGGER.info("Scheduler settings loaded: enabled=%s, interval=%d min", saved.enabled, saved.interval_minutes)
+
     yield
+
+    if _scheduler:
+        await _scheduler.stop()
+    if _history_repo:
+        await _history_repo.close()
     if _sync_client:
         _sync_client.close()
 
@@ -142,6 +167,12 @@ async def login(request: Request):
         await _client.login()
         _vehicles = await _client.get_vehicle_list()
         _connected = True
+
+        # Inject client into scheduler so it can poll autonomously
+        if _scheduler:
+            _scheduler.set_client(_client, _vehicles)
+            _scheduler.start()
+
         return {
             "status": "ok",
             "user_id": _sync_client.user_id,
@@ -152,6 +183,8 @@ async def login(request: Request):
         _sync_client = None
         _client = None
         _vehicles = []
+        if _scheduler:
+            _scheduler.set_client(None, [])
         raise HTTPException(status_code=401, detail=str(exc))
 
 
@@ -171,6 +204,8 @@ async def set_pin(request: Request):
 @app.post("/api/logout")
 async def logout():
     global _sync_client, _client, _vehicles, _connected
+    if _scheduler:
+        _scheduler.set_client(None, [])
     if _sync_client:
         _sync_client.close()
     _sync_client = None
@@ -209,7 +244,34 @@ async def get_vehicle_status(vin: str):
     client = _get_client()
     vehicle = _find_vehicle(vin)
     status = await client.get_vehicle_status(vehicle)
+
+    # Persist snapshot for historical tracking
+    if _history_repo and isinstance(status, VehicleStatus):
+        snapshot = VehicleSnapshot(
+            vin=vin,
+            timestamp=status.collect_time or datetime.utcnow(),
+            battery_soc=status.battery.soc,
+            expected_mileage=status.battery.expected_mileage,
+            total_mileage=status.driving.total_mileage,
+            energy_kwh=status.battery.dump_energy_kwh,
+            outdoor_temp=status.climate.outdoor_temp,
+            is_charging=status.battery.is_charging,
+            latitude=status.location.latitude,
+            longitude=status.location.longitude,
+            charge_state=status.battery.charge_state,
+            speed=status.driving.speed,
+        )
+        asyncio.create_task(_save_snapshot_safe(snapshot))
+
     return {"status": _vehicle_status_to_dict(status)}
+
+
+async def _save_snapshot_safe(snapshot: VehicleSnapshot) -> None:
+    """Fire-and-forget snapshot save; errors are logged, never raised."""
+    try:
+        await _history_repo.save_snapshot(snapshot)
+    except Exception:
+        _LOGGER.exception("Failed to save vehicle snapshot")
 
 
 @app.get("/api/vehicles/{vin}/raw-status")
@@ -398,6 +460,92 @@ async def get_full_vehicle_data(vin: str):
             "picture": str(results[2]) if isinstance(results[2], Exception) else None,
         },
     }
+
+
+# ---------------------------------------------------------------------------
+# Routes — Vehicle History
+# ---------------------------------------------------------------------------
+
+@app.get("/api/vehicles/{vin}/history")
+async def get_vehicle_history(vin: str, days: int = 30):
+    """Return raw snapshots for the given VIN."""
+    if not _history_repo:
+        raise HTTPException(status_code=503, detail="History not available")
+    _find_vehicle(vin)  # validate VIN
+    snapshots = await _history_repo.get_history(vin, days=days)
+    return {
+        "vin": vin,
+        "days": days,
+        "count": len(snapshots),
+        "snapshots": [
+            {
+                "timestamp": s.timestamp.isoformat(),
+                "battery_soc": s.battery_soc,
+                "expected_mileage": s.expected_mileage,
+                "total_mileage": s.total_mileage,
+                "energy_kwh": s.energy_kwh,
+                "outdoor_temp": s.outdoor_temp,
+                "is_charging": s.is_charging,
+                "latitude": s.latitude,
+                "longitude": s.longitude,
+                "speed": s.speed,
+            }
+            for s in snapshots
+        ],
+    }
+
+
+@app.get("/api/vehicles/{vin}/history/daily")
+async def get_vehicle_daily_summary(vin: str, days: int = 30):
+    """Return aggregated daily summaries for charts."""
+    if not _history_repo:
+        raise HTTPException(status_code=503, detail="History not available")
+    _find_vehicle(vin)  # validate VIN
+    summaries = await _history_repo.get_daily_summary(vin, days=days)
+    return {
+        "vin": vin,
+        "days": days,
+        "count": len(summaries),
+        "daily": summaries,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Routes — Scheduler Settings
+# ---------------------------------------------------------------------------
+
+@app.get("/api/scheduler")
+async def get_scheduler_status():
+    """Return current scheduler status and settings."""
+    if not _scheduler:
+        raise HTTPException(status_code=503, detail="Scheduler not available")
+    return _scheduler.status_dict()
+
+
+@app.put("/api/scheduler")
+async def update_scheduler_settings(request: Request):
+    """Update scheduler settings (enabled, interval_minutes)."""
+    if not _scheduler or not _history_repo:
+        raise HTTPException(status_code=503, detail="Scheduler not available")
+
+    body = await request.json()
+    enabled = body.get("enabled")
+    interval = body.get("interval_minutes")
+
+    if enabled is not None and not isinstance(enabled, bool):
+        raise HTTPException(status_code=422, detail="'enabled' must be a boolean")
+    if interval is not None:
+        try:
+            interval = int(interval)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=422, detail="'interval_minutes' must be an integer")
+
+    settings = _scheduler.update_settings(enabled=enabled, interval_minutes=interval)
+
+    # Persist to DB
+    await _history_repo.save_scheduler_settings(settings)
+
+    return _scheduler.status_dict()
 
 
 # ---------------------------------------------------------------------------

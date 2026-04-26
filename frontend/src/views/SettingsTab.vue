@@ -37,6 +37,37 @@
       <InfoRow label="Lingua" value="Italiano" color="#e2e6f0" />
     </SectionCard>
 
+    <!-- Data Collection Scheduler -->
+    <SectionCard title="Raccolta dati" icon="📊">
+      <div class="notif-row">
+        <span class="notif-label">Raccolta automatica</span>
+        <ToggleSwitch :modelValue="scheduler.enabled" @update:modelValue="toggleScheduler" />
+      </div>
+      <div class="interval-row">
+        <span class="interval-label">Intervallo di raccolta</span>
+        <div class="interval-control">
+          <button class="interval-btn" :disabled="!scheduler.enabled" @click="changeInterval(-5)">−</button>
+          <span class="interval-value" :class="{ disabled: !scheduler.enabled }">{{ scheduler.interval_minutes }} min</span>
+          <button class="interval-btn" :disabled="!scheduler.enabled" @click="changeInterval(5)">+</button>
+        </div>
+      </div>
+      <div class="scheduler-status">
+        <div class="status-row">
+          <span class="status-dot" :class="scheduler.is_running ? 'running' : 'stopped'" />
+          <span class="status-text">{{ scheduler.is_running ? 'In esecuzione' : 'Fermo' }}</span>
+        </div>
+        <div v-if="scheduler.last_run" class="status-detail">
+          Ultimo aggiornamento: {{ formatTime(scheduler.last_run) }}
+        </div>
+        <div class="status-detail">
+          Raccolte: {{ scheduler.total_runs }} · Errori: {{ scheduler.total_errors }}
+        </div>
+        <div v-if="scheduler.last_error" class="status-error">
+          {{ scheduler.last_error }}
+        </div>
+      </div>
+    </SectionCard>
+
     <!-- Raw Data toggle -->
     <SectionCard title="Dati grezzi" icon="{ }">
       <button class="raw-toggle" @click="showRaw = !showRaw">
@@ -50,10 +81,11 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import SectionCard from '../components/SectionCard.vue'
 import InfoRow from '../components/InfoRow.vue'
 import ToggleSwitch from '../components/ToggleSwitch.vue'
+import { api } from '../composables/useApi'
 
 const props = defineProps({
   vehicle: { type: Object, required: true },
@@ -78,6 +110,61 @@ const notifications = reactive([
   { label: 'Pressione pneumatici', key: 'notifTire', enabled: true },
   { label: 'Aggiornamenti software', key: 'notifOTA', enabled: false },
 ])
+
+// -- Scheduler state --------------------------------------------------------
+const scheduler = reactive({
+  enabled: false,
+  interval_minutes: 15,
+  is_running: false,
+  last_run: null,
+  last_error: null,
+  total_runs: 0,
+  total_errors: 0,
+})
+
+let schedulerUpdating = false
+
+async function loadScheduler() {
+  try {
+    const data = await api('GET', '/api/scheduler')
+    Object.assign(scheduler, data)
+  } catch {
+    // scheduler not available yet
+  }
+}
+
+async function updateScheduler(patch) {
+  if (schedulerUpdating) return
+  schedulerUpdating = true
+  try {
+    const data = await api('PUT', '/api/scheduler', patch)
+    Object.assign(scheduler, data)
+  } catch {
+    // revert on error — reload current state
+    await loadScheduler()
+  } finally {
+    schedulerUpdating = false
+  }
+}
+
+function toggleScheduler(val) {
+  updateScheduler({ enabled: val })
+}
+
+function changeInterval(delta) {
+  const next = Math.max(1, Math.min(1440, scheduler.interval_minutes + delta))
+  if (next !== scheduler.interval_minutes) {
+    updateScheduler({ interval_minutes: next })
+  }
+}
+
+function formatTime(iso) {
+  if (!iso) return '—'
+  const d = new Date(iso)
+  return d.toLocaleString('it-IT', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+}
+
+onMounted(loadScheduler)
 </script>
 
 <style scoped>
@@ -155,5 +242,97 @@ const notifications = reactive([
   color: var(--muted3);
   white-space: pre-wrap;
   word-break: break-all;
+}
+
+/* Scheduler / Data Collection */
+.interval-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid #181d2c;
+}
+.interval-label {
+  font-size: 13px;
+  color: var(--sub);
+}
+.interval-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.interval-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--sub);
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+}
+.interval-btn:hover:not(:disabled) {
+  border-color: #00d4ff55;
+  color: #00d4ff;
+}
+.interval-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+.interval-value {
+  font-size: 13px;
+  font-weight: 600;
+  color: #00d4ff;
+  min-width: 52px;
+  text-align: center;
+  font-family: var(--mono);
+}
+.interval-value.disabled {
+  color: var(--muted);
+}
+.scheduler-status {
+  margin-top: 12px;
+  padding: 10px 12px;
+  background: #0d1018;
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.status-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+.status-dot.running {
+  background: #00e676;
+  box-shadow: 0 0 6px #00e67688;
+}
+.status-dot.stopped {
+  background: #5c6478;
+}
+.status-text {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--sub);
+}
+.status-detail {
+  font-size: 11px;
+  color: var(--muted);
+}
+.status-error {
+  font-size: 11px;
+  color: #ff5252;
+  font-family: var(--mono);
 }
 </style>
