@@ -523,7 +523,7 @@ def _vehicle_status_to_dict(status: VehicleStatus) -> dict[str, Any]:
             "charge_remain_time": status.battery.charge_remain_time,
             "charge_soc_setting": status.battery.charge_soc_setting,
             "expected_mileage": status.battery.expected_mileage,
-            "dump_energy": status.battery.dump_energy,
+            "dump_energy": status.battery.dump_energy_kwh,
             "battery_current": status.battery.battery_current,
             "battery_voltage": status.battery.battery_voltage,
             "battery_power": status.battery.battery_power,
