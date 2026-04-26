@@ -2,7 +2,7 @@
   <div class="dashboard-tab">
     <!-- Hero -->
     <div class="hero">
-      <div class="hero-glow" :class="{ charging: s.battery?.is_charging, ac: s.climate?.ac_switch }" />
+      <!-- <div class="hero-glow" :class="{ charging: s.battery?.is_charging, ac: s.climate?.ac_switch }" /> -->
       <div class="hero-car">
         <CarImage :vin="vehicle.vin" :status="s" />
         <div class="hero-badges">

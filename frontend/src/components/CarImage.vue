@@ -1,40 +1,49 @@
 <template>
-  <div class="car-image" :class="{ 'glow-charging': charging, 'glow-ac': acOn }">
-    <!-- Right side (far side) — rendered BELOW the body -->
-    <img v-if="doors.rightRear && pkg['carpic_rightbehind_open.png']" :src="pkg['carpic_rightbehind_open.png']" class="layer" alt="" />
-    <img v-if="!doors.rightRear && pkg['carpic_rightbehind_close.png']" :src="pkg['carpic_rightbehind_close.png']" class="layer" alt="" />
-    <img v-if="doors.rightFront && pkg['carpic_rightfront_open.png']" :src="pkg['carpic_rightfront_open.png']" class="layer" alt="" />
-    <img v-if="!doors.rightFront && pkg['carpic_rightfront_close.png']" :src="pkg['carpic_rightfront_close.png']" class="layer" alt="" />
+  <div class="car-image">
+    <!-- Composed layers: always in DOM, hidden until painted -->
+    <div class="layers-container" :class="{ visible: layersPainted }">
+      <!-- Right side (far side) — rendered BELOW the body -->
+      <img v-if="doors.rightRear && pkg['carpic_rightbehind_open.png']" :src="pkg['carpic_rightbehind_open.png']" class="layer" alt="" />
+      <img v-if="!doors.rightRear && pkg['carpic_rightbehind_close.png']" :src="pkg['carpic_rightbehind_close.png']" class="layer" alt="" />
+      <img v-if="doors.rightFront && pkg['carpic_rightfront_open.png']" :src="pkg['carpic_rightfront_open.png']" class="layer" alt="" />
+      <img v-if="!doors.rightFront && pkg['carpic_rightfront_close.png']" :src="pkg['carpic_rightfront_close.png']" class="layer" alt="" />
 
-    <!-- Base body -->
-    <img v-if="pkg['carpic_body.png']" :src="pkg['carpic_body.png']" class="layer" alt="" />
+      <!-- Base body -->
+      <img
+        v-if="pkg['carpic_body.png']"
+        :src="pkg['carpic_body.png']"
+        class="layer"
+        alt=""
+        @load="onBodyLoaded"
+      />
 
-    <!-- Hood -->
-    <img v-if="hood && pkg['carpic_hood_open.png']" :src="pkg['carpic_hood_open.png']" class="layer" alt="" />
-    <img v-if="!hood && pkg['carpic_hood_close.png']" :src="pkg['carpic_hood_close.png']" class="layer" alt="" />
+      <!-- Hood -->
+      <img v-if="hood && pkg['carpic_hood_open.png']" :src="pkg['carpic_hood_open.png']" class="layer" alt="" />
+      <img v-if="!hood && pkg['carpic_hood_close.png']" :src="pkg['carpic_hood_close.png']" class="layer" alt="" />
 
-    <!-- Left side (near side) — rendered ABOVE the body -->
-    <img v-if="doors.leftRear && pkg['carpic_leftbehind_open.png']" :src="pkg['carpic_leftbehind_open.png']" class="layer" alt="" />
-    <img v-if="!doors.leftRear && pkg['carpic_leftbehind_close.png']" :src="pkg['carpic_leftbehind_close.png']" class="layer" alt="" />
-    <img v-if="doors.leftFront && pkg['carpic_leftfront_open.png']" :src="pkg['carpic_leftfront_open.png']" class="layer" alt="" />
-    <img v-if="!doors.leftFront && pkg['carpic_leftfront_close.png']" :src="pkg['carpic_leftfront_close.png']" class="layer" alt="" />
+      <!-- Left side (near side) — rendered ABOVE the body -->
+      <img v-if="doors.leftRear && pkg['carpic_leftbehind_open.png']" :src="pkg['carpic_leftbehind_open.png']" class="layer" alt="" />
+      <img v-if="!doors.leftRear && pkg['carpic_leftbehind_close.png']" :src="pkg['carpic_leftbehind_close.png']" class="layer" alt="" />
+      <img v-if="doors.leftFront && pkg['carpic_leftfront_open.png']" :src="pkg['carpic_leftfront_open.png']" class="layer" alt="" />
+      <img v-if="!doors.leftFront && pkg['carpic_leftfront_close.png']" :src="pkg['carpic_leftfront_close.png']" class="layer" alt="" />
 
-    <!-- Tailgate (trunk) — only has an open image -->
-    <img v-if="trunk && pkg['carpic_tailgate_open.png']" :src="pkg['carpic_tailgate_open.png']" class="layer" alt="" />
+      <!-- Tailgate (trunk) — only has an open image -->
+      <img v-if="trunk && pkg['carpic_tailgate_open.png']" :src="pkg['carpic_tailgate_open.png']" class="layer" alt="" />
 
-    <!-- Windows closed (glass visible when window is up) -->
-    <img v-if="!windows.leftFrontOpen && pkg['carpic_leftfront_window_close.png']" :src="pkg['carpic_leftfront_window_close.png']" class="layer" alt="" />
-    <img v-if="!windows.leftRearOpen && pkg['carpic_leftbehind_window_close.png']" :src="pkg['carpic_leftbehind_window_close.png']" class="layer" alt="" />
+      <!-- Windows closed (glass visible when window is up) -->
+      <img v-if="!windows.leftFrontOpen && pkg['carpic_leftfront_window_close.png']" :src="pkg['carpic_leftfront_window_close.png']" class="layer" alt="" />
+      <img v-if="!windows.leftRearOpen && pkg['carpic_leftbehind_window_close.png']" :src="pkg['carpic_leftbehind_window_close.png']" class="layer" alt="" />
 
-    <!-- Charging: open port + animated charge level -->
-    <img v-if="charging && pkg['carpic_charge_open.png']" :src="pkg['carpic_charge_open.png']" class="layer" alt="" />
-    <img v-if="charging && chargeFrame" :src="chargeFrame" class="layer" alt="" />
+      <!-- Charging: open port + animated charge level -->
+      <img v-if="charging && pkg['carpic_charge_open.png']" :src="pkg['carpic_charge_open.png']" class="layer" alt="" />
+      <img v-if="charging && chargeFrame" :src="chargeFrame" class="layer" alt="" />
+    </div>
 
-    <!-- Fallback: single image if package not loaded yet -->
+    <!-- Tripsum placeholder: sits ON TOP, hides only after layers are painted -->
     <img
-      v-if="!hasPackage"
-      :src="`/api/vehicles/${vin}/picture/image`"
-      class="layer fallback"
+      v-if="!layersPainted"
+      :src="tripsum || `/api/vehicles/${vin}/picture/image`"
+      class="layer placeholder"
       alt="Vehicle"
     />
   </div>
@@ -53,6 +62,19 @@ const store = useAppStore()
 
 const pkg = computed(() => store.picturePackages[props.vin] || {})
 const hasPackage = computed(() => !!pkg.value['carpic_body.png'])
+const hasStatus = computed(() => !!s.value.doors)
+const tripsum = computed(() => pkg.value['carpic_for_tripsum.png'] || null)
+
+const layersPainted = ref(false)
+const bodyDecoded = ref(false)
+
+function onBodyLoaded() {
+  // Body image decoded by browser — safe to show layers and hide tripsum
+  bodyDecoded.value = true
+  if (hasStatus.value) {
+    layersPainted.value = true
+  }
+}
 
 const s = computed(() => props.status || {})
 
@@ -112,6 +134,11 @@ watch(charging, (val) => {
   if (val) startChargeAnimation()
   else stopChargeAnimation()
 })
+
+// If status arrives after body was already decoded, flip painted
+watch(hasStatus, (val) => {
+  if (val && bodyDecoded.value) layersPainted.value = true
+})
 </script>
 
 <style scoped>
@@ -132,6 +159,16 @@ watch(charging, (val) => {
   filter: drop-shadow(0 0 14px rgba(0, 212, 255, 0.6));
 }
 
+.layers-container {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+}
+
+.layers-container.visible {
+  opacity: 1;
+}
+
 .layer {
   position: absolute;
   inset: 0;
@@ -141,7 +178,7 @@ watch(charging, (val) => {
   pointer-events: none;
 }
 
-.fallback {
-  position: relative;
+.placeholder {
+  z-index: 10;
 }
 </style>

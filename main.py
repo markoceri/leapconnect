@@ -252,7 +252,7 @@ async def get_picture_image(vin: str):
 
     zip_bytes = await client.download_car_picture_package(picture_key=key)
 
-    # Extract first image from the ZIP
+    # Extract the tripsum (complete car) image, fallback to first image
     try:
         with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
             image_names = [
@@ -261,7 +261,9 @@ async def get_picture_image(vin: str):
             ]
             if not image_names:
                 raise HTTPException(status_code=404, detail=f"No image found in package. Contents: {zf.namelist()}")
-            img_name = image_names[0]
+            # Prefer carpic_for_tripsum (complete car) over body-only
+            tripsum = [n for n in image_names if "tripsum" in n.lower()]
+            img_name = tripsum[0] if tripsum else image_names[0]
             img_data = zf.read(img_name)
     except zipfile.BadZipFile:
         # Not a ZIP — maybe the response is already a raw image
