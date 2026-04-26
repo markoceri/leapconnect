@@ -4,7 +4,7 @@
     <div class="hero">
       <!-- <div class="hero-glow" :class="{ charging: s.battery?.is_charging, ac: s.climate?.ac_switch }" /> -->
       <div class="hero-car">
-        <CarImage :vin="vehicle.vin" :status="s" />
+        <DynamicCarImage :vin="vehicle.vin" :status="s" :refresh-key="carImageKey" />
         <div class="hero-badges">
           <span v-if="s.battery?.is_charging" class="badge badge-charging">⚡</span>
           <span v-if="s.climate?.ac_switch" class="badge badge-ac">❄</span>
@@ -141,7 +141,7 @@ import { useToast } from '../composables/useToast'
 import { formatTime } from '../utils/formatters'
 import StatCard from '../components/StatCard.vue'
 import PinDialog from '../components/PinDialog.vue'
-import CarImage from '../components/CarImage.vue'
+import DynamicCarImage from '../components/DynamicCarImage.vue'
 
 const props = defineProps({
   vehicle: { type: Object, required: true },
@@ -151,6 +151,7 @@ const props = defineProps({
 const store = useAppStore()
 const { toast } = useToast()
 const loadingAction = ref(null)
+const carImageKey = ref(Date.now())
 
 const s = computed(() => props.status || {})
 
@@ -236,6 +237,7 @@ async function exec(action) {
     await store.execControl(props.vehicle.vin, action)
     toast(`${action} executed successfully`, 'success')
     await store.refreshCurrent()
+    carImageKey.value = Date.now()
   } catch (err) {
     toast(`${action} failed: ${err.message}`, 'error')
   } finally {

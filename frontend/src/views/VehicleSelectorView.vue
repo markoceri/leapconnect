@@ -27,7 +27,7 @@
           @click="$emit('select', v.vin)"
         >
           <div class="vs-card-hero">
-            <CarImage :vin="v.vin" :status="store.vehicleData[v.vin]?.status" />
+            <DynamicCarImage :vin="v.vin" :status="store.vehicleData[v.vin]?.status" />
           </div>
           <div class="vs-card-info">
             <div class="vs-card-top">
@@ -68,7 +68,7 @@
 
 <script setup>
 import { useAppStore } from '../stores/appStore'
-import CarImage from '../components/CarImage.vue'
+import DynamicCarImage from '../components/DynamicCarImage.vue'
 
 defineProps({
   vehicles: { type: Array, required: true },

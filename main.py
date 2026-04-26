@@ -32,6 +32,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from leapmotor_api import LeapmotorApiClient  # noqa: E402
 from leapmotor_api.async_client import AsyncLeapmotorApiClient  # noqa: E402
+from leapmotor_api.image import CarImagePackage  # noqa: E402
 from leapmotor_api.models import Vehicle, VehicleStatus  # noqa: E402
 
 logging.basicConfig(level=logging.INFO)
@@ -45,6 +46,7 @@ _client: AsyncLeapmotorApiClient | None = None
 _vehicles: list[Vehicle] = []
 _connected: bool = False
 _picture_cache: dict[str, dict[str, str]] = {}  # vin -> {filename: data-URI}
+_image_packages: dict[str, CarImagePackage] = {}  # vin -> CarImagePackage
 
 
 def _get_client() -> AsyncLeapmotorApiClient:
@@ -176,6 +178,7 @@ async def logout():
     _vehicles = []
     _connected = False
     _picture_cache.clear()
+    _image_packages.clear()
     return {"status": "ok"}
 
 
@@ -314,6 +317,53 @@ async def get_picture_package(vin: str):
 
     _picture_cache[vin] = images
     return images
+
+
+async def _get_image_package(vin: str) -> CarImagePackage:
+    """Get or create a cached CarImagePackage for the given VIN."""
+    if vin in _image_packages:
+        return _image_packages[vin]
+
+    client = _get_client()
+    vehicle = _find_vehicle(vin)
+    picture_data = await client.get_car_picture(vehicle)
+    key = (picture_data.get("data") or {}).get("key")
+    if not key:
+        raise HTTPException(status_code=404, detail="No picture key available")
+
+    zip_bytes = await client.download_car_picture_package(picture_key=key)
+    pkg = await asyncio.to_thread(CarImagePackage.from_zip, zip_bytes)
+    _image_packages[vin] = pkg
+    return pkg
+
+
+@app.get("/api/vehicles/{vin}/picture/dynamic")
+async def get_dynamic_picture(vin: str, charge_frame: int = 0):
+    """Compose and return the car image based on current vehicle status.
+
+    Each frame is a lossless PNG — the frontend handles animation by
+    cycling ``charge_frame`` (1-15) when the vehicle is charging.
+    Pass ``charge_frame=0`` (default) to get the image without the
+    animated charge-level overlay (charge port still shown if charging).
+    """
+    client = _get_client()
+    vehicle = _find_vehicle(vin)
+
+    pkg, status_raw = await asyncio.gather(
+        _get_image_package(vin),
+        client.get_vehicle_status(vehicle),
+    )
+
+    status = status_raw if isinstance(status_raw, VehicleStatus) else None
+    img_bytes = await asyncio.to_thread(
+        pkg.compose, status, charge_frame=charge_frame, format="PNG"
+    )
+
+    return Response(
+        content=img_bytes,
+        media_type="image/png",
+        headers={"Cache-Control": "no-cache"},
+    )
 
 
 @app.get("/api/vehicles/{vin}/full")

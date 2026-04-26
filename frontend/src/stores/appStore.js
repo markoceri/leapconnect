@@ -91,10 +91,6 @@ export const useAppStore = defineStore('app', () => {
     } finally {
       loading.value = false
     }
-    // Load picture package in background (once)
-    if (!picturePackages.value[vin]) {
-      loadPicturePackage(vin)
-    }
   }
 
   async function loadPicturePackage(vin) {
