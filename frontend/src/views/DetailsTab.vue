@@ -62,35 +62,7 @@
     </SectionCard>
 
     <!-- Location -->
-    <SectionCard title="Location" :icon="MapPin">
-      <template v-if="hasLocation">
-        <div class="map-frame">
-          <iframe :src="mapUrl" title="Posizione veicolo" loading="lazy" />
-        </div>
-        <div class="map-coords">
-          <span class="map-coord">Lat: <span class="coord-val">{{ location.latitude.toFixed(6) }}</span></span>
-          <span class="map-coord">Lng: <span class="coord-val">{{ location.longitude.toFixed(6) }}</span></span>
-        </div>
-      </template>
-      <div v-else class="no-data">Location data unavailable</div>
-
-      <!-- Send Destination -->
-      <div class="send-dest-section">
-        <div class="send-dest-title">Send Destination</div>
-        <div class="send-dest-form">
-          <input v-model="destAddress" class="dest-input" placeholder="Address" />
-          <input v-model="destName" class="dest-input" placeholder="Name (optional)" />
-          <div class="dest-coords-row">
-            <input v-model.number="destLat" class="dest-input dest-coord" type="number" step="any" placeholder="Latitude" />
-            <input v-model.number="destLng" class="dest-input dest-coord" type="number" step="any" placeholder="Longitude" />
-          </div>
-          <button class="dest-send-btn" :disabled="!canSendDest || sendingDest" @click="doSendDestination">
-            <Loader v-if="sendingDest" :size="14" class="spinning" /> <span v-if="sendingDest">Sending...</span>
-            <Navigation v-if="!sendingDest" :size="14" /> <span v-if="!sendingDest">Send to Vehicle</span>
-          </button>
-        </div>
-      </div>
-    </SectionCard>
+    <LocationCard :location="location" :vehicle="vehicle" />
 
     <!-- Connectivity -->
     <SectionCard title="Connectivity" :icon="Wifi">
@@ -124,15 +96,14 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
-import { useAppStore } from '../stores/appStore'
-import { useToast } from '../composables/useToast'
+import { computed } from 'vue'
 import { gearLabel, formatTime, climateMode } from '../utils/formatters'
 import SectionCard from '../components/SectionCard.vue'
 import InfoRow from '../components/InfoRow.vue'
+import LocationCard from '../components/LocationCard.vue'
 import {
-  DoorOpen, Thermometer, Circle, Battery, MapPin,
-  Wifi, Info, Zap, Loader, Navigation
+  DoorOpen, Thermometer, Circle, Battery,
+  Wifi, Info, Zap
 } from 'lucide-vue-next'
 
 const props = defineProps({
@@ -140,9 +111,6 @@ const props = defineProps({
   status: { type: Object, required: true },
   mileage: { type: Object, default: null },
 })
-
-const store = useAppStore()
-const { toast } = useToast()
 
 const doors = computed(() => props.status?.doors || {})
 const windows = computed(() => props.status?.windows || {})
@@ -164,12 +132,7 @@ const tireItems = computed(() => {
   ]
 })
 
-const hasLocation = computed(() => location.value.latitude && location.value.longitude)
-const mapUrl = computed(() => {
-  const lat = location.value.latitude
-  const lng = location.value.longitude
-  return `https://www.openstreetmap.org/export/embed.html?bbox=${lng - 0.01},${lat - 0.01},${lng + 0.01},${lat + 0.01}&layer=mapnik&marker=${lat},${lng}`
-})
+
 
 const sunShadeText = computed(() => {
   const v = windows.value.sun_shade
@@ -198,38 +161,6 @@ function winColor(val) {
 function tireColor(val) {
   if (val == null) return '#e2e6f0'
   return val < 2.0 ? '#ff5252' : val < 2.2 ? '#ffab40' : '#e2e6f0'
-}
-
-// --- Send Destination ---
-const destAddress = ref('')
-const destName = ref('')
-const destLat = ref(null)
-const destLng = ref(null)
-const sendingDest = ref(false)
-
-const canSendDest = computed(() =>
-  destAddress.value.trim() && destLat.value != null && destLng.value != null
-)
-
-async function doSendDestination() {
-  sendingDest.value = true
-  try {
-    await store.sendDestination(props.vehicle.vin, {
-      address: destAddress.value.trim(),
-      address_name: destName.value.trim() || destAddress.value.trim(),
-      latitude: destLat.value,
-      longitude: destLng.value,
-    })
-    toast('Destination sent to vehicle', 'success')
-    destAddress.value = ''
-    destName.value = ''
-    destLat.value = null
-    destLng.value = null
-  } catch (err) {
-    toast(`Send destination failed: ${err.message}`, 'error')
-  } finally {
-    sendingDest.value = false
-  }
 }
 </script>
 
@@ -285,28 +216,6 @@ async function doSendDestination() {
   transition: width 0.6s;
 }
 
-/* Map */
-.map-frame {
-  border-radius: 10px;
-  overflow: hidden;
-  margin-bottom: 10px;
-  border: 1px solid var(--border);
-}
-.map-frame iframe {
-  width: 100%;
-  height: 200px;
-  border: none;
-  display: block;
-  filter: invert(0.85) hue-rotate(180deg) saturate(0.8);
-}
-.map-coords {
-  display: flex;
-  gap: 16px;
-  font-size: 12px;
-}
-.map-coord { color: var(--muted); }
-.coord-val { color: #00d4ff; font-family: var(--mono); }
-
 /* Temp slider visual */
 .temp-slider-visual { margin-top: 14px; padding-top: 12px; }
 .temp-slider-label {
@@ -348,52 +257,6 @@ async function doSendDestination() {
   color: var(--muted);
   font-size: 13px;
 }
-
-/* Send Destination */
-.send-dest-section {
-  margin-top: 14px;
-  padding-top: 12px;
-  border-top: 1px solid var(--border);
-}
-.send-dest-title {
-  font-size: 11px;
-  color: var(--muted2);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  margin-bottom: 10px;
-}
-.send-dest-form {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.dest-input {
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 8px 10px;
-  color: var(--fg);
-  font-size: 12px;
-  outline: none;
-  transition: border-color 0.2s;
-}
-.dest-input:focus { border-color: #00d4ff; }
-.dest-coords-row { display: flex; gap: 8px; }
-.dest-coord { flex: 1; }
-.dest-send-btn {
-  margin-top: 4px;
-  padding: 8px 14px;
-  background: linear-gradient(135deg, #00d4ff22, #00e67622);
-  border: 1px solid #00d4ff44;
-  border-radius: 8px;
-  color: #00d4ff;
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-.dest-send-btn:hover:not(:disabled) { background: linear-gradient(135deg, #00d4ff33, #00e67633); }
-.dest-send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
 
 </style>
