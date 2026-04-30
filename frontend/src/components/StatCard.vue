@@ -6,7 +6,7 @@
       <span class="stat-unit" :style="{ color }">{{ unit }}</span>
     </div>
     <div v-if="sub" class="stat-sub">
-      <span v-if="icon" class="stat-icon" :class="{ pulse }">{{ icon }}</span>
+      <component v-if="icon" :is="icon" :size="12" class="stat-icon" :class="{ pulse }" />
       {{ sub }}
     </div>
   </div>
@@ -19,7 +19,7 @@ defineProps({
   unit: { type: String, default: '' },
   sub: { type: String, default: '' },
   color: { type: String, default: '#00d4ff' },
-  icon: { type: String, default: '' },
+  icon: { type: [Object, Function], default: null },
   pulse: Boolean,
 })
 </script>

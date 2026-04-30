@@ -61,17 +61,24 @@
     <!-- Charging badge -->
     <g v-if="charging">
       <circle cx="95" cy="107" r="17" fill="rgba(0,230,118,0.12)" stroke="rgba(0,230,118,0.55)" stroke-width="1.5" />
-      <text x="95" y="113" text-anchor="middle" fill="#00e676" font-size="16">⚡</text>
+      <g transform="translate(87,99) scale(0.67)">
+        <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" fill="none" stroke="#00e676" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      </g>
     </g>
     <!-- AC badge -->
     <g v-if="acOn">
       <circle cx="418" cy="92" r="15" fill="rgba(0,212,255,0.1)" stroke="rgba(0,212,255,0.45)" stroke-width="1.5" />
-      <text x="418" y="98" text-anchor="middle" fill="#00d4ff" font-size="14">❄</text>
+      <g transform="translate(410,84) scale(0.67)">
+        <path d="M2 12h20M12 2v20M20 16l-4-4 4-4M4 8l4 4-4 4M16 4l-4 4-4-4M8 20l4-4 4 4" fill="none" stroke="#00d4ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      </g>
     </g>
     <!-- Lock indicator -->
     <g v-if="locked" opacity="0.7">
       <circle cx="258" cy="155" r="9" fill="rgba(255,171,64,0.15)" stroke="rgba(255,171,64,0.5)" stroke-width="1" />
-      <text x="258" y="160" text-anchor="middle" fill="#ffab40" font-size="10">🔒</text>
+      <g transform="translate(252,149) scale(0.5)">
+        <rect x="3" y="11" width="18" height="11" rx="2" ry="2" fill="none" stroke="#ffab40" stroke-width="2"/>
+        <path d="M7 11V7a5 5 0 0 1 10 0v4" fill="none" stroke="#ffab40" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      </g>
     </g>
   </svg>
 </template>

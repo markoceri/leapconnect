@@ -1,7 +1,7 @@
 <template>
   <div class="section-card">
     <div v-if="title" class="section-header">
-      <span v-if="icon" class="section-icon">{{ icon }}</span>
+      <component v-if="icon" :is="icon" class="section-icon" :size="16" />
       <span class="section-title">{{ title }}</span>
     </div>
     <slot />
@@ -11,7 +11,7 @@
 <script setup>
 defineProps({
   title: { type: String, default: '' },
-  icon: { type: String, default: '' },
+  icon: { type: [Object, Function], default: null },
 })
 </script>
 
@@ -28,7 +28,7 @@ defineProps({
   gap: 8px;
   margin-bottom: 14px;
 }
-.section-icon { font-size: 15px; }
+.section-icon { color: var(--muted3); }
 .section-title {
   font-size: 13px;
   font-weight: 700;

@@ -28,9 +28,9 @@
           <span>CONNECTED</span>
         </div>
         <button class="nav-btn" @click="handleRefresh">
-          <span :class="{ spinning: store.refreshing }">↻</span> Refresh
+          <RefreshCw :size="14" :class="{ spinning: store.refreshing }" /> Refresh
         </button>
-        <button class="nav-btn" @click="handleLogout">⊣ Logout</button>
+        <button class="nav-btn" @click="handleLogout"><LogOut :size="14" /> Logout</button>
       </div>
     </div>
 
@@ -61,7 +61,7 @@
           :title="t.label"
           @click="store.activeTab = t.id"
         >
-          {{ t.icon }}
+          <component :is="t.icon" :size="18" />
           <div v-if="store.activeTab === t.id" class="sidebar-indicator" />
         </button>
       </div>
@@ -113,6 +113,7 @@ import DetailsTab from './views/DetailsTab.vue'
 import HistoryTab from './views/HistoryTab.vue'
 import SettingsTab from './views/SettingsTab.vue'
 import ToastContainer from './components/ToastContainer.vue'
+import { LayoutDashboard, List, TrendingUp, Settings, RefreshCw, LogOut } from 'lucide-vue-next'
 
 const store = useAppStore()
 const { toast } = useToast()
@@ -120,10 +121,10 @@ const { toast } = useToast()
 const errorMsg = ref('')
 
 const tabs = [
-  { id: 'dashboard', label: 'Dashboard', icon: '⊞' },
-  { id: 'details', label: 'Details', icon: '☰' },
-  { id: 'history', label: 'History', icon: '📈' },
-  { id: 'settings', label: 'Settings', icon: '⚙' },
+  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { id: 'details', label: 'Details', icon: List },
+  { id: 'history', label: 'History', icon: TrendingUp },
+  { id: 'settings', label: 'Settings', icon: Settings },
 ]
 
 const vehicle = computed(() => store.currentData?.vehicle || {})

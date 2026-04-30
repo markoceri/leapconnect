@@ -36,7 +36,8 @@
                 <div class="vs-card-vin">{{ v.vin }}</div>
               </div>
               <div class="vs-card-badge" :class="{ charging: getStatus(v.vin, 'battery', 'is_charging') }">
-                {{ getStatus(v.vin, 'battery', 'is_charging') ? '⚡ Ricarica' : v.car_type || 'EV' }}
+                <template v-if="getStatus(v.vin, 'battery', 'is_charging')"><Zap :size="12" /> Ricarica</template>
+                <template v-else>{{ v.car_type || 'EV' }}</template>
               </div>
             </div>
             <div class="vs-card-stats">
@@ -69,6 +70,7 @@
 <script setup>
 import { useAppStore } from '../stores/appStore'
 import DynamicCarImage from '../components/DynamicCarImage.vue'
+import { Zap } from 'lucide-vue-next'
 
 defineProps({
   vehicles: { type: Array, required: true },

@@ -3,7 +3,7 @@
     <div v-if="visible" class="pin-overlay" @click.self="cancel">
       <div class="pin-dialog">
         <div class="pin-header">
-          <span class="pin-icon">🔑</span>
+          <KeyRound :size="18" class="pin-icon" />
           <span class="pin-title">Vehicle PIN Required</span>
         </div>
         <p class="pin-desc">Enter the vehicle operation PIN to execute remote commands.</p>
@@ -35,6 +35,7 @@
 
 <script setup>
 import { ref, watch, nextTick } from 'vue'
+import { KeyRound } from 'lucide-vue-next'
 
 const props = defineProps({
   visible: { type: Boolean, default: false },

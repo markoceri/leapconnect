@@ -1,7 +1,7 @@
 <template>
   <div class="details-grid">
     <!-- Doors & Windows -->
-    <SectionCard title="Doors & Windows" icon="🚪">
+    <SectionCard title="Doors & Windows" :icon="DoorOpen">
       <InfoRow label="Vehicle Lock" :value="doors.is_locked === true ? 'Locked' : doors.is_locked === false ? 'Unlocked' : '—'" :color="doors.is_locked === true ? '#00e676' : '#ffab40'" :dot="doors.is_locked != null" />
       <InfoRow label="Driver Door" :value="doorText(doors.driver_door)" :color="doorColor(doors.driver_door)" />
       <InfoRow label="Passenger Door" :value="doorText(doors.passenger_door)" :color="doorColor(doors.passenger_door)" />
@@ -17,7 +17,7 @@
     </SectionCard>
 
     <!-- Climate -->
-    <SectionCard title="Climate" icon="🌡">
+    <SectionCard title="Climate" :icon="Thermometer">
       <InfoRow label="A/C" :value="climate.ac_switch ? 'On' : 'Off'" :color="climate.ac_switch ? '#00d4ff' : '#5c6478'" :dot="!!climate.ac_switch" />
       <InfoRow label="Set Temperature" :value="climate.ac_setting != null ? `${climate.ac_setting}°C` : '—'" color="#e2e6f0" />
       <InfoRow label="Outside Temperature" :value="climate.outdoor_temp != null ? `${climate.outdoor_temp}°C` : '—'" color="#8892a8" />
@@ -35,7 +35,7 @@
     </SectionCard>
 
     <!-- Tire Pressure -->
-    <SectionCard title="Tire Pressure" icon="⊙">
+    <SectionCard title="Tire Pressure" :icon="Circle">
       <div class="tire-grid">
         <div v-for="t in tireItems" :key="t.label" class="tire-item">
           <div class="tire-value" :style="{ color: tireColor(t.value) }">{{ t.value != null ? t.value.toFixed(1) : '—' }}</div>
@@ -46,7 +46,7 @@
     </SectionCard>
 
     <!-- Battery & Charging -->
-    <SectionCard title="Battery & Charging" icon="🔋">
+    <SectionCard title="Battery & Charging" :icon="Battery">
       <InfoRow label="State of Charge" :value="bat.soc != null ? `${bat.soc}%` : '—'" :color="bat.soc > 50 ? '#00e676' : bat.soc > 20 ? '#ffab40' : '#ff5252'" />
       <InfoRow label="Charging" :value="bat.is_charging === true ? 'Yes' : bat.is_charging === false ? 'No' : '—'" :color="bat.is_charging ? '#00e676' : '#5c6478'" :dot="!!bat.is_charging" />
       <InfoRow label="Time Remaining" :value="bat.is_charging ? `${bat.charge_remain_time ?? '—'} min` : '—'" color="#e2e6f0" />
@@ -62,7 +62,7 @@
     </SectionCard>
 
     <!-- Location -->
-    <SectionCard title="Location" icon="📍">
+    <SectionCard title="Location" :icon="MapPin">
       <template v-if="hasLocation">
         <div class="map-frame">
           <iframe :src="mapUrl" title="Posizione veicolo" loading="lazy" />
@@ -85,14 +85,15 @@
             <input v-model.number="destLng" class="dest-input dest-coord" type="number" step="any" placeholder="Longitude" />
           </div>
           <button class="dest-send-btn" :disabled="!canSendDest || sendingDest" @click="doSendDestination">
-            {{ sendingDest ? '⏳ Sending...' : '📍 Send to Vehicle' }}
+            <Loader v-if="sendingDest" :size="14" class="spinning" /> <span v-if="sendingDest">Sending...</span>
+            <Navigation v-if="!sendingDest" :size="14" /> <span v-if="!sendingDest">Send to Vehicle</span>
           </button>
         </div>
       </div>
     </SectionCard>
 
     <!-- Connectivity -->
-    <SectionCard title="Connectivity" icon="📶">
+    <SectionCard title="Connectivity" :icon="Wifi">
       <InfoRow label="Bluetooth" :value="connectivity.bluetooth ? 'On' : connectivity.bluetooth === false ? 'Off' : '—'" :color="connectivity.bluetooth ? '#00d4ff' : '#5c6478'" :dot="!!connectivity.bluetooth" />
       <InfoRow label="Wi-Fi Hotspot" :value="connectivity.hotspot ? 'On' : connectivity.hotspot === false ? 'Off' : '—'" :color="connectivity.hotspot ? '#00e676' : '#5c6478'" :dot="!!connectivity.hotspot" />
       <InfoRow label="Ignition ON1" :value="ignition.on1 != null ? (ignition.on1 ? 'Yes' : 'No') : '—'" :color="ignition.on1 ? '#00e676' : '#5c6478'" />
@@ -102,7 +103,7 @@
     </SectionCard>
 
     <!-- Vehicle Info -->
-    <SectionCard title="Vehicle Info" icon="ℹ">
+    <SectionCard title="Vehicle Info" :icon="Info">
       <InfoRow label="VIN" color="#e2e6f0">
         <span style="font-family:var(--mono);font-size:11px">{{ vehicle.vin || '—' }}</span>
       </InfoRow>
@@ -113,7 +114,7 @@
     </SectionCard>
 
     <!-- Mileage & Energy -->
-    <SectionCard title="Mileage & Energy" icon="⚡">
+    <SectionCard title="Mileage & Energy" :icon="Zap">
       <InfoRow label="Total Mileage" :value="driving.total_mileage != null ? `${driving.total_mileage.toLocaleString()} km` : '—'" color="#ffab40" />
       <InfoRow label="Total Mileage (mi)" :value="driving.total_mileage != null ? `${(driving.total_mileage * 0.621371).toFixed(1)} mi` : '—'" color="#8892a8" />
       <InfoRow label="Energy Available" :value="bat.dump_energy != null ? `${bat.dump_energy} kWh` : '—'" color="#00d4ff" />
@@ -129,6 +130,10 @@ import { useToast } from '../composables/useToast'
 import { gearLabel, formatTime, climateMode } from '../utils/formatters'
 import SectionCard from '../components/SectionCard.vue'
 import InfoRow from '../components/InfoRow.vue'
+import {
+  DoorOpen, Thermometer, Circle, Battery, MapPin,
+  Wifi, Info, Zap, Loader, Navigation
+} from 'lucide-vue-next'
 
 const props = defineProps({
   vehicle: { type: Object, required: true },

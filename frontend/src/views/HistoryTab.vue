@@ -28,26 +28,26 @@
     <!-- Charts 2-col grid -->
     <div class="charts-grid">
       <div class="chart-card">
-        <div class="chart-header"><span class="chart-icon">🔋</span> Livello batteria (%)</div>
+        <div class="chart-header"><Battery :size="16" class="chart-icon" /> Livello batteria (%)</div>
         <div class="chart-area"><canvas ref="batteryCanvas" /></div>
       </div>
       <div class="chart-card">
-        <div class="chart-header"><span class="chart-icon">🗺</span> Autonomia stimata (km)</div>
+        <div class="chart-header"><Map :size="16" class="chart-icon" /> Autonomia stimata (km)</div>
         <div class="chart-area"><canvas ref="rangeCanvas" /></div>
       </div>
       <div class="chart-card">
-        <div class="chart-header"><span class="chart-icon">⚡</span> Energia consumata per giorno</div>
+        <div class="chart-header"><Zap :size="16" class="chart-icon" /> Energia consumata per giorno</div>
         <div class="chart-area"><canvas ref="energyCanvas" /></div>
       </div>
       <div class="chart-card">
-        <div class="chart-header"><span class="chart-icon">🛣</span> km percorsi per giorno</div>
+        <div class="chart-header"><Route :size="16" class="chart-icon" /> km percorsi per giorno</div>
         <div class="chart-area"><canvas ref="kmCanvas" /></div>
       </div>
     </div>
 
     <!-- Full-width temp chart -->
     <div class="chart-card wide">
-      <div class="chart-header"><span class="chart-icon">🌡</span> Temperatura esterna vs Consumo energetico</div>
+      <div class="chart-header"><Thermometer :size="16" class="chart-icon" /> Temperatura esterna vs Consumo energetico</div>
       <div class="chart-area tall"><canvas ref="tempCanvas" /></div>
     </div>
 
@@ -64,6 +64,7 @@
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { Chart, registerables } from 'chart.js'
 import { api } from '../composables/useApi'
+import { Battery, Map, Zap, Route, Thermometer } from 'lucide-vue-next'
 
 Chart.register(...registerables)
 

@@ -1,7 +1,7 @@
 <template>
   <div class="settings-tab">
     <!-- Account -->
-    <SectionCard title="Account" icon="👤">
+    <SectionCard title="Account" :icon="User">
       <div class="account-row">
         <div class="account-avatar">{{ initials }}</div>
         <div>
@@ -13,7 +13,7 @@
     </SectionCard>
 
     <!-- Vehicle -->
-    <SectionCard title="Veicolo" icon="🚗">
+    <SectionCard title="Veicolo" :icon="Car">
       <InfoRow label="Modello" :value="`${vehicle.year || ''} Leapmotor ${vehicle.car_type || ''}`" color="#e2e6f0" />
       <InfoRow label="VIN" color="#e2e6f0">
         <span style="font-family:var(--mono);font-size:11px">{{ vehicle.vin || '—' }}</span>
@@ -22,7 +22,7 @@
     </SectionCard>
 
     <!-- Notifications -->
-    <SectionCard title="Notifiche" icon="🔔">
+    <SectionCard title="Notifiche" :icon="Bell">
       <div v-for="n in notifications" :key="n.key" class="notif-row">
         <span class="notif-label">{{ n.label }}</span>
         <ToggleSwitch v-model="n.enabled" />
@@ -30,7 +30,7 @@
     </SectionCard>
 
     <!-- Preferences -->
-    <SectionCard title="Preferenze" icon="🎛">
+    <SectionCard title="Preferenze" :icon="SlidersHorizontal">
       <InfoRow label="Unità distanza" value="km" color="#e2e6f0" />
       <InfoRow label="Unità pressione" value="bar" color="#e2e6f0" />
       <InfoRow label="Tema" value="Dark" color="#7c6aff" />
@@ -38,7 +38,7 @@
     </SectionCard>
 
     <!-- Data Collection Scheduler -->
-    <SectionCard title="Raccolta dati" icon="📊">
+    <SectionCard title="Raccolta dati" :icon="BarChart3">
       <div class="notif-row">
         <span class="notif-label">Raccolta automatica</span>
         <ToggleSwitch :modelValue="scheduler.enabled" @update:modelValue="toggleScheduler" />
@@ -69,7 +69,7 @@
     </SectionCard>
 
     <!-- Raw Data toggle -->
-    <SectionCard title="Dati grezzi" icon="{ }">
+    <SectionCard title="Dati grezzi" :icon="Code">
       <button class="raw-toggle" @click="showRaw = !showRaw">
         {{ showRaw ? 'Nascondi' : 'Mostra' }} JSON completo
       </button>
@@ -86,6 +86,7 @@ import SectionCard from '../components/SectionCard.vue'
 import InfoRow from '../components/InfoRow.vue'
 import ToggleSwitch from '../components/ToggleSwitch.vue'
 import { api } from '../composables/useApi'
+import { User, Car, Bell, SlidersHorizontal, BarChart3, Code } from 'lucide-vue-next'
 
 const props = defineProps({
   vehicle: { type: Object, required: true },

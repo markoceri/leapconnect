@@ -6,10 +6,10 @@
       <div class="hero-car">
         <DynamicCarImage :vin="vehicle.vin" :status="s" :refresh-key="carImageKey" />
         <div class="hero-badges">
-          <span v-if="s.battery?.is_charging" class="badge badge-charging">⚡</span>
-          <span v-if="s.climate?.ac_switch" class="badge badge-ac">❄</span>
-          <span v-if="s.doors?.is_locked" class="badge badge-lock">🔒</span>
-          <span v-if="s.doors?.trunk" class="badge badge-trunk">📦</span>
+          <span v-if="s.battery?.is_charging" class="badge badge-charging"><Zap :size="14" /></span>
+          <span v-if="s.climate?.ac_switch" class="badge badge-ac"><Snowflake :size="14" /></span>
+          <span v-if="s.doors?.is_locked" class="badge badge-lock"><Lock :size="14" /></span>
+          <span v-if="s.doors?.trunk" class="badge badge-trunk"><Package :size="14" /></span>
         </div>
       </div>
       <div class="hero-info">
@@ -23,7 +23,7 @@
       <StatCard
         label="Battery" :value="s.battery?.soc ?? '—'" unit="%" :color="battColor"
         :sub="s.battery?.is_charging ? 'Charging' : 'Not charging'"
-        :icon="s.battery?.is_charging ? '⚡' : ''" :pulse="!!s.battery?.is_charging"
+        :icon="s.battery?.is_charging ? Zap : null" :pulse="!!s.battery?.is_charging"
       />
       <StatCard
         label="Range" :value="s.battery?.expected_mileage ?? '—'" unit="km" color="#00d4ff"
@@ -54,7 +54,7 @@
       <div class="lock-widget" :style="{ borderColor: s.doors?.is_locked ? '#ffab4044' : '#00e67644' }">
         <div class="lock-label">Lock Status</div>
         <div class="lock-main">
-          <span class="lock-icon">{{ s.doors?.is_locked ? '🔒' : '🔓' }}</span>
+          <span class="lock-icon"><component :is="s.doors?.is_locked ? Lock : Unlock" :size="18" /></span>
           <span class="lock-text" :style="{ color: s.doors?.is_locked ? '#ffab40' : '#00e676' }">
             {{ s.doors?.is_locked === true ? 'Locked' : s.doors?.is_locked === false ? 'Unlocked' : '—' }}
           </span>
@@ -88,7 +88,7 @@
     <!-- Remote Controls -->
     <div class="controls-card">
       <div class="controls-header">
-        <span class="controls-icon">🛡</span>
+        <Shield :size="16" class="controls-icon" />
         <span class="controls-title">Remote Controls</span>
       </div>
       <div class="controls-grid">
@@ -101,7 +101,8 @@
           @click="exec(c.action)"
         >
           <span class="ctrl-icon" :class="{ spinning: loadingAction === c.action }">
-            {{ loadingAction === c.action ? '⏳' : c.icon }}
+            <Loader v-if="loadingAction === c.action" :size="16" />
+            <component v-else :is="c.icon" :size="16" />
           </span>
           <span class="ctrl-label">{{ c.label }}</span>
         </button>
@@ -142,6 +143,11 @@ import { formatTime } from '../utils/formatters'
 import StatCard from '../components/StatCard.vue'
 import PinDialog from '../components/PinDialog.vue'
 import DynamicCarImage from '../components/DynamicCarImage.vue'
+import {
+  Zap, Snowflake, Lock, Unlock, Package, Shield, Loader,
+  Radio, ChevronUp, ChevronDown, Sun, MoonStar, Wind, Flame,
+  ThermometerSnowflake, BatteryCharging
+} from 'lucide-vue-next'
 
 const props = defineProps({
   vehicle: { type: Object, required: true },
@@ -182,20 +188,20 @@ const pinDialogRef = ref(null)
 const pendingLimit = ref(props.status?.battery?.charge_soc_setting ?? 80)
 
 const controls = [
-  { action: 'lock', icon: '🔒', label: 'Lock', color: '#ffab40' },
-  { action: 'unlock', icon: '🔓', label: 'Unlock', color: '#00e676' },
-  { action: 'trunk/open', icon: '📦', label: 'Open Trunk', color: '#00d4ff' },
-  { action: 'trunk/close', icon: '📦', label: 'Close Trunk', color: '#4a5468' },
-  { action: 'find', icon: '📡', label: 'Find Car', color: '#00d4ff' },
-  { action: 'windows/open', icon: '⬆', label: 'Open Windows', color: '#7c6aff' },
-  { action: 'windows/close', icon: '⬇', label: 'Close Windows', color: '#7c6aff' },
-  { action: 'sunshade/open', icon: '☀', label: 'Open Sunshade', color: '#ffab40' },
-  { action: 'sunshade/close', icon: '🌑', label: 'Close Sunshade', color: '#4a5468' },
-  { action: 'ac', icon: '❄', label: 'A/C Toggle', color: '#00d4ff' },
-  { action: 'quick-cool', icon: '💨', label: 'Quick Cool', color: '#00d4ff' },
-  { action: 'quick-heat', icon: '🔥', label: 'Quick Heat', color: '#ff7043' },
-  { action: 'defrost', icon: '❆', label: 'Defrost', color: '#7c6aff' },
-  { action: 'battery-preheat', icon: '⚡', label: 'Battery Preheat', color: '#00e676' },
+  { action: 'lock', icon: Lock, label: 'Lock', color: '#ffab40' },
+  { action: 'unlock', icon: Unlock, label: 'Unlock', color: '#00e676' },
+  { action: 'trunk/open', icon: Package, label: 'Open Trunk', color: '#00d4ff' },
+  { action: 'trunk/close', icon: Package, label: 'Close Trunk', color: '#4a5468' },
+  { action: 'find', icon: Radio, label: 'Find Car', color: '#00d4ff' },
+  { action: 'windows/open', icon: ChevronUp, label: 'Open Windows', color: '#7c6aff' },
+  { action: 'windows/close', icon: ChevronDown, label: 'Close Windows', color: '#7c6aff' },
+  { action: 'sunshade/open', icon: Sun, label: 'Open Sunshade', color: '#ffab40' },
+  { action: 'sunshade/close', icon: MoonStar, label: 'Close Sunshade', color: '#4a5468' },
+  { action: 'ac', icon: Snowflake, label: 'A/C Toggle', color: '#00d4ff' },
+  { action: 'quick-cool', icon: Wind, label: 'Quick Cool', color: '#00d4ff' },
+  { action: 'quick-heat', icon: Flame, label: 'Quick Heat', color: '#ff7043' },
+  { action: 'defrost', icon: ThermometerSnowflake, label: 'Defrost', color: '#7c6aff' },
+  { action: 'battery-preheat', icon: BatteryCharging, label: 'Battery Preheat', color: '#00e676' },
 ]
 
 function isActive(action) {

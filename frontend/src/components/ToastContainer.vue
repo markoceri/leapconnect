@@ -6,7 +6,7 @@
       class="toast"
       :class="[t.type, { removing: t.removing }]"
     >
-      <span class="toast-icon">{{ icon(t.type) }}</span>
+      <component :is="iconComp(t.type)" :size="15" class="toast-icon" />
       {{ t.message }}
     </div>
   </div>
@@ -14,13 +14,14 @@
 
 <script setup>
 import { useToast } from '../composables/useToast'
+import { Check, X, Info } from 'lucide-vue-next'
 
 const { toasts } = useToast()
 
-function icon(type) {
-  if (type === 'success') return '✓'
-  if (type === 'error') return '✕'
-  return 'ℹ'
+function iconComp(type) {
+  if (type === 'success') return Check
+  if (type === 'error') return X
+  return Info
 }
 </script>
 
