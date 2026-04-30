@@ -57,6 +57,19 @@ class AppSettingRow(Base):
     value = Column(String(256), nullable=True)
 
 
+class AccountRow(Base):
+    """Stored Leapmotor account credentials."""
+    __tablename__ = "accounts"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    username = Column(String(256), nullable=False, unique=True)
+    password = Column(String(256), nullable=False)
+    cert_path = Column(String(512), nullable=False)
+    key_path = Column(String(512), nullable=False)
+    p12_password = Column(String(256), nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
 # ---------------------------------------------------------------------------
 # Adapter
 # ---------------------------------------------------------------------------
@@ -224,5 +237,78 @@ class SQLAlchemyVehicleHistoryRepository(VehicleHistoryRepository):
                     existing.value = value
                 else:
                     session.add(AppSettingRow(key=key, value=value))
+            await session.commit()
+
+    # -- account credentials -------------------------------------------------
+
+    async def save_account(
+        self,
+        username: str,
+        password: str,
+        cert_path: str,
+        key_path: str,
+        p12_password: str | None = None,
+    ) -> None:
+        """Save or update account credentials."""
+        async with self._session_factory() as session:
+            stmt = select(AccountRow).where(AccountRow.username == username)
+            result = await session.execute(stmt)
+            existing = result.scalar_one_or_none()
+            if existing:
+                existing.password = password
+                existing.cert_path = cert_path
+                existing.key_path = key_path
+                existing.p12_password = p12_password
+            else:
+                session.add(AccountRow(
+                    username=username,
+                    password=password,
+                    cert_path=cert_path,
+                    key_path=key_path,
+                    p12_password=p12_password,
+                    created_at=datetime.utcnow(),
+                ))
+            await session.commit()
+
+    async def get_account(self) -> dict | None:
+        """Return the first saved account or None."""
+        async with self._session_factory() as session:
+            stmt = select(AccountRow).order_by(AccountRow.id.asc()).limit(1)
+            result = await session.execute(stmt)
+            row = result.scalar_one_or_none()
+            if not row:
+                return None
+            return {
+                "username": row.username,
+                "password": row.password,
+                "cert_path": row.cert_path,
+                "key_path": row.key_path,
+                "p12_password": row.p12_password,
+            }
+
+    async def delete_account(self, username: str) -> None:
+        """Remove an account."""
+        async with self._session_factory() as session:
+            stmt = select(AccountRow).where(AccountRow.username == username)
+            result = await session.execute(stmt)
+            row = result.scalar_one_or_none()
+            if row:
+                await session.delete(row)
+                await session.commit()
+
+    async def get_setting(self, key: str) -> str | None:
+        """Get a single app setting value."""
+        async with self._session_factory() as session:
+            row = await session.get(AppSettingRow, key)
+            return row.value if row else None
+
+    async def save_setting(self, key: str, value: str) -> None:
+        """Save a single app setting (upsert)."""
+        async with self._session_factory() as session:
+            existing = await session.get(AppSettingRow, key)
+            if existing:
+                existing.value = value
+            else:
+                session.add(AppSettingRow(key=key, value=value))
             await session.commit()
 

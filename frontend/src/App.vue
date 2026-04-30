@@ -1,6 +1,14 @@
 <template>
-  <!-- Login -->
-  <LoginView v-if="store.screen === 'login'" />
+  <!-- Loading -->
+  <div v-if="store.screen === 'loading'" class="loading-screen">
+    <div class="spinner" />
+  </div>
+
+  <!-- Certificate Setup -->
+  <CertificateSetupView v-else-if="store.screen === 'setup-certs'" />
+
+  <!-- Account Setup -->
+  <AccountSetupView v-else-if="store.screen === 'setup-account'" />
 
   <!-- Vehicle Selector -->
   <VehicleSelectorView
@@ -24,12 +32,16 @@
         <span class="navbar-title sm:hidden">LeapConnect</span>
       </div>
       <div class="navbar-right">
-        <div class="connection-badge hidden sm:flex">
-          <span class="connection-dot" />
-          <span>CONNECTED</span>
+        <div class="connection-badge hidden sm:flex" :class="{ offline: !store.connected }">
+          <span class="connection-dot" :class="{ offline: !store.connected }" />
+          <span>{{ store.connected ? 'CONNECTED' : 'OFFLINE' }}</span>
         </div>
-        <div class="connection-dot sm:hidden" style="width:8px;height:8px;border-radius:50%;background:#00e676;box-shadow:0 0 6px #00e676" />
-        <button class="nav-btn" @click="handleRefresh">
+        <div class="connection-dot sm:hidden" :class="{ offline: !store.connected }" style="width:8px;height:8px;border-radius:50%" />
+        <button v-if="!store.connected" class="nav-btn" @click="handleReconnect">
+          <RefreshCw :size="14" />
+          <span class="hidden sm:inline">Reconnect</span>
+        </button>
+        <button v-else class="nav-btn" @click="handleRefresh">
           <RefreshCw :size="14" :class="{ spinning: store.refreshing }" />
           <span class="hidden sm:inline">Refresh</span>
         </button>
@@ -53,7 +65,7 @@
           <div class="vtab-name">{{ v.nickname || v.car_type || 'Vehicle' }}</div>
           <div class="vtab-id">{{ v.vin.slice(-8) }}</div>
         </button>
-        <button v-if="store.vehicles.length > 1" class="vtab vtab-add" @click="store.goToVehicleSelector()">+ Aggiungi</button>
+        <button v-if="store.vehicles.length > 1" class="vtab vtab-add" @click="store.goToVehicleSelector()">+ Add</button>
       </div>
     </div>
 
@@ -79,29 +91,37 @@
         <div v-if="store.loading" class="loading-center">
           <div class="spinner" />
         </div>
-        <div v-else-if="errorMsg" class="loading-center error-text">{{ errorMsg }}</div>
-        <template v-else-if="store.currentData">
-          <DashboardTab
-            v-if="store.activeTab === 'dashboard'"
+        <template v-else>
+          <SettingsTab
+            v-if="store.activeTab === 'settings'"
             :vehicle="vehicle"
-            :status="status"
-          />
-          <DetailsTab
-            v-else-if="store.activeTab === 'details'"
-            :vehicle="vehicle"
-            :status="status"
-            :mileage="mileageData"
+            :raw-data="store.currentData"
           />
           <HistoryTab
             v-else-if="store.activeTab === 'history'"
             :status="status"
             :vin="store.selectedVin"
           />
-          <SettingsTab
-            v-else-if="store.activeTab === 'settings'"
-            :vehicle="vehicle"
-            :raw-data="store.currentData"
-          />
+          <template v-else-if="store.currentData">
+            <DashboardTab
+              v-if="store.activeTab === 'dashboard'"
+              :vehicle="vehicle"
+              :status="status"
+            />
+            <DetailsTab
+              v-else-if="store.activeTab === 'details'"
+              :vehicle="vehicle"
+              :status="status"
+              :mileage="mileageData"
+            />
+          </template>
+          <div v-else-if="errorMsg" class="loading-center error-text">{{ errorMsg }}</div>
+          <div v-else-if="!store.connected" class="loading-center">
+            <div class="offline-message">
+              <p>Offline — live vehicle data is not available.</p>
+              <p class="offline-hint">Use the History tab to view past data, or check Settings to update credentials.</p>
+            </div>
+          </div>
         </template>
       </div>
     </div>
@@ -128,7 +148,8 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { useAppStore } from './stores/appStore'
 import { useToast } from './composables/useToast'
-import LoginView from './views/LoginView.vue'
+import CertificateSetupView from './views/CertificateSetupView.vue'
+import AccountSetupView from './views/AccountSetupView.vue'
 import VehicleSelectorView from './views/VehicleSelectorView.vue'
 import DashboardTab from './views/DashboardTab.vue'
 import DetailsTab from './views/DetailsTab.vue'
@@ -178,9 +199,22 @@ async function handleRefresh() {
   errorMsg.value = ''
   try {
     await store.refreshCurrent()
-    toast('Dati aggiornati', 'success')
+    toast('Data refreshed', 'success')
   } catch (err) {
     toast(err.message, 'error')
+  }
+}
+
+async function handleReconnect() {
+  try {
+    const result = await store.reconnect()
+    if (result) {
+      toast('Connected successfully', 'success')
+    } else {
+      toast('Connection failed', 'error')
+    }
+  } catch (err) {
+    toast(err.message || 'Connection failed', 'error')
   }
 }
 
@@ -192,11 +226,22 @@ onMounted(async () => {
   const restored = await store.checkStatus()
   if (restored) {
     toast('Session restored', 'success')
+  } else if (store.screen === 'app' && !store.connected) {
+    toast('Offline mode — live data not available', 'warning')
   }
 })
 </script>
 
 <style scoped>
+.loading-screen {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+}
+
 .app-shell {
   min-height: 100vh;
   min-height: 100dvh;
@@ -243,11 +288,17 @@ onMounted(async () => {
   font-size: 11px; font-weight: 700; color: #00e676;
   letter-spacing: 0.06em;
 }
+.connection-badge.offline {
+  background: #ff525214; border-color: #ff525244; color: #ff5252;
+}
 .connection-dot {
   width: 7px; height: 7px; border-radius: 50%;
   background: #00e676; display: inline-block;
   box-shadow: 0 0 6px #00e676;
   animation: lm-pulse 2s infinite;
+}
+.connection-dot.offline {
+  background: #ff5252; box-shadow: 0 0 6px #ff5252;
 }
 .nav-btn {
   background: none; border: 1px solid #1c2240;
@@ -352,6 +403,17 @@ onMounted(async () => {
   height: 60vh;
 }
 .error-text { color: var(--red); font-size: 14px; }
+.offline-message {
+  text-align: center;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.6;
+}
+.offline-hint {
+  font-size: 12px;
+  color: var(--muted2);
+  margin-top: 0.5rem;
+}
 
 /* Bottom tab bar (mobile only, hidden via Tailwind on desktop) */
 .bottom-bar {

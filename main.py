@@ -18,8 +18,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+import shutil
+
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 
 # Load .env from the webapp directory
 load_dotenv(Path(__file__).resolve().parent / ".env")
@@ -37,6 +39,10 @@ from persistence.sqlite_adapter import SQLAlchemyVehicleHistoryRepository  # noq
 
 logging.basicConfig(level=logging.INFO)
 _LOGGER = logging.getLogger(__name__)
+
+# Data directory — mounted from host for persistence across container restarts
+DATA_DIR = Path(os.environ.get("DATA_DIR", str(Path(__file__).parent / "data")))
+CERTS_DIR = DATA_DIR / "certs"
 
 # ---------------------------------------------------------------------------
 # Global state
@@ -68,6 +74,50 @@ def _find_vehicle(vin: str) -> Vehicle:
 # App lifecycle
 # ---------------------------------------------------------------------------
 
+async def _auto_connect() -> None:
+    """Try to connect using saved credentials at startup."""
+    global _sync_client, _client, _vehicles, _connected
+
+    if not _history_repo:
+        return
+
+    account = await _history_repo.get_account()
+    if not account:
+        _LOGGER.info("Auto-connect: no saved account, skipping")
+        return
+
+    cert_path = account["cert_path"]
+    key_path = account["key_path"]
+    if not Path(cert_path).is_file() or not Path(key_path).is_file():
+        _LOGGER.warning("Auto-connect: certificate files missing, skipping")
+        return
+
+    try:
+        _sync_client = LeapmotorApiClient(
+            username=account["username"],
+            password=account["password"],
+            app_cert_path=cert_path,
+            app_key_path=key_path,
+            account_p12_password=account.get("p12_password"),
+        )
+        _client = AsyncLeapmotorApiClient(_sync_client)
+        await _client.login()
+        _vehicles = await _client.get_vehicle_list()
+        _connected = True
+        _LOGGER.info("Auto-connect: success, %d vehicle(s)", len(_vehicles))
+
+        # Start scheduler with the connected client
+        if _scheduler:
+            _scheduler.set_client(_client, _vehicles)
+            _scheduler.start()
+    except Exception as exc:
+        _LOGGER.warning("Auto-connect: failed (%s), app will run offline", exc)
+        _connected = False
+        _sync_client = None
+        _client = None
+        _vehicles = []
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global _history_repo, _scheduler
@@ -82,6 +132,9 @@ async def lifespan(app: FastAPI):
     saved = await _history_repo.load_scheduler_settings()
     _scheduler.update_settings(enabled=saved.enabled, interval_minutes=saved.interval_minutes)
     _LOGGER.info("Scheduler settings loaded: enabled=%s, interval=%d min", saved.enabled, saved.interval_minutes)
+
+    # Auto-connect using saved credentials
+    await _auto_connect()
 
     yield
 
@@ -114,6 +167,212 @@ FRONTEND_DIST = Path(__file__).parent / "frontend" / "dist"
 
 if FRONTEND_DIST.is_dir():
     app.mount("/assets", StaticFiles(directory=str(FRONTEND_DIST / "assets")), name="assets")
+
+
+# ---------------------------------------------------------------------------
+# Routes — Setup (certificates & credentials)
+# ---------------------------------------------------------------------------
+
+@app.get("/api/setup/status")
+async def setup_status():
+    """Check if the app is configured (certificates + credentials saved)."""
+    if not _history_repo:
+        raise HTTPException(status_code=503, detail="DB not ready")
+
+    account = await _history_repo.get_account()
+    has_account = account is not None
+    has_certs = False
+    certs_valid = False
+
+    if account:
+        has_certs = bool(account.get("cert_path") and account.get("key_path"))
+        certs_valid = (
+            has_certs
+            and Path(account["cert_path"]).is_file()
+            and Path(account["key_path"]).is_file()
+        )
+
+    return {
+        "has_account": has_account,
+        "has_certificates": has_certs,
+        "certificates_valid": certs_valid,
+        "connected": _connected,
+        "vehicles": [_vehicle_to_dict(v) for v in _vehicles],
+    }
+
+
+@app.post("/api/setup/certificates")
+async def upload_certificates(
+    cert_file: UploadFile = File(...),
+    key_file: UploadFile = File(...),
+):
+    """Upload certificate files (cert + key). Saved to DATA_DIR/certs/."""
+    if not _history_repo:
+        raise HTTPException(status_code=503, detail="DB not ready")
+
+    CERTS_DIR.mkdir(parents=True, exist_ok=True)
+
+    cert_dest = CERTS_DIR / "app.crt"
+    key_dest = CERTS_DIR / "app.key"
+
+    try:
+        with open(cert_dest, "wb") as f:
+            shutil.copyfileobj(cert_file.file, f)
+        with open(key_dest, "wb") as f:
+            shutil.copyfileobj(key_file.file, f)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to save files: {exc}")
+
+    # Restrict permissions on the key file
+    key_dest.chmod(0o600)
+
+    await _history_repo.save_setting("cert_path", str(cert_dest))
+    await _history_repo.save_setting("key_path", str(key_dest))
+
+    return {"status": "ok", "cert_path": str(cert_dest), "key_path": str(key_dest)}
+
+
+@app.get("/api/setup/certificates")
+async def get_certificates():
+    """Return current certificate status."""
+    if not _history_repo:
+        raise HTTPException(status_code=503, detail="DB not ready")
+
+    account = await _history_repo.get_account()
+    if account:
+        cert_path = account.get("cert_path", "")
+        key_path = account.get("key_path", "")
+    else:
+        cert_path = await _history_repo.get_setting("cert_path") or ""
+        key_path = await _history_repo.get_setting("key_path") or ""
+
+    return {
+        "cert_exists": bool(cert_path) and Path(cert_path).is_file(),
+        "key_exists": bool(key_path) and Path(key_path).is_file(),
+    }
+
+
+@app.post("/api/setup/account")
+async def save_account(request: Request):
+    """Save Leapmotor account credentials and attempt connection."""
+    global _sync_client, _client, _vehicles, _connected
+
+    if not _history_repo:
+        raise HTTPException(status_code=503, detail="DB not ready")
+
+    body = await request.json()
+    username = body.get("username", "").strip()
+    password = body.get("password", "").strip()
+    p12_password = body.get("p12_password", "").strip() or None
+
+    if not all([username, password]):
+        raise HTTPException(status_code=422, detail="username and password are required")
+
+    # Resolve cert paths from previously uploaded files
+    cert_path = await _history_repo.get_setting("cert_path") or ""
+    key_path = await _history_repo.get_setting("key_path") or ""
+
+    if not cert_path or not key_path:
+        raise HTTPException(status_code=422, detail="Certificates not uploaded yet")
+    if not Path(cert_path).is_file():
+        raise HTTPException(status_code=400, detail=f"Certificate file not found: {cert_path}")
+    if not Path(key_path).is_file():
+        raise HTTPException(status_code=400, detail=f"Key file not found: {key_path}")
+
+    # Save credentials to DB
+    await _history_repo.save_account(
+        username=username,
+        password=password,
+        cert_path=cert_path,
+        key_path=key_path,
+        p12_password=p12_password,
+    )
+
+    # Attempt connection
+    if _sync_client:
+        _sync_client.close()
+
+    try:
+        _sync_client = LeapmotorApiClient(
+            username=username,
+            password=password,
+            app_cert_path=cert_path,
+            app_key_path=key_path,
+            account_p12_password=p12_password,
+        )
+        _client = AsyncLeapmotorApiClient(_sync_client)
+        await _client.login()
+        _vehicles = await _client.get_vehicle_list()
+        _connected = True
+
+        if _scheduler:
+            _scheduler.set_client(_client, _vehicles)
+            _scheduler.start()
+
+        return {
+            "status": "ok",
+            "connected": True,
+            "vehicles": [_vehicle_to_dict(v) for v in _vehicles],
+        }
+    except Exception as exc:
+        # Credentials saved but connection failed — that's ok, app works offline
+        _connected = False
+        _sync_client = None
+        _client = None
+        _vehicles = []
+        if _scheduler:
+            _scheduler.set_client(None, [])
+        return {
+            "status": "ok",
+            "connected": False,
+            "connection_error": str(exc),
+            "vehicles": [],
+        }
+
+
+@app.post("/api/reconnect")
+async def reconnect():
+    """Try to reconnect using saved credentials."""
+    global _sync_client, _client, _vehicles, _connected
+
+    if not _history_repo:
+        raise HTTPException(status_code=503, detail="DB not ready")
+
+    account = await _history_repo.get_account()
+    if not account:
+        raise HTTPException(status_code=400, detail="No account configured")
+
+    if _sync_client:
+        _sync_client.close()
+
+    try:
+        _sync_client = LeapmotorApiClient(
+            username=account["username"],
+            password=account["password"],
+            app_cert_path=account["cert_path"],
+            app_key_path=account["key_path"],
+            account_p12_password=account.get("p12_password"),
+        )
+        _client = AsyncLeapmotorApiClient(_sync_client)
+        await _client.login()
+        _vehicles = await _client.get_vehicle_list()
+        _connected = True
+
+        if _scheduler:
+            _scheduler.set_client(_client, _vehicles)
+            _scheduler.start()
+
+        return {
+            "status": "ok",
+            "connected": True,
+            "vehicles": [_vehicle_to_dict(v) for v in _vehicles],
+        }
+    except Exception as exc:
+        _connected = False
+        _sync_client = None
+        _client = None
+        _vehicles = []
+        raise HTTPException(status_code=502, detail=f"Connection failed: {exc}")
 
 
 # ---------------------------------------------------------------------------
@@ -214,8 +473,13 @@ async def logout():
 
 @app.get("/api/status")
 async def connection_status():
+    has_account = False
+    if _history_repo:
+        account = await _history_repo.get_account()
+        has_account = account is not None
     return {
         "connected": _connected,
+        "has_account": has_account,
         "user_id": _sync_client.user_id if _sync_client else None,
         "vehicles": [_vehicle_to_dict(v) for v in _vehicles],
         "has_pin": bool(_sync_client and _sync_client.operation_password),
@@ -466,7 +730,6 @@ async def get_vehicle_history(vin: str, days: int = 30):
     """Return raw snapshots for the given VIN."""
     if not _history_repo:
         raise HTTPException(status_code=503, detail="History not available")
-    _find_vehicle(vin)  # validate VIN
     snapshots = await _history_repo.get_history(vin, days=days)
     return {
         "vin": vin,
@@ -495,7 +758,6 @@ async def get_vehicle_daily_summary(vin: str, days: int = 30):
     """Return aggregated daily summaries for charts."""
     if not _history_repo:
         raise HTTPException(status_code=503, detail="History not available")
-    _find_vehicle(vin)  # validate VIN
     summaries = await _history_repo.get_daily_summary(vin, days=days)
     return {
         "vin": vin,

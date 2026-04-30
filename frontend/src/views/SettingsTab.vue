@@ -6,15 +6,49 @@
         <div class="account-avatar">{{ initials }}</div>
         <div>
           <div class="account-name">{{ displayName }}</div>
-          <div class="account-email">{{ email }}</div>
+          <div class="account-email">{{ accountEmail }}</div>
         </div>
       </div>
-      <InfoRow label="Versione app" value="v2.4.1" color="#5c6478" />
+      <button class="action-btn" @click="showAccountEdit = !showAccountEdit">
+        {{ showAccountEdit ? 'Cancel' : 'Edit Credentials' }}
+      </button>
+      <div v-if="showAccountEdit" class="edit-panel">
+        <div class="form-group">
+          <label>Email</label>
+          <input v-model="accountForm.username" type="email" placeholder="your@email.com" />
+        </div>
+        <div class="form-group">
+          <label>Password</label>
+          <input v-model="accountForm.password" type="password" placeholder="New password" />
+        </div>
+        <div class="form-divider">Certificates</div>
+        <div class="form-group">
+          <label>App Certificate (.crt / .pem)</label>
+          <div class="file-upload" :class="{ filled: certFile }" @click="$refs.certInput.click()">
+            <span>{{ certFile ? certFile.name : 'Choose file…' }}</span>
+          </div>
+          <input ref="certInput" type="file" accept=".crt,.pem,.cer" hidden @change="e => certFile = e.target.files[0]" />
+        </div>
+        <div class="form-group">
+          <label>Private Key (.key / .pem)</label>
+          <div class="file-upload" :class="{ filled: keyFile }" @click="$refs.keyInput.click()">
+            <span>{{ keyFile ? keyFile.name : 'Choose file…' }}</span>
+          </div>
+          <input ref="keyInput" type="file" accept=".key,.pem" hidden @change="e => keyFile = e.target.files[0]" />
+        </div>
+        <small class="form-hint">Leave certificate fields empty to keep existing ones.</small>
+        <button class="save-btn" :disabled="accountSaving" @click="saveAccount">
+          {{ accountSaving ? 'Saving…' : 'Save & Reconnect' }}
+        </button>
+        <div v-if="accountError" class="field-error">{{ accountError }}</div>
+        <div v-if="accountSuccess" class="field-success">{{ accountSuccess }}</div>
+      </div>
+      <InfoRow label="App version" value="v2.4.1" color="#5c6478" />
     </SectionCard>
 
     <!-- Vehicle -->
-    <SectionCard title="Veicolo" :icon="Car">
-      <InfoRow label="Modello" :value="`${vehicle.year || ''} Leapmotor ${vehicle.car_type || ''}`" color="#e2e6f0" />
+    <SectionCard title="Vehicle" :icon="Car">
+      <InfoRow label="Model" :value="`${vehicle.year || ''} Leapmotor ${vehicle.car_type || ''}`" color="#e2e6f0" />
       <InfoRow label="VIN" color="#e2e6f0">
         <span style="font-family:var(--mono);font-size:11px">{{ vehicle.vin || '—' }}</span>
       </InfoRow>
@@ -22,7 +56,7 @@
     </SectionCard>
 
     <!-- Notifications -->
-    <SectionCard title="Notifiche" :icon="Bell">
+    <SectionCard title="Notifications" :icon="Bell">
       <div v-for="n in notifications" :key="n.key" class="notif-row">
         <span class="notif-label">{{ n.label }}</span>
         <ToggleSwitch v-model="n.enabled" />
@@ -30,21 +64,21 @@
     </SectionCard>
 
     <!-- Preferences -->
-    <SectionCard title="Preferenze" :icon="SlidersHorizontal">
-      <InfoRow label="Unità distanza" value="km" color="#e2e6f0" />
-      <InfoRow label="Unità pressione" value="bar" color="#e2e6f0" />
-      <InfoRow label="Tema" value="Dark" color="#7c6aff" />
-      <InfoRow label="Lingua" value="Italiano" color="#e2e6f0" />
+    <SectionCard title="Preferences" :icon="SlidersHorizontal">
+      <InfoRow label="Distance unit" value="km" color="#e2e6f0" />
+      <InfoRow label="Pressure unit" value="bar" color="#e2e6f0" />
+      <InfoRow label="Theme" value="Dark" color="#7c6aff" />
+      <InfoRow label="Language" value="English" color="#e2e6f0" />
     </SectionCard>
 
     <!-- Data Collection Scheduler -->
-    <SectionCard title="Raccolta dati" :icon="BarChart3">
+    <SectionCard title="Data Collection" :icon="BarChart3">
       <div class="notif-row">
-        <span class="notif-label">Raccolta automatica</span>
+        <span class="notif-label">Automatic collection</span>
         <ToggleSwitch :modelValue="scheduler.enabled" @update:modelValue="toggleScheduler" />
       </div>
       <div class="interval-row">
-        <span class="interval-label">Intervallo di raccolta</span>
+        <span class="interval-label">Collection interval</span>
         <div class="interval-control">
           <button class="interval-btn" :disabled="!scheduler.enabled" @click="changeInterval(-5)">−</button>
           <span class="interval-value" :class="{ disabled: !scheduler.enabled }">{{ scheduler.interval_minutes }} min</span>
@@ -54,13 +88,13 @@
       <div class="scheduler-status">
         <div class="status-row">
           <span class="status-dot" :class="scheduler.is_running ? 'running' : 'stopped'" />
-          <span class="status-text">{{ scheduler.is_running ? 'In esecuzione' : 'Fermo' }}</span>
+          <span class="status-text">{{ scheduler.is_running ? 'Running' : 'Stopped' }}</span>
         </div>
         <div v-if="scheduler.last_run" class="status-detail">
-          Ultimo aggiornamento: {{ formatTime(scheduler.last_run) }}
+          Last update: {{ formatTime(scheduler.last_run) }}
         </div>
         <div class="status-detail">
-          Raccolte: {{ scheduler.total_runs }} · Errori: {{ scheduler.total_errors }}
+          Runs: {{ scheduler.total_runs }} · Errors: {{ scheduler.total_errors }}
         </div>
         <div v-if="scheduler.last_error" class="status-error">
           {{ scheduler.last_error }}
@@ -69,9 +103,9 @@
     </SectionCard>
 
     <!-- Raw Data toggle -->
-    <SectionCard title="Dati grezzi" :icon="Code">
+    <SectionCard title="Raw Data" :icon="Code">
       <button class="raw-toggle" @click="showRaw = !showRaw">
-        {{ showRaw ? 'Nascondi' : 'Mostra' }} JSON completo
+        {{ showRaw ? 'Hide' : 'Show' }} full JSON
       </button>
       <div v-if="showRaw" class="raw-panel">
         <pre>{{ JSON.stringify(rawData, null, 2) }}</pre>
@@ -94,11 +128,21 @@ const props = defineProps({
 })
 
 const showRaw = ref(false)
+const showAccountEdit = ref(false)
+const accountSaving = ref(false)
+const accountError = ref('')
+const accountSuccess = ref('')
+const certFile = ref(null)
+const keyFile = ref(null)
 
-const email = computed(() => {
-  // We don't have user email from the API, show placeholder
-  return '—'
+const accountForm = reactive({
+  username: '',
+  password: '',
 })
+
+const accountEmail = ref('—')
+
+const email = computed(() => accountEmail.value)
 const displayName = computed(() => props.vehicle.nickname || 'User')
 const initials = computed(() => {
   const n = displayName.value
@@ -106,10 +150,10 @@ const initials = computed(() => {
 })
 
 const notifications = reactive([
-  { label: 'Carica completata', key: 'notifCharge', enabled: true },
-  { label: 'Batteria scarica (<20%)', key: 'notifLow', enabled: true },
-  { label: 'Pressione pneumatici', key: 'notifTire', enabled: true },
-  { label: 'Aggiornamenti software', key: 'notifOTA', enabled: false },
+  { label: 'Charge complete', key: 'notifCharge', enabled: true },
+  { label: 'Low battery (<20%)', key: 'notifLow', enabled: true },
+  { label: 'Tire pressure', key: 'notifTire', enabled: true },
+  { label: 'Software updates', key: 'notifOTA', enabled: false },
 ])
 
 // -- Scheduler state --------------------------------------------------------
@@ -162,10 +206,63 @@ function changeInterval(delta) {
 function formatTime(iso) {
   if (!iso) return '—'
   const d = new Date(iso)
-  return d.toLocaleString('it-IT', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+  return d.toLocaleString('en-GB', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
 }
 
-onMounted(loadScheduler)
+async function loadAccount() {
+  try {
+    const data = await api('GET', '/api/status')
+    if (data.user_id) {
+      accountEmail.value = data.user_id
+      accountForm.username = data.user_id
+    }
+  } catch { /* ignore */ }
+}
+
+async function saveAccount() {
+  accountError.value = ''
+  accountSuccess.value = ''
+  if (!accountForm.username || !accountForm.password) {
+    accountError.value = 'Email and password are required'
+    return
+  }
+  accountSaving.value = true
+  try {
+    // Upload new certificates if provided
+    if (certFile.value && keyFile.value) {
+      const formData = new FormData()
+      formData.append('cert_file', certFile.value)
+      formData.append('key_file', keyFile.value)
+      const certRes = await fetch('/api/setup/certificates', { method: 'POST', body: formData })
+      const certData = await certRes.json()
+      if (!certRes.ok) throw new Error(certData.detail || 'Certificate upload failed')
+    }
+
+    // Save account and reconnect
+    const result = await api('POST', '/api/setup/account', {
+      username: accountForm.username,
+      password: accountForm.password,
+    })
+
+    if (result.connected) {
+      accountSuccess.value = 'Credentials saved. Connected successfully.'
+      accountEmail.value = accountForm.username
+    } else {
+      accountSuccess.value = 'Credentials saved. ' + (result.connection_error || 'Connection failed — will retry on next restart.')
+    }
+    certFile.value = null
+    keyFile.value = null
+  } catch (err) {
+    accountError.value = err.message
+  } finally {
+    accountSaving.value = false
+  }
+}
+
+onMounted(() => {
+  loadScheduler()
+  loadAccount()
+})
 </script>
 
 <style scoped>
@@ -207,6 +304,108 @@ onMounted(loadScheduler)
   font-size: 12px;
   color: var(--muted);
   margin-top: 2px;
+}
+
+.action-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 16px;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+  margin-bottom: 12px;
+}
+.action-btn:hover { color: #00d4ff; border-color: #00d4ff44; }
+
+.edit-panel {
+  padding: 12px 0;
+  border-top: 1px solid #181d2c;
+  margin-bottom: 12px;
+}
+.form-group { margin-bottom: 0.9rem; }
+.form-group label {
+  display: block;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 6px;
+}
+.form-group input {
+  width: 100%;
+  padding: 10px 14px;
+  background: var(--input);
+  border: 1px solid #1c2240;
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+.form-group input:focus { border-color: #00d4ff55; }
+.form-group input::placeholder { color: var(--muted2); }
+
+.form-divider {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin: 1rem 0 0.7rem;
+  padding-top: 0.8rem;
+  border-top: 1px solid #181d2c;
+}
+
+.file-upload {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: var(--input);
+  border: 1px dashed #1c2240;
+  border-radius: 8px;
+  color: var(--muted2);
+  font-size: 12px;
+  cursor: pointer;
+  transition: border-color 0.2s;
+}
+.file-upload:hover { border-color: #00d4ff55; }
+.file-upload.filled { border-style: solid; border-color: #00d4ff44; color: var(--text); }
+
+.form-hint {
+  display: block;
+  font-size: 11px;
+  color: var(--muted2);
+  margin-bottom: 0.8rem;
+}
+
+.save-btn {
+  width: 100%;
+  padding: 10px;
+  background: linear-gradient(135deg, #00d4ff22, #00d4ff44);
+  border: 1px solid #00d4ff55;
+  border-radius: 8px;
+  color: #00d4ff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.save-btn:hover { background: linear-gradient(135deg, #00d4ff33, #00d4ff55); }
+.save-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.field-error {
+  margin-top: 0.6rem;
+  font-size: 12px;
+  color: #ff5252;
+}
+.field-success {
+  margin-top: 0.6rem;
+  font-size: 12px;
+  color: #00e676;
 }
 
 .notif-row {

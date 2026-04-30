@@ -21,14 +21,12 @@ services:
       - .env
     environment:
       - HISTORY_DB_PATH=/app/data/history.db
+      - DATA_DIR=/app/data
     volumes:
-      - app-data:/app/data
+      - ./data:/app/data
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.leapmotor.rule=PathPrefix(`/`)"
       - "traefik.http.routers.leapmotor.entrypoints=web"
       - "traefik.http.services.leapmotor.loadbalancer.server.port=8099"
     restart: unless-stopped
-
-volumes:
-  app-data:

@@ -35,3 +35,7 @@ htmlcov/
 
 # Database files
 *.db
+
+# Data directory (user data, certs, db — persisted via bind mount)
+data/*
+!data/.gitkeep

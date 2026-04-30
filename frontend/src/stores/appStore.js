@@ -3,8 +3,8 @@ import { ref, computed } from 'vue'
 import { api } from '../composables/useApi'
 
 export const useAppStore = defineStore('app', () => {
-  // Screen: 'login' | 'vehicles' | 'app'
-  const screen = ref('login')
+  // Screen: 'loading' | 'setup-certs' | 'setup-account' | 'vehicles' | 'app'
+  const screen = ref('loading')
   // Active sidebar tab: 'dashboard' | 'details' | 'history' | 'settings'
   const activeTab = ref('dashboard')
 
@@ -16,6 +16,7 @@ export const useAppStore = defineStore('app', () => {
   const loading = ref(false)
   const refreshing = ref(false)
   const picturePackages = ref({})
+  const tempSetup = ref(null)
 
   const selectedVehicle = computed(() =>
     vehicles.value.find((v) => v.vin === selectedVin.value) || null,
@@ -41,6 +42,18 @@ export const useAppStore = defineStore('app', () => {
     return result
   }
 
+  async function reconnect() {
+    try {
+      const result = await api('POST', '/api/reconnect')
+      connected.value = true
+      vehicles.value = result.vehicles || []
+      return result
+    } catch {
+      connected.value = false
+      return null
+    }
+  }
+
   async function submitPin(pin) {
     await api('POST', '/api/set-pin', { pin })
     hasPin.value = true
@@ -58,29 +71,48 @@ export const useAppStore = defineStore('app', () => {
     vehicleData.value = {}
     hasPin.value = false
     picturePackages.value = {}
-    screen.value = 'login'
     activeTab.value = 'dashboard'
+    // Stay in app — just disconnected, not wiping setup
+    screen.value = 'app'
   }
 
   async function checkStatus() {
     try {
-      const data = await api('GET', '/api/status')
-      if (data.connected && data.vehicles?.length > 0) {
-        connected.value = true
-        vehicles.value = data.vehicles
-        hasPin.value = data.has_pin
-        if (data.vehicles.length === 1) {
-          selectedVin.value = data.vehicles[0].vin
-          screen.value = 'app'
+      // First check setup status
+      const setup = await api('GET', '/api/setup/status')
+
+      if (!setup.has_account) {
+        // No account configured — check if certificates are set
+        const certs = await api('GET', '/api/setup/certificates')
+        if (!certs.cert_exists || !certs.key_exists) {
+          screen.value = 'setup-certs'
         } else {
-          screen.value = 'vehicles'
+          screen.value = 'setup-account'
         }
+        return false
+      }
+
+      // Account exists — check connection
+      if (setup.connected && setup.vehicles?.length > 0) {
+        connected.value = true
+        vehicles.value = setup.vehicles
+        if (vehicles.value.length === 1) {
+          selectedVin.value = vehicles.value[0].vin
+        }
+        screen.value = 'app'
         return true
       }
+
+      // Account exists but not connected — go to app in offline mode
+      connected.value = false
+      vehicles.value = setup.vehicles || []
+      screen.value = 'app'
+      return false
     } catch {
-      // not connected
+      // API not reachable
+      screen.value = 'setup-certs'
+      return false
     }
-    return false
   }
 
   async function loadVehicleData(vin) {
@@ -149,10 +181,12 @@ export const useAppStore = defineStore('app', () => {
     loading,
     refreshing,
     picturePackages,
+    tempSetup,
     selectedVehicle,
     currentData,
     currentStatus,
     login,
+    reconnect,
     logout,
     checkStatus,
     loadVehicleData,
