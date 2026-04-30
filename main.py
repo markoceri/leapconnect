@@ -646,6 +646,26 @@ async def set_charge_limit(vin: str, request: Request):
     return await client.set_charge_limit(vin, int(limit))
 
 
+@app.post("/api/vehicles/{vin}/send-destination")
+async def send_destination(vin: str, request: Request):
+    """Send a navigation destination to the vehicle."""
+    client = _get_client()
+    body = await request.json()
+    address = body.get("address", "").strip()
+    address_name = body.get("address_name", "").strip()
+    latitude = body.get("latitude")
+    longitude = body.get("longitude")
+    if not address or latitude is None or longitude is None:
+        raise HTTPException(status_code=422, detail="address, latitude, and longitude are required")
+    return await client.send_destination(
+        vin,
+        address=address,
+        address_name=address_name or address,
+        latitude=float(latitude),
+        longitude=float(longitude),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
