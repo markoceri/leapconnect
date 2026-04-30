@@ -337,7 +337,7 @@ onMounted(async () => {
   flex: 1;
   overflow-y: auto;
   padding: 16px;
-  padding-bottom: 80px; /* space for bottom bar on mobile */
+  padding-bottom: 100px; /* space for bottom bar on mobile */
 }
 @media (min-width: 768px) {
   .main-scroll {
