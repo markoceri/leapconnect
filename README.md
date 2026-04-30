@@ -1,6 +1,6 @@
 # Leapmotor Vehicle Command Center
 
-Web dashboard for monitoring and controlling Leapmotor vehicles via the Leapmotor Cloud API.
+Web dashboard for monitoring and controlling Leapmotor vehicles via the [leapmotor-api](https://github.com/markoceri/leapmotor-api) Python client.
 
 ## Features
 
@@ -16,48 +16,73 @@ Web dashboard for monitoring and controlling Leapmotor vehicles via the Leapmoto
 
 ## Requirements
 
-- Python 3.12+
-- The `leapmotor-api` package (from the parent project)
+- Docker & Docker Compose
 - Leapmotor app certificate files (`.pem`)
+- A valid Leapmotor account
 
-## Quick Start
+## Quick Start (Docker)
+
+```bash
+# 1. Clone the repository
+git clone https://github.com/markoceri/leapmotor-webapp
+cd leapmotor-webapp
+
+# 2. Configure environment
+cp .env.example .env
+# Edit .env and set APP_CERT_PATH and APP_KEY_PATH
+
+# 3. Build and start
+docker compose build
+docker compose up -d
+```
+
+The app is available at **http://localhost**.
+
+Traefik handles reverse proxying on port 80. The app container runs internally on port 8099.
+
+Vehicle history data is persisted in a Docker volume (`app-data`).
+
+## Development
 
 ### Backend
 
 ```bash
-cd webapp
 pip install -r requirements.txt
-pip install -e ..
-
-# Run the API server
-python main.py
+uvicorn main:app --host 0.0.0.0 --port 8099 --reload
 ```
 
 The API runs at **http://localhost:8099**.
 
-### Frontend (development)
+### Frontend
 
 ```bash
-cd webapp/frontend
+cd frontend
 npm install
 npm run dev
 ```
 
 The Vue dev server runs at **http://localhost:5173** and proxies `/api` calls to the backend.
 
-### Production build
+### Production build (manual)
 
 ```bash
-cd webapp/frontend
+cd frontend
 npm run build
 ```
 
 This outputs to `frontend/dist/`. The FastAPI backend will automatically serve the built SPA.
 
+## Environment Variables
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `APP_CERT_PATH` | Yes | Path to the app certificate PEM file |
+| `APP_KEY_PATH` | Yes | Path to the app key PEM file |
+| `ACCOUNT_P12_PASSWORD` | No | P12 password (usually auto-derived from login) |
+| `HISTORY_DB_PATH` | No | SQLite database path (default: `/app/data/history.db`) |
+
 ## Login
 
 You will need:
 - **Email & Password**: Your Leapmotor account credentials
-- **App Certificate & Key**: Paths to the `.pem` files on the server
 - **Vehicle PIN** (optional): Required for remote control actions (lock, unlock, climate, etc.)
-- **P12 Password** (optional): Usually auto-derived from login response
