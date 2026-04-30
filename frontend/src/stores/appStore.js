@@ -132,6 +132,12 @@ export const useAppStore = defineStore('app', () => {
     return await api('POST', `/api/vehicles/${vin}/charge-limit`, { limit })
   }
 
+  async function sendDestination(vin, { address, address_name, latitude, longitude }) {
+    return await api('POST', `/api/vehicles/${vin}/send-destination`, {
+      address, address_name, latitude, longitude,
+    })
+  }
+
   return {
     screen,
     activeTab,
@@ -155,6 +161,7 @@ export const useAppStore = defineStore('app', () => {
     goToVehicleSelector,
     execControl,
     setChargeLimit,
+    sendDestination,
     submitPin,
     loadPicturePackage,
   }
