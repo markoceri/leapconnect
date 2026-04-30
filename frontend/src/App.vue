@@ -20,8 +20,8 @@
             <circle cx="9" cy="17" r="2" /><circle cx="17" cy="17" r="2" />
           </svg>
         </div>
-        <span class="navbar-title hidden sm:inline">Leapmotor Command Center</span>
-        <span class="navbar-title sm:hidden">Leapmotor</span>
+        <span class="navbar-title hidden sm:inline">LeapConnect</span>
+        <span class="navbar-title sm:hidden">LeapConnect</span>
       </div>
       <div class="navbar-right">
         <div class="connection-badge hidden sm:flex">

@@ -1,4 +1,4 @@
-# Leapmotor Vehicle Command Center
+# LeapConnect
 
 Web dashboard for monitoring and controlling Leapmotor vehicles via the [leapmotor-api](https://github.com/markoceri/leapmotor-api) Python client.
 

@@ -9,8 +9,8 @@
             <circle cx="17" cy="17" r="2" />
           </svg>
         </div>
-        <h1>Leapmotor</h1>
-        <p>Vehicle Command Center</p>
+        <h1>LeapConnect</h1>
+        <p>Vehicle Dashboard</p>
       </div>
 
       <div class="login-card">
