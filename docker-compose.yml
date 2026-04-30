@@ -1,0 +1,34 @@
+services:
+  traefik:
+    image: traefik:v3.4
+    command:
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+    ports:
+      - "80:80"
+#      - "8080:8080"   # Traefik dashboard
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    restart: unless-stopped
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    environment:
+      - HISTORY_DB_PATH=/app/data/history.db
+    volumes:
+      - app-data:/app/data
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.leapmotor.rule=PathPrefix(`/`)"
+      - "traefik.http.routers.leapmotor.entrypoints=web"
+      - "traefik.http.services.leapmotor.loadbalancer.server.port=8099"
+    restart: unless-stopped
+
+volumes:
+  app-data:
