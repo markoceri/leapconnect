@@ -169,6 +169,8 @@ function tireColor(val) {
   display: grid;
   grid-template-columns: 1fr;
   gap: 14px;
+  max-width: 100%;
+  overflow: hidden;
 }
 @media (min-width: 768px) {
   .details-grid { grid-template-columns: 1fr 1fr; }

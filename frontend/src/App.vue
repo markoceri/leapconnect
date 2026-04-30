@@ -217,7 +217,7 @@ onMounted(async () => {
   flex-shrink: 0;
   position: sticky;
   top: 0;
-  z-index: 100;
+  z-index: 1000;
 }
 @media (min-width: 640px) {
   .navbar { padding: 0 24px; height: 56px; }
@@ -338,6 +338,8 @@ onMounted(async () => {
   overflow-y: auto;
   padding: 16px;
   padding-bottom: 100px; /* space for bottom bar on mobile */
+  position: relative;
+  z-index: 0;
 }
 @media (min-width: 768px) {
   .main-scroll {

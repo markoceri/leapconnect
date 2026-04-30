@@ -26,6 +26,8 @@ defineProps({
   align-items: center;
   padding: 9px 0;
   border-bottom: 1px solid #181d2c;
+  gap: 8px;
+  min-width: 0;
 }
 .info-row:last-child { border-bottom: none; }
 .info-label {
@@ -34,10 +36,16 @@ defineProps({
   display: flex;
   align-items: center;
   gap: 6px;
+  flex-shrink: 0;
 }
 .info-value {
   font-size: 12.5px;
   font-weight: 600;
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
 }
 .info-dot {
   width: 7px;

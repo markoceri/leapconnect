@@ -346,6 +346,8 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  min-width: 0;
+  overflow: hidden;
 }
 @media (min-width: 640px) {
   .location-card { padding: 18px 20px; }
@@ -384,6 +386,7 @@ onBeforeUnmount(() => {
   border: 1px solid var(--border);
   height: 220px;
   transition: all 0.3s ease;
+  z-index: 0;
 }
 @media (min-width: 640px) {
   .map-wrapper { height: 260px; }

@@ -21,6 +21,8 @@ defineProps({
   border: 1px solid var(--border);
   border-radius: 14px;
   padding: 14px 16px;
+  min-width: 0;
+  overflow: hidden;
 }
 @media (min-width: 640px) {
   .section-card { padding: 18px 20px; }
