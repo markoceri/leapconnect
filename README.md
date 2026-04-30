@@ -14,6 +14,16 @@ Web dashboard for monitoring and controlling Leapmotor vehicles via the [leapmot
 - **Raw data viewer**: Full JSON inspection for debugging
 - **Multi-vehicle**: Tab switching for accounts with multiple vehicles
 
+## Tested Vehicles
+
+| Model | Status |
+|-------|--------|
+| T03 | Tested |
+| C10 | Tested |
+| B10 | Should work (same cloud API) |
+| C16 | Should work (same cloud API) |
+| B05 | Should work (same cloud API) |
+
 ## Requirements
 
 - Docker & Docker Compose
