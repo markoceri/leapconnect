@@ -29,9 +29,12 @@ defineProps({
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: 12px;
-  padding: 16px 18px;
+  padding: 12px 14px;
   flex: 1;
   min-width: 0;
+}
+@media (min-width: 640px) {
+  .stat-card { padding: 16px 18px; }
 }
 .stat-label {
   font-size: 10px;
@@ -48,9 +51,12 @@ defineProps({
   margin-bottom: 4px;
 }
 .stat-value {
-  font-size: 28px;
+  font-size: 22px;
   font-weight: 700;
   line-height: 1;
+}
+@media (min-width: 640px) {
+  .stat-value { font-size: 28px; }
 }
 .stat-unit {
   font-size: 13px;

@@ -100,10 +100,14 @@ defineExpose({ setError })
   background: var(--card, #111420);
   border: 1px solid var(--border, #1a1f30);
   border-radius: 18px;
-  padding: 32px 28px;
+  padding: 24px 20px;
   width: 100%;
   max-width: 380px;
+  margin: 0 16px;
   animation: pin-slideup 0.2s ease;
+}
+@media (min-width: 640px) {
+  .pin-dialog { padding: 32px 28px; margin: 0; }
 }
 
 @keyframes pin-slideup {

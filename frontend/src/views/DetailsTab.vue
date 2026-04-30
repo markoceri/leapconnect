@@ -236,8 +236,11 @@ async function doSendDestination() {
 <style scoped>
 .details-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr;
   gap: 14px;
+}
+@media (min-width: 768px) {
+  .details-grid { grid-template-columns: 1fr 1fr; }
 }
 .section-divider { height: 10px; }
 
@@ -392,7 +395,5 @@ async function doSendDestination() {
 .dest-send-btn:hover:not(:disabled) { background: linear-gradient(135deg, #00d4ff33, #00e67633); }
 .dest-send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
-@media (max-width: 768px) {
-  .details-grid { grid-template-columns: 1fr; }
-}
+
 </style>

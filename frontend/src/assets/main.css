@@ -2,6 +2,10 @@
    LEAPMOTOR COMMAND CENTER — Design System
    ================================================================ */
 
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {

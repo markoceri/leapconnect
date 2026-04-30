@@ -330,8 +330,15 @@ onBeforeUnmount(destroyCharts)
 }
 .history-header {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
+  flex-direction: column;
+  gap: 12px;
+}
+@media (min-width: 640px) {
+  .history-header {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+  }
 }
 .history-header h2 {
   font-size: 16px;
@@ -348,6 +355,8 @@ onBeforeUnmount(destroyCharts)
   gap: 4px;
   background: var(--card);
   border: 1px solid var(--border);
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
   border-radius: 10px;
   padding: 4px;
 }
@@ -369,8 +378,11 @@ onBeforeUnmount(destroyCharts)
 
 .summary-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   gap: 10px;
+}
+@media (min-width: 768px) {
+  .summary-grid { grid-template-columns: repeat(4, 1fr); }
 }
 .summary-card {
   background: var(--card);
@@ -384,8 +396,11 @@ onBeforeUnmount(destroyCharts)
 
 .charts-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr;
   gap: 14px;
+}
+@media (min-width: 768px) {
+  .charts-grid { grid-template-columns: 1fr 1fr; }
 }
 .chart-card {
   background: var(--card);
@@ -393,7 +408,9 @@ onBeforeUnmount(destroyCharts)
   border-radius: 14px;
   padding: 18px 20px;
 }
-.chart-card.wide { grid-column: span 2; }
+@media (min-width: 768px) {
+  .chart-card.wide { grid-column: span 2; }
+}
 .chart-header {
   display: flex;
   align-items: center;
@@ -421,9 +438,5 @@ onBeforeUnmount(destroyCharts)
   border: 1px solid rgba(0, 230, 118, 0.15);
 }
 
-@media (max-width: 768px) {
-  .charts-grid { grid-template-columns: 1fr; }
-  .chart-card.wide { grid-column: span 1; }
-  .summary-grid { grid-template-columns: repeat(2, 1fr); }
-}
+
 </style>

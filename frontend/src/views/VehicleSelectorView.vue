@@ -100,8 +100,12 @@ function formatOdo(vin) {
 <style scoped>
 .vehicle-selector {
   min-height: 100vh;
+  min-height: 100dvh;
   background: var(--bg);
-  padding: 24px;
+  padding: 16px;
+}
+@media (min-width: 640px) {
+  .vehicle-selector { padding: 24px; }
 }
 .vs-topbar {
   display: flex;
@@ -137,10 +141,13 @@ function formatOdo(vin) {
 }
 .vs-header { margin-bottom: 28px; }
 .vs-header h1 {
-  font-size: 24px;
+  font-size: 20px;
   font-weight: 700;
   color: var(--text);
   margin-bottom: 6px;
+}
+@media (min-width: 640px) {
+  .vs-header h1 { font-size: 24px; }
 }
 .vs-header p {
   font-size: 13px;
@@ -148,8 +155,14 @@ function formatOdo(vin) {
 }
 .vs-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-  gap: 18px;
+  grid-template-columns: 1fr;
+  gap: 14px;
+}
+@media (min-width: 640px) {
+  .vs-grid {
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 18px;
+  }
 }
 .vs-card {
   background: var(--card);

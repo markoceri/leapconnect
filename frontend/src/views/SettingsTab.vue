@@ -173,7 +173,10 @@ onMounted(loadScheduler)
   display: flex;
   flex-direction: column;
   gap: 14px;
-  max-width: 640px;
+  max-width: 100%;
+}
+@media (min-width: 768px) {
+  .settings-tab { max-width: 640px; }
 }
 
 .account-row {

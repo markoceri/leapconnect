@@ -19,7 +19,7 @@
     </div>
 
     <!-- Stats grid -->
-    <div class="stats-row">
+    <div class="stats-row grid grid-cols-2 sm:grid-cols-3 lg:flex gap-2.5">
       <StatCard
         label="Battery" :value="s.battery?.soc ?? '—'" unit="%" :color="battColor"
         :sub="s.battery?.is_charging ? 'Charging' : 'Not charging'"
@@ -50,7 +50,7 @@
     </div>
 
     <!-- Lock status + charging info row -->
-    <div class="info-strip">
+    <div class="info-strip flex-col sm:flex-row">
       <div class="lock-widget" :style="{ borderColor: s.doors?.is_locked ? '#ffab4044' : '#00e67644' }">
         <div class="lock-label">Lock Status</div>
         <div class="lock-main">
@@ -280,10 +280,13 @@ async function doSetChargeLimit() {
 .hero {
   background: linear-gradient(160deg, #0d1422, #111826);
   border: 1px solid var(--border);
-  border-radius: 16px;
-  padding: 28px 28px 20px;
+  border-radius: 12px;
+  padding: 16px 16px 14px;
   position: relative;
   overflow: hidden;
+}
+@media (min-width: 640px) {
+  .hero { border-radius: 16px; padding: 28px 28px 20px; }
 }
 .hero-glow {
   position: absolute;
@@ -322,7 +325,7 @@ async function doSetChargeLimit() {
 .hero-vin { font-size: 11px; color: var(--muted2); font-family: var(--mono); margin-top: 2px; }
 
 /* Stats row */
-.stats-row { display: flex; gap: 10px; flex-wrap: wrap; }
+.stats-row { /* responsive via Tailwind classes */ }
 
 /* Battery bar */
 .battery-bar-container {
@@ -366,7 +369,10 @@ async function doSetChargeLimit() {
   padding: 14px 18px;
   flex: 1;
 }
-.charging-stats { display: flex; gap: 16px; }
+.charging-stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+@media (min-width: 640px) {
+  .charging-stats { display: flex; gap: 16px; }
+}
 .charging-stat {}
 .charging-val { font-size: 20px; font-weight: 700; }
 .charging-sub { font-size: 11px; color: var(--muted); }
@@ -390,8 +396,14 @@ async function doSetChargeLimit() {
 
 .controls-grid {
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 8px;
+}
+@media (min-width: 640px) {
+  .controls-grid { grid-template-columns: repeat(4, 1fr); }
+}
+@media (min-width: 1024px) {
+  .controls-grid { grid-template-columns: repeat(6, 1fr); }
 }
 
 .ctrl-btn {
@@ -483,11 +495,5 @@ async function doSetChargeLimit() {
 }
 .charge-set-btn:hover { background: #252d50; }
 
-@media (max-width: 900px) {
-  .controls-grid { grid-template-columns: repeat(4, 1fr); }
-  .stats-row { flex-wrap: wrap; }
-}
-@media (max-width: 600px) {
-  .controls-grid { grid-template-columns: repeat(3, 1fr); }
-}
+
 </style>

@@ -20,39 +20,47 @@
             <circle cx="9" cy="17" r="2" /><circle cx="17" cy="17" r="2" />
           </svg>
         </div>
-        <span class="navbar-title">Leapmotor Command Center</span>
+        <span class="navbar-title hidden sm:inline">Leapmotor Command Center</span>
+        <span class="navbar-title sm:hidden">Leapmotor</span>
       </div>
       <div class="navbar-right">
-        <div class="connection-badge">
+        <div class="connection-badge hidden sm:flex">
           <span class="connection-dot" />
           <span>CONNECTED</span>
         </div>
+        <div class="connection-dot sm:hidden" style="width:8px;height:8px;border-radius:50%;background:#00e676;box-shadow:0 0 6px #00e676" />
         <button class="nav-btn" @click="handleRefresh">
-          <RefreshCw :size="14" :class="{ spinning: store.refreshing }" /> Refresh
+          <RefreshCw :size="14" :class="{ spinning: store.refreshing }" />
+          <span class="hidden sm:inline">Refresh</span>
         </button>
-        <button class="nav-btn" @click="handleLogout"><LogOut :size="14" /> Logout</button>
+        <button class="nav-btn" @click="handleLogout">
+          <LogOut :size="14" />
+          <span class="hidden sm:inline">Logout</span>
+        </button>
       </div>
     </div>
 
-    <!-- Vehicle tabs -->
+    <!-- Vehicle tabs — horizontal swipeable -->
     <div class="vehicle-tabs-bar">
-      <button
-        v-for="v in store.vehicles"
-        :key="v.vin"
-        class="vtab"
-        :class="{ active: store.selectedVin === v.vin }"
-        @click="store.selectVehicle(v.vin)"
-      >
-        <div class="vtab-name">{{ v.nickname || v.car_type || 'Vehicle' }}</div>
-        <div class="vtab-id">{{ v.vin.slice(-8) }}</div>
-      </button>
-      <button v-if="store.vehicles.length > 1" class="vtab vtab-add" @click="store.goToVehicleSelector()">+ Aggiungi</button>
+      <div class="vehicle-tabs-scroll">
+        <button
+          v-for="v in store.vehicles"
+          :key="v.vin"
+          class="vtab"
+          :class="{ active: store.selectedVin === v.vin }"
+          @click="store.selectVehicle(v.vin)"
+        >
+          <div class="vtab-name">{{ v.nickname || v.car_type || 'Vehicle' }}</div>
+          <div class="vtab-id">{{ v.vin.slice(-8) }}</div>
+        </button>
+        <button v-if="store.vehicles.length > 1" class="vtab vtab-add" @click="store.goToVehicleSelector()">+ Aggiungi</button>
+      </div>
     </div>
 
     <!-- Content area -->
     <div class="content-area">
-      <!-- Sidebar -->
-      <div class="sidebar">
+      <!-- Sidebar (desktop only) -->
+      <div class="sidebar hidden md:flex">
         <button
           v-for="t in tabs"
           :key="t.id"
@@ -96,6 +104,20 @@
           />
         </template>
       </div>
+    </div>
+
+    <!-- Bottom tab bar (mobile only) -->
+    <div class="bottom-bar md:hidden">
+      <button
+        v-for="t in tabs"
+        :key="t.id"
+        class="bottom-tab"
+        :class="{ active: store.activeTab === t.id }"
+        @click="store.activeTab = t.id"
+      >
+        <component :is="t.icon" :size="20" />
+        <span class="bottom-tab-label">{{ t.label }}</span>
+      </button>
     </div>
   </div>
 
@@ -177,6 +199,7 @@ onMounted(async () => {
 <style scoped>
 .app-shell {
   min-height: 100vh;
+  min-height: 100dvh;
   background: var(--bg);
   display: flex;
   flex-direction: column;
@@ -186,8 +209,8 @@ onMounted(async () => {
 .navbar {
   background: var(--bg2);
   border-bottom: 1px solid var(--border2);
-  padding: 0 24px;
-  height: 56px;
+  padding: 0 16px;
+  height: 48px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -196,17 +219,23 @@ onMounted(async () => {
   top: 0;
   z-index: 100;
 }
-.navbar-left { display: flex; align-items: center; gap: 10px; }
+@media (min-width: 640px) {
+  .navbar { padding: 0 24px; height: 56px; }
+}
+.navbar-left { display: flex; align-items: center; gap: 8px; }
+@media (min-width: 640px) { .navbar-left { gap: 10px; } }
 .navbar-logo {
   width: 32px; height: 32px; border-radius: 8px;
   background: #00d4ff18; border: 1px solid #00d4ff44;
   display: flex; align-items: center; justify-content: center;
 }
 .navbar-title {
-  font-size: 14px; font-weight: 700; color: var(--text);
+  font-size: 13px; font-weight: 700; color: var(--text);
   letter-spacing: -0.01em;
 }
-.navbar-right { display: flex; align-items: center; gap: 10px; }
+@media (min-width: 640px) { .navbar-title { font-size: 14px; } }
+.navbar-right { display: flex; align-items: center; gap: 8px; }
+@media (min-width: 640px) { .navbar-right { gap: 10px; } }
 .connection-badge {
   display: flex; align-items: center; gap: 6px;
   background: #00e67614; border: 1px solid #00e67644;
@@ -222,27 +251,40 @@ onMounted(async () => {
 }
 .nav-btn {
   background: none; border: 1px solid #1c2240;
-  border-radius: 8px; padding: 5px 12px;
+  border-radius: 8px; padding: 6px 8px;
   color: var(--label); font-size: 12px; cursor: pointer;
   display: flex; align-items: center; gap: 5px;
   transition: all 0.2s;
 }
+@media (min-width: 640px) { .nav-btn { padding: 5px 12px; } }
 .nav-btn:hover { background: #1c224044; color: var(--text); }
 .spinning { display: inline-block; animation: lm-spin 0.7s linear infinite; }
 
-/* Vehicle tabs bar */
+/* Vehicle tabs bar — horizontal scrollable */
 .vehicle-tabs-bar {
   background: var(--bg2);
   border-bottom: 1px solid var(--border2);
-  padding: 0 24px;
+  flex-shrink: 0;
+}
+.vehicle-tabs-scroll {
   display: flex;
   gap: 2px;
+  padding: 0 16px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.vehicle-tabs-scroll::-webkit-scrollbar { display: none; }
+@media (min-width: 640px) {
+  .vehicle-tabs-scroll { padding: 0 24px; }
 }
 .vtab {
   background: none; border: none;
   border-bottom: 2px solid transparent;
   padding: 10px 16px; cursor: pointer;
   transition: all 0.2s; color: var(--muted);
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 .vtab:hover { color: var(--text); }
 .vtab.active {
@@ -260,12 +302,11 @@ onMounted(async () => {
   overflow: hidden;
 }
 
-/* Sidebar */
+/* Sidebar (desktop only, hidden via Tailwind on mobile) */
 .sidebar {
   width: 56px;
   background: var(--bg2);
   border-right: 1px solid var(--border2);
-  display: flex;
   flex-direction: column;
   align-items: center;
   padding-top: 16px;
@@ -295,11 +336,54 @@ onMounted(async () => {
 .main-scroll {
   flex: 1;
   overflow-y: auto;
-  padding: 20px 24px;
+  padding: 16px;
+  padding-bottom: 80px; /* space for bottom bar on mobile */
+}
+@media (min-width: 768px) {
+  .main-scroll {
+    padding: 20px 24px;
+    padding-bottom: 20px;
+  }
 }
 .loading-center {
   display: flex; align-items: center; justify-content: center;
   height: 60vh;
 }
 .error-text { color: var(--red); font-size: 14px; }
+
+/* Bottom tab bar (mobile only, hidden via Tailwind on desktop) */
+.bottom-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  background: var(--bg2);
+  border-top: 1px solid var(--border2);
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  padding: 10px 0;
+  padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+  backdrop-filter: blur(12px);
+}
+.bottom-tab {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #3a4468;
+  transition: color 0.2s;
+  padding: 6px 12px;
+  -webkit-tap-highlight-color: transparent;
+}
+.bottom-tab.active { color: #00d4ff; }
+.bottom-tab-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
 </style>

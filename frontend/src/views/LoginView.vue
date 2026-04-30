@@ -78,8 +78,11 @@ async function handleLogin() {
 .login-container {
   width: 100%;
   max-width: 480px;
-  padding: 2rem;
+  padding: 1.5rem;
   animation: lm-slideup 0.5s ease both;
+}
+@media (min-width: 640px) {
+  .login-container { padding: 2rem; }
 }
 
 .login-brand {
@@ -116,7 +119,10 @@ async function handleLogin() {
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: 18px;
-  padding: 32px 28px;
+  padding: 24px 20px;
+}
+@media (min-width: 640px) {
+  .login-card { padding: 32px 28px; }
 }
 
 .form-group { margin-bottom: 1.1rem; }

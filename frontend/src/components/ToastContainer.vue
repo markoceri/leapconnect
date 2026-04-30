@@ -28,13 +28,23 @@ function iconComp(type) {
 <style scoped>
 .toast-container {
   position: fixed;
-  bottom: 28px;
-  right: 28px;
+  bottom: 80px;
+  left: 16px;
+  right: 16px;
   z-index: 9999;
   display: flex;
   flex-direction: column;
+  align-items: center;
   gap: 0.5rem;
   pointer-events: none;
+}
+@media (min-width: 768px) {
+  .toast-container {
+    left: auto;
+    bottom: 28px;
+    right: 28px;
+    align-items: flex-end;
+  }
 }
 
 .toast {

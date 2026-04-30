@@ -20,7 +20,10 @@ defineProps({
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: 14px;
-  padding: 18px 20px;
+  padding: 14px 16px;
+}
+@media (min-width: 640px) {
+  .section-card { padding: 18px 20px; }
 }
 .section-header {
   display: flex;
