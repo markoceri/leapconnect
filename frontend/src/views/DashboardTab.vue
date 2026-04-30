@@ -70,7 +70,7 @@
             <div class="charging-sub">Rimanente</div>
           </div>
           <div class="charging-stat">
-            <div class="charging-val" style="color:#ff9100">{{ s.battery?.battery_power ?? '—' }} kW</div>
+            <div class="charging-val" style="color:#ff9100">{{ chargingPowerDisplay }} kW</div>
             <div class="charging-sub">Potenza</div>
           </div>
           <div class="charging-stat">
@@ -165,6 +165,12 @@ const chargeTimeStr = computed(() => {
   const min = s.value.battery?.charge_remain_time
   if (min == null) return '—'
   return `${Math.floor(min / 60)}h ${min % 60}m`
+})
+
+const chargingPowerDisplay = computed(() => {
+  const power = s.value.battery?.charging_power_kw
+  if (power != null) return power
+  return s.value.battery?.battery_power ?? '—'
 })
 
 const hasPin = computed(() => store.hasPin)
