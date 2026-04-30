@@ -11,7 +11,6 @@ import base64
 import io
 import logging
 import os
-import sys
 import zipfile
 from contextlib import asynccontextmanager
 from dataclasses import asdict
@@ -27,14 +26,10 @@ load_dotenv(Path(__file__).resolve().parent / ".env")
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
-
-# Allow importing the leapmotor_api package from the project src/
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
-
-from leapmotor_api import LeapmotorApiClient  # noqa: E402
-from leapmotor_api.async_client import AsyncLeapmotorApiClient  # noqa: E402
-from leapmotor_api.image import CarImagePackage  # noqa: E402
-from leapmotor_api.models import Vehicle, VehicleStatus  # noqa: E402
+from leapmotor_api import LeapmotorApiClient
+from leapmotor_api.async_client import AsyncLeapmotorApiClient
+from leapmotor_api.image import CarImagePackage
+from leapmotor_api.models import Vehicle, VehicleStatus
 
 from persistence.repository import VehicleHistoryRepository, VehicleSnapshot  # noqa: E402
 from persistence.scheduler import VehicleDataScheduler  # noqa: E402

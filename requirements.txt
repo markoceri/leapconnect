@@ -4,3 +4,4 @@ python-multipart>=0.0.9
 python-dotenv>=1.0.0
 sqlalchemy[asyncio]>=2.0.0
 aiosqlite>=0.20.0
+leapmotor-api>=0.1.0
