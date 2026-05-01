@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -16,16 +15,16 @@ from sqlalchemy import (
     func,
     select,
 )
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
 from .repository import VehicleHistoryRepository, VehicleSnapshot
 from .scheduler import SchedulerSettings
 
-
 # ---------------------------------------------------------------------------
 # ORM model
 # ---------------------------------------------------------------------------
+
 
 class Base(DeclarativeBase):
     pass
@@ -51,6 +50,7 @@ class VehicleSnapshotRow(Base):
 
 class AppSettingRow(Base):
     """Simple key/value store for application settings."""
+
     __tablename__ = "app_settings"
 
     key = Column(String(64), primary_key=True)
@@ -59,6 +59,7 @@ class AppSettingRow(Base):
 
 class AccountRow(Base):
     """Stored Leapmotor account credentials."""
+
     __tablename__ = "accounts"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -73,6 +74,7 @@ class AccountRow(Base):
 # ---------------------------------------------------------------------------
 # Adapter
 # ---------------------------------------------------------------------------
+
 
 class SQLAlchemyVehicleHistoryRepository(VehicleHistoryRepository):
     """Concrete adapter backed by an async SQLAlchemy engine (SQLite)."""
@@ -155,7 +157,9 @@ class SQLAlchemyVehicleHistoryRepository(VehicleHistoryRepository):
         days: int = 30,
     ) -> list[dict[str, Any]]:
         since = datetime.utcnow() - timedelta(days=days)
-        date_label = func.strftime("%Y-%m-%d", VehicleSnapshotRow.timestamp).label("date")
+        date_label = func.strftime("%Y-%m-%d", VehicleSnapshotRow.timestamp).label(
+            "date"
+        )
 
         stmt = (
             select(
@@ -191,19 +195,21 @@ class SQLAlchemyVehicleHistoryRepository(VehicleHistoryRepository):
             # Rough energy estimate: ~0.15 kWh/km
             energy_delta = round(km_driven * 0.15, 1) if km_driven else 0
 
-            summaries.append({
-                "date": r.date,
-                "min_soc": r.min_soc,
-                "max_soc": r.max_soc,
-                "avg_soc": int(r.avg_soc) if r.avg_soc is not None else None,
-                "min_range": r.min_range,
-                "max_range": r.max_range,
-                "km_driven": km_driven,
-                "energy_delta": energy_delta,
-                "avg_temp": int(r.avg_temp) if r.avg_temp is not None else None,
-                "charge_sessions": r.charge_sessions or 0,
-                "sample_count": r.sample_count,
-            })
+            summaries.append(
+                {
+                    "date": r.date,
+                    "min_soc": r.min_soc,
+                    "max_soc": r.max_soc,
+                    "avg_soc": int(r.avg_soc) if r.avg_soc is not None else None,
+                    "min_range": r.min_range,
+                    "max_range": r.max_range,
+                    "km_driven": km_driven,
+                    "energy_delta": energy_delta,
+                    "avg_temp": int(r.avg_temp) if r.avg_temp is not None else None,
+                    "charge_sessions": r.charge_sessions or 0,
+                    "sample_count": r.sample_count,
+                }
+            )
 
         return summaries
 
@@ -260,14 +266,16 @@ class SQLAlchemyVehicleHistoryRepository(VehicleHistoryRepository):
                 existing.key_path = key_path
                 existing.p12_password = p12_password
             else:
-                session.add(AccountRow(
-                    username=username,
-                    password=password,
-                    cert_path=cert_path,
-                    key_path=key_path,
-                    p12_password=p12_password,
-                    created_at=datetime.utcnow(),
-                ))
+                session.add(
+                    AccountRow(
+                        username=username,
+                        password=password,
+                        cert_path=cert_path,
+                        key_path=key_path,
+                        p12_password=p12_password,
+                        created_at=datetime.utcnow(),
+                    )
+                )
             await session.commit()
 
     async def get_account(self) -> dict | None:
@@ -311,4 +319,3 @@ class SQLAlchemyVehicleHistoryRepository(VehicleHistoryRepository):
             else:
                 session.add(AppSettingRow(key=key, value=value))
             await session.commit()
-

@@ -43,7 +43,10 @@ class VehicleHistoryRepository(abc.ABC):
         *,
         days: int = 30,
     ) -> list[VehicleSnapshot]:
-        """Return snapshots for *vin* over the last *days* days, ordered by timestamp."""
+        """Return snapshots for *vin* over the last *days* days.
+
+        Ordered by timestamp.
+        """
 
     @abc.abstractmethod
     async def get_daily_summary(

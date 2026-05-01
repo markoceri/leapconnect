@@ -8,6 +8,7 @@ repository port.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 from dataclasses import dataclass
 from datetime import datetime
@@ -17,7 +18,7 @@ if TYPE_CHECKING:
     from leapmotor_api.async_client import AsyncLeapmotorApiClient
     from leapmotor_api.models import Vehicle
 
-    from .repository import VehicleHistoryRepository, VehicleSnapshot
+    from .repository import VehicleHistoryRepository
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -75,13 +76,19 @@ class VehicleDataScheduler:
             "total_errors": self._total_errors,
         }
 
-    def set_client(self, client: AsyncLeapmotorApiClient | None, vehicles: list[Vehicle]) -> None:
+    def set_client(
+        self, client: AsyncLeapmotorApiClient | None, vehicles: list[Vehicle]
+    ) -> None:
         self._client = client
         self._vehicles = vehicles
 
-    def update_settings(self, *, enabled: bool | None = None, interval_minutes: int | None = None) -> SchedulerSettings:
+    def update_settings(
+        self, *, enabled: bool | None = None, interval_minutes: int | None = None
+    ) -> SchedulerSettings:
         if interval_minutes is not None:
-            interval_minutes = max(MIN_INTERVAL_MINUTES, min(MAX_INTERVAL_MINUTES, interval_minutes))
+            interval_minutes = max(
+                MIN_INTERVAL_MINUTES, min(MAX_INTERVAL_MINUTES, interval_minutes)
+            )
             self._settings.interval_minutes = interval_minutes
         if enabled is not None:
             self._settings.enabled = enabled
@@ -101,10 +108,8 @@ class VehicleDataScheduler:
     async def stop(self) -> None:
         self._request_stop()
         if self._task and not self._task.done():
-            try:
+            with contextlib.suppress(TimeoutError, asyncio.CancelledError):
                 await asyncio.wait_for(self._task, timeout=5)
-            except (asyncio.TimeoutError, asyncio.CancelledError):
-                pass
         self._task = None
 
     # -- internals -----------------------------------------------------------
@@ -121,7 +126,9 @@ class VehicleDataScheduler:
         self._stop_event.set()
 
     async def _loop(self) -> None:
-        _LOGGER.info("Scheduler started (interval=%d min)", self._settings.interval_minutes)
+        _LOGGER.info(
+            "Scheduler started (interval=%d min)", self._settings.interval_minutes
+        )
         try:
             while self._settings.enabled:
                 await self._poll_all()
@@ -133,7 +140,7 @@ class VehicleDataScheduler:
                     )
                     # Event was set — either settings changed or stop requested
                     self._stop_event.clear()
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     # Normal timeout — time for next poll
                     pass
         except asyncio.CancelledError:
@@ -164,14 +171,20 @@ class VehicleDataScheduler:
                     total_mileage=status.driving.total_mileage,
                     energy_kwh=status.battery.dump_energy_kwh,
                     outdoor_temp=status.climate.outdoor_temp,
-                    is_charging=status.battery.is_charging,
+                    is_charging=status.is_charging,
                     latitude=status.location.latitude,
                     longitude=status.location.longitude,
-                    charge_state=status.battery.charge_state,
+                    charge_state=status.battery.charge_state.value
+                    if status.battery.charge_state
+                    else None,
                     speed=status.driving.speed,
                 )
                 await self._repo.save_snapshot(snapshot)
-                _LOGGER.info("Scheduler: saved snapshot for %s (SOC=%s%%)", vehicle.vin, status.battery.soc)
+                _LOGGER.info(
+                    "Scheduler: saved snapshot for %s (SOC=%s%%)",
+                    vehicle.vin,
+                    status.battery.soc,
+                )
             except Exception as exc:
                 self._total_errors += 1
                 self._last_error = f"{vehicle.vin}: {exc}"

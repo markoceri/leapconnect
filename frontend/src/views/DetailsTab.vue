@@ -49,12 +49,16 @@
     <SectionCard title="Battery & Charging" :icon="Battery">
       <InfoRow label="State of Charge" :value="bat.soc != null ? `${bat.soc}%` : '—'" :color="bat.soc > 50 ? '#00e676' : bat.soc > 20 ? '#ffab40' : '#ff5252'" />
       <InfoRow label="Charging" :value="bat.is_charging === true ? 'Yes' : bat.is_charging === false ? 'No' : '—'" :color="bat.is_charging ? '#00e676' : '#5c6478'" :dot="!!bat.is_charging" />
+      <InfoRow label="Discharging" :value="bat.is_discharging === true ? 'Yes' : bat.is_discharging === false ? 'No' : '—'" :color="bat.is_discharging ? '#ffab40' : '#5c6478'" />
+      <InfoRow label="Regen Braking" :value="props.status?.is_regening === true ? 'Yes' : props.status?.is_regening === false ? 'No' : '—'" :color="props.status?.is_regening ? '#00d4ff' : '#5c6478'" />
+      <InfoRow label="Charge State" :value="bat.charge_state_label || '—'" :color="bat.charge_state != null && bat.charge_state > 0 ? '#00e676' : '#5c6478'" />
       <InfoRow label="Time Remaining" :value="bat.is_charging ? `${bat.charge_remain_time ?? '—'} min` : '—'" color="#e2e6f0" />
       <InfoRow label="Charge Limit" :value="bat.charge_soc_setting != null ? `${bat.charge_soc_setting}%` : '—'" color="#e2e6f0" />
       <InfoRow label="Battery Voltage" :value="bat.battery_voltage != null ? `${bat.battery_voltage} V` : '—'" color="#8892a8" />
       <InfoRow label="Battery Current" :value="bat.battery_current != null ? `${bat.battery_current} A` : '—'" :color="bat.battery_current < 0 ? '#00e676' : '#ffab40'" />
       <InfoRow label="Battery Power" :value="bat.battery_power != null ? `${bat.battery_power} kW` : '—'" color="#ff9100" />
       <InfoRow label="Charging Power" :value="bat.charging_power_kw != null ? `${bat.charging_power_kw} kW` : '—'" color="#00e676" />
+      <InfoRow label="Discharging Power" :value="bat.discharging_power_kw != null ? `${bat.discharging_power_kw} kW` : '—'" color="#ffab40" />
       <InfoRow label="Energy Available" :value="bat.dump_energy != null ? `${bat.dump_energy} kWh` : '—'" color="#00d4ff" />
       <div class="batt-bar">
         <div class="batt-bar-fill" :style="{ width: `${bat.soc ?? 0}%`, boxShadow: bat.is_charging ? '0 0 10px #00e67688' : 'none' }" />
@@ -81,7 +85,11 @@
       </InfoRow>
       <InfoRow label="Model" :value="vehicle.car_type || '—'" color="#e2e6f0" />
       <InfoRow label="Nickname" :value="vehicle.nickname || '—'" color="#00d4ff" />
+      <InfoRow label="Plate Number" :value="vehicle.plate_number || '—'" color="#e2e6f0" />
+      <InfoRow label="Color" :value="vehicle.out_color || '—'" color="#e2e6f0" />
       <InfoRow label="Year" :value="vehicle.year || '—'" color="#e2e6f0" />
+      <InfoRow label="Seat Layout" :value="vehicle.seat_layout || '—'" color="#8892a8" />
+      <InfoRow label="Rudder" :value="vehicle.rudder || '—'" color="#8892a8" />
       <InfoRow label="Shared Vehicle" :value="vehicle.is_shared ? 'Yes' : 'No'" :color="vehicle.is_shared ? '#00e676' : '#5c6478'" />
     </SectionCard>
 

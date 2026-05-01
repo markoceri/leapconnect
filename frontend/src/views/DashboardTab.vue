@@ -7,6 +7,7 @@
         <DynamicCarImage :vin="vehicle.vin" :status="s" :refresh-key="carImageKey" />
         <div class="hero-badges">
           <span v-if="s.battery?.is_charging" class="badge badge-charging"><Zap :size="14" /></span>
+          <span v-if="s.is_regening" class="badge badge-regen"><Zap :size="14" /></span>
           <span v-if="s.climate?.ac_switch" class="badge badge-ac"><Snowflake :size="14" /></span>
           <span v-if="s.doors?.is_locked" class="badge badge-lock"><Lock :size="14" /></span>
           <span v-if="s.doors?.trunk" class="badge badge-trunk"><Package :size="14" /></span>
@@ -22,7 +23,7 @@
     <div class="stats-row grid grid-cols-2 sm:grid-cols-3 lg:flex gap-2.5">
       <StatCard
         label="Battery" :value="s.battery?.soc ?? '—'" unit="%" :color="battColor"
-        :sub="s.battery?.is_charging ? 'Charging' : 'Not charging'"
+        :sub="battSub"
         :icon="s.battery?.is_charging ? Zap : null" :pulse="!!s.battery?.is_charging"
       />
       <StatCard
@@ -179,6 +180,13 @@ const chargingPowerDisplay = computed(() => {
   return s.value.battery?.battery_power ?? '—'
 })
 
+const battSub = computed(() => {
+  if (s.value.battery?.is_charging) return 'Charging'
+  if (s.value.is_regening) return 'Regen'
+  if (s.value.battery?.is_discharging) return 'Discharging'
+  return 'Not charging'
+})
+
 const hasPin = computed(() => store.hasPin)
 
 const showPinDialog = ref(false)
@@ -317,6 +325,7 @@ async function doSetChargeLimit() {
   backdrop-filter: blur(6px);
 }
 .badge-charging { background: rgba(0,230,118,0.15); border: 1px solid rgba(0,230,118,0.5); }
+.badge-regen { background: rgba(0,212,255,0.15); border: 1px solid rgba(0,212,255,0.5); }
 .badge-ac { background: rgba(0,212,255,0.12); border: 1px solid rgba(0,212,255,0.45); }
 .badge-lock { background: rgba(255,171,64,0.15); border: 1px solid rgba(255,171,64,0.5); }
 .badge-trunk { background: rgba(255,171,64,0.15); border: 1px solid rgba(255,171,64,0.5); }

@@ -11,31 +11,29 @@ import base64
 import io
 import logging
 import os
+import shutil
 import zipfile
 from contextlib import asynccontextmanager
-from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-import shutil
-
 from dotenv import load_dotenv
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
-
-# Load .env from the webapp directory
-load_dotenv(Path(__file__).resolve().parent / ".env")
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from leapmotor_api import LeapmotorApiClient
 from leapmotor_api.async_client import AsyncLeapmotorApiClient
 from leapmotor_api.image import CarImagePackage
 from leapmotor_api.models import Vehicle, VehicleStatus
 
-from persistence.repository import VehicleHistoryRepository, VehicleSnapshot  # noqa: E402
-from persistence.scheduler import VehicleDataScheduler  # noqa: E402
-from persistence.sqlite_adapter import SQLAlchemyVehicleHistoryRepository  # noqa: E402
+from persistence.repository import VehicleSnapshot
+from persistence.scheduler import VehicleDataScheduler
+from persistence.sqlite_adapter import SQLAlchemyVehicleHistoryRepository
+
+# Load .env from the webapp directory
+load_dotenv(Path(__file__).resolve().parent / ".env")
 
 logging.basicConfig(level=logging.INFO)
 _LOGGER = logging.getLogger(__name__)
@@ -59,7 +57,9 @@ _scheduler: VehicleDataScheduler | None = None
 
 def _get_client() -> AsyncLeapmotorApiClient:
     if _client is None:
-        raise HTTPException(status_code=400, detail="Not connected. Please login first.")
+        raise HTTPException(
+            status_code=400, detail="Not connected. Please login first."
+        )
     return _client
 
 
@@ -73,6 +73,7 @@ def _find_vehicle(vin: str) -> Vehicle:
 # ---------------------------------------------------------------------------
 # App lifecycle
 # ---------------------------------------------------------------------------
+
 
 async def _auto_connect() -> None:
     """Try to connect using saved credentials at startup."""
@@ -121,7 +122,9 @@ async def _auto_connect() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global _history_repo, _scheduler
-    db_path = os.environ.get("HISTORY_DB_PATH", str(Path(__file__).parent / "history.db"))
+    db_path = os.environ.get(
+        "HISTORY_DB_PATH", str(Path(__file__).parent / "history.db")
+    )
     db_url = f"sqlite+aiosqlite:///{db_path}"
     _history_repo = SQLAlchemyVehicleHistoryRepository(db_url)
     await _history_repo.init_db()
@@ -130,8 +133,14 @@ async def lifespan(app: FastAPI):
     # Restore scheduler settings from DB
     _scheduler = VehicleDataScheduler(_history_repo)
     saved = await _history_repo.load_scheduler_settings()
-    _scheduler.update_settings(enabled=saved.enabled, interval_minutes=saved.interval_minutes)
-    _LOGGER.info("Scheduler settings loaded: enabled=%s, interval=%d min", saved.enabled, saved.interval_minutes)
+    _scheduler.update_settings(
+        enabled=saved.enabled, interval_minutes=saved.interval_minutes
+    )
+    _LOGGER.info(
+        "Scheduler settings loaded: enabled=%s, interval=%d min",
+        saved.enabled,
+        saved.interval_minutes,
+    )
 
     # Auto-connect using saved credentials
     await _auto_connect()
@@ -166,12 +175,15 @@ app.add_middleware(
 FRONTEND_DIST = Path(__file__).parent / "frontend" / "dist"
 
 if FRONTEND_DIST.is_dir():
-    app.mount("/assets", StaticFiles(directory=str(FRONTEND_DIST / "assets")), name="assets")
+    app.mount(
+        "/assets", StaticFiles(directory=str(FRONTEND_DIST / "assets")), name="assets"
+    )
 
 
 # ---------------------------------------------------------------------------
 # Routes — Setup (certificates & credentials)
 # ---------------------------------------------------------------------------
+
 
 @app.get("/api/setup/status")
 async def setup_status():
@@ -203,8 +215,8 @@ async def setup_status():
 
 @app.post("/api/setup/certificates")
 async def upload_certificates(
-    cert_file: UploadFile = File(...),
-    key_file: UploadFile = File(...),
+    cert_file: UploadFile = File(...),  # noqa: B008
+    key_file: UploadFile = File(...),  # noqa: B008
 ):
     """Upload certificate files (cert + key). Saved to DATA_DIR/certs/."""
     if not _history_repo:
@@ -221,7 +233,9 @@ async def upload_certificates(
         with open(key_dest, "wb") as f:
             shutil.copyfileobj(key_file.file, f)
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Failed to save files: {exc}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to save files: {exc}"
+        ) from exc
 
     # Restrict permissions on the key file
     key_dest.chmod(0o600)
@@ -266,7 +280,9 @@ async def save_account(request: Request):
     p12_password = body.get("p12_password", "").strip() or None
 
     if not all([username, password]):
-        raise HTTPException(status_code=422, detail="username and password are required")
+        raise HTTPException(
+            status_code=422, detail="username and password are required"
+        )
 
     # Resolve cert paths from previously uploaded files
     cert_path = await _history_repo.get_setting("cert_path") or ""
@@ -275,7 +291,9 @@ async def save_account(request: Request):
     if not cert_path or not key_path:
         raise HTTPException(status_code=422, detail="Certificates not uploaded yet")
     if not Path(cert_path).is_file():
-        raise HTTPException(status_code=400, detail=f"Certificate file not found: {cert_path}")
+        raise HTTPException(
+            status_code=400, detail=f"Certificate file not found: {cert_path}"
+        )
     if not Path(key_path).is_file():
         raise HTTPException(status_code=400, detail=f"Key file not found: {key_path}")
 
@@ -372,12 +390,15 @@ async def reconnect():
         _sync_client = None
         _client = None
         _vehicles = []
-        raise HTTPException(status_code=502, detail=f"Connection failed: {exc}")
+        raise HTTPException(
+            status_code=502, detail=f"Connection failed: {exc}"
+        ) from exc
 
 
 # ---------------------------------------------------------------------------
 # Routes — Authentication
 # ---------------------------------------------------------------------------
+
 
 @app.post("/api/login")
 async def login(request: Request):
@@ -398,12 +419,19 @@ async def login(request: Request):
     if not app_cert_path or not app_key_path:
         raise HTTPException(
             status_code=500,
-            detail="Server misconfigured: APP_CERT_PATH and APP_KEY_PATH must be set in .env",
+            detail=(
+                "Server misconfigured: "
+                "APP_CERT_PATH and APP_KEY_PATH must be set in .env"
+            ),
         )
     if not Path(app_cert_path).is_file():
-        raise HTTPException(status_code=500, detail=f"App cert not found: {app_cert_path}")
+        raise HTTPException(
+            status_code=500, detail=f"App cert not found: {app_cert_path}"
+        )
     if not Path(app_key_path).is_file():
-        raise HTTPException(status_code=500, detail=f"App key not found: {app_key_path}")
+        raise HTTPException(
+            status_code=500, detail=f"App key not found: {app_key_path}"
+        )
 
     # Close existing client
     if _sync_client:
@@ -439,7 +467,7 @@ async def login(request: Request):
         _vehicles = []
         if _scheduler:
             _scheduler.set_client(None, [])
-        raise HTTPException(status_code=401, detail=str(exc))
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
 
 
 @app.post("/api/set-pin")
@@ -490,6 +518,7 @@ async def connection_status():
 # Routes — Vehicle Data
 # ---------------------------------------------------------------------------
 
+
 @app.get("/api/vehicles")
 async def get_vehicles():
     client = _get_client()
@@ -514,10 +543,12 @@ async def get_vehicle_status(vin: str):
             total_mileage=status.driving.total_mileage,
             energy_kwh=status.battery.dump_energy_kwh,
             outdoor_temp=status.climate.outdoor_temp,
-            is_charging=status.battery.is_charging,
+            is_charging=status.is_charging,
             latitude=status.location.latitude,
             longitude=status.location.longitude,
-            charge_state=status.battery.charge_state,
+            charge_state=status.battery.charge_state.value
+            if status.battery.charge_state
+            else None,
             speed=status.driving.speed,
         )
         asyncio.create_task(_save_snapshot_safe(snapshot))
@@ -580,11 +611,15 @@ async def get_picture_image(vin: str):
     try:
         with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
             image_names = [
-                n for n in zf.namelist()
+                n
+                for n in zf.namelist()
                 if n.lower().endswith((".png", ".jpg", ".jpeg", ".webp"))
             ]
             if not image_names:
-                raise HTTPException(status_code=404, detail=f"No image found in package. Contents: {zf.namelist()}")
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"No image found in package. Contents: {zf.namelist()}",
+                )
             # Prefer carpic_for_tripsum (complete car) over body-only
             tripsum = [n for n in image_names if "tripsum" in n.lower()]
             img_name = tripsum[0] if tripsum else image_names[0]
@@ -595,10 +630,19 @@ async def get_picture_image(vin: str):
         img_name = "image.png"
 
     ext = img_name.rsplit(".", 1)[-1].lower()
-    media_types = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "webp": "image/webp"}
+    media_types = {
+        "png": "image/png",
+        "jpg": "image/jpeg",
+        "jpeg": "image/jpeg",
+        "webp": "image/webp",
+    }
     media_type = media_types.get(ext, "image/png")
 
-    return Response(content=img_data, media_type=media_type, headers={"Cache-Control": "public, max-age=3600"})
+    return Response(
+        content=img_data,
+        media_type=media_type,
+        headers={"Cache-Control": "public, max-age=3600"},
+    )
 
 
 @app.get("/api/vehicles/{vin}/picture/package")
@@ -630,11 +674,17 @@ async def get_picture_package(vin: str):
                 basename = entry.rsplit("/", 1)[-1]
                 raw = zf.read(entry)
                 ext = basename.rsplit(".", 1)[-1].lower()
-                mime = {"png": "image/png", "jpg": "image/jpeg",
-                        "jpeg": "image/jpeg", "webp": "image/webp"}.get(ext, "image/png")
-                images[basename] = f"data:{mime};base64,{base64.b64encode(raw).decode()}"
-    except zipfile.BadZipFile:
-        raise HTTPException(status_code=500, detail="Invalid picture package")
+                mime = {
+                    "png": "image/png",
+                    "jpg": "image/jpeg",
+                    "jpeg": "image/jpeg",
+                    "webp": "image/webp",
+                }.get(ext, "image/png")
+                images[basename] = (
+                    f"data:{mime};base64,{base64.b64encode(raw).decode()}"
+                )
+    except zipfile.BadZipFile as exc:
+        raise HTTPException(status_code=500, detail="Invalid picture package") from exc
 
     _picture_cache[vin] = images
     return images
@@ -725,6 +775,7 @@ async def get_full_vehicle_data(vin: str):
 # Routes — Vehicle History
 # ---------------------------------------------------------------------------
 
+
 @app.get("/api/vehicles/{vin}/history")
 async def get_vehicle_history(vin: str, days: int = 30):
     """Return raw snapshots for the given VIN."""
@@ -771,6 +822,7 @@ async def get_vehicle_daily_summary(vin: str, days: int = 30):
 # Routes — Scheduler Settings
 # ---------------------------------------------------------------------------
 
+
 @app.get("/api/scheduler")
 async def get_scheduler_status():
     """Return current scheduler status and settings."""
@@ -794,8 +846,11 @@ async def update_scheduler_settings(request: Request):
     if interval is not None:
         try:
             interval = int(interval)
-        except (TypeError, ValueError):
-            raise HTTPException(status_code=422, detail="'interval_minutes' must be an integer")
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(
+                status_code=422,
+                detail="'interval_minutes' must be an integer",
+            ) from exc
 
     settings = _scheduler.update_settings(enabled=enabled, interval_minutes=interval)
 
@@ -808,6 +863,7 @@ async def update_scheduler_settings(request: Request):
 # ---------------------------------------------------------------------------
 # Routes — Remote Control
 # ---------------------------------------------------------------------------
+
 
 @app.post("/api/vehicles/{vin}/lock")
 async def lock_vehicle(vin: str):
@@ -899,7 +955,9 @@ async def set_charge_limit(vin: str, request: Request):
     body = await request.json()
     limit = body.get("limit")
     if limit is None or not (20 <= int(limit) <= 100):
-        raise HTTPException(status_code=422, detail="Charge limit must be between 20 and 100")
+        raise HTTPException(
+            status_code=422, detail="Charge limit must be between 20 and 100"
+        )
     return await client.set_charge_limit(vin, int(limit))
 
 
@@ -913,7 +971,9 @@ async def send_destination(vin: str, request: Request):
     latitude = body.get("latitude")
     longitude = body.get("longitude")
     if not address or latitude is None or longitude is None:
-        raise HTTPException(status_code=422, detail="address, latitude, and longitude are required")
+        raise HTTPException(
+            status_code=422, detail="address, latitude, and longitude are required"
+        )
     return await client.send_destination(
         vin,
         address=address,
@@ -927,12 +987,17 @@ async def send_destination(vin: str, request: Request):
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _vehicle_to_dict(v: Vehicle) -> dict[str, Any]:
     return {
         "vin": v.vin,
         "car_id": v.car_id,
         "car_type": v.car_type,
-        "nickname": v.nickname,
+        "nickname": v.vehicle_nickname,
+        "plate_number": v.plate_number,
+        "out_color": v.out_color,
+        "seat_layout": v.seat_layout,
+        "rudder": v.rudder,
         "is_shared": v.is_shared,
         "year": v.year,
         "abilities": v.abilities or [],
@@ -943,8 +1008,14 @@ def _vehicle_status_to_dict(status: VehicleStatus) -> dict[str, Any]:
     return {
         "battery": {
             "soc": status.battery.soc,
-            "is_charging": status.battery.is_charging,
-            "charge_state": status.battery.charge_state,
+            "is_charging": status.is_charging,
+            "is_discharging": status.battery.is_discharging,
+            "charge_state": status.battery.charge_state.value
+            if status.battery.charge_state
+            else None,
+            "charge_state_label": status.battery.charge_state.name
+            if status.battery.charge_state
+            else None,
             "charge_remain_time": status.battery.charge_remain_time,
             "charge_soc_setting": status.battery.charge_soc_setting,
             "expected_mileage": status.battery.expected_mileage,
@@ -953,6 +1024,7 @@ def _vehicle_status_to_dict(status: VehicleStatus) -> dict[str, Any]:
             "battery_voltage": status.battery.battery_voltage,
             "battery_power": status.battery.battery_power,
             "charging_power_kw": status.battery.charging_power_kw,
+            "discharging_power_kw": status.battery.discharging_power_kw,
         },
         "driving": {
             "speed": status.driving.speed,
@@ -996,9 +1068,14 @@ def _vehicle_status_to_dict(status: VehicleStatus) -> dict[str, Any]:
             "on1": status.ignition.bcm_key_position_on1,
             "on3": status.ignition.bcm_key_position_on3,
         },
+        "is_regening": status.is_regening,
         "timestamps": {
-            "collect_time": status.collect_time.isoformat() if status.collect_time else None,
-            "create_time": status.create_time.isoformat() if status.create_time else None,
+            "collect_time": status.collect_time.isoformat()
+            if status.collect_time
+            else None,
+            "create_time": status.create_time.isoformat()
+            if status.create_time
+            else None,
         },
     }
 
@@ -1008,6 +1085,7 @@ def _vehicle_status_to_dict(status: VehicleStatus) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 if FRONTEND_DIST.is_dir():
+
     @app.get("/{path:path}")
     async def serve_spa_fallback(path: str):
         """Serve Vue SPA for any non-API route (client-side routing)."""
@@ -1023,4 +1101,5 @@ if FRONTEND_DIST.is_dir():
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host="0.0.0.0", port=8099)
