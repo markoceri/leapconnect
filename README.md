@@ -55,6 +55,14 @@ Vehicle history data is persisted in a Docker volume (`app-data`).
 
 ## Development
 
+### Install uv
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+See [uv installation docs](https://docs.astral.sh/uv/getting-started/installation/) for other methods (Homebrew, Windows, pipx).
+
 ### Backend
 
 ```bash
