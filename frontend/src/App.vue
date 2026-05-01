@@ -243,11 +243,12 @@ onMounted(async () => {
 }
 
 .app-shell {
-  min-height: 100vh;
-  min-height: 100dvh;
+  height: 100vh;
+  height: 100dvh;
   background: var(--bg);
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 /* Navbar */
@@ -388,7 +389,7 @@ onMounted(async () => {
   flex: 1;
   overflow-y: auto;
   padding: 16px;
-  padding-bottom: 100px; /* space for bottom bar on mobile */
+  padding-bottom: calc(100px + env(safe-area-inset-bottom, 0px)); /* space for bottom bar on mobile */
   position: relative;
   z-index: 0;
 }
@@ -430,6 +431,9 @@ onMounted(async () => {
   padding: 10px 0;
   padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px));
   backdrop-filter: blur(12px);
+}
+@media (min-width: 768px) {
+  .bottom-bar { display: none; }
 }
 .bottom-tab {
   display: flex;
