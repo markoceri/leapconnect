@@ -91,6 +91,25 @@ npm run build
 
 This outputs to `frontend/dist/`. The FastAPI backend will automatically serve the built SPA.
 
+### Versioning
+
+The project uses [bump-my-version](https://github.com/callowayproject/bump-my-version) to manage versions across `pyproject.toml` and `frontend/package.json`.
+
+```bash
+uv run bump-my-version bump patch   # 0.1.0 → 0.1.1 (bugfix)
+uv run bump-my-version bump minor   # 0.1.0 → 0.2.0 (new feature)
+uv run bump-my-version bump major   # 0.1.0 → 1.0.0 (breaking change)
+```
+
+Each command updates the version in both files, creates a commit, and tags it `vX.Y.Z`.
+
+**Release workflow:**
+
+1. Commit all changes
+2. Update `CHANGELOG.md` (move entries from `[Unreleased]` to a new version section)
+3. `uv run bump-my-version bump patch|minor|major`
+4. `git push --follow-tags`
+
 ## Environment Variables
 
 | Variable | Required | Description |
