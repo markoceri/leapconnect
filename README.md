@@ -18,11 +18,11 @@ Web dashboard for monitoring and controlling Leapmotor vehicles via the [leapmot
 
 | Model | Status |
 |-------|--------|
-| T03 | Tested |
-| C10 | Tested |
-| B10 | Should work (same cloud API) |
-| C16 | Should work (same cloud API) |
-| B05 | Should work (same cloud API) |
+| T03 | ✅ Tested |
+| C10 | 🟡 Should work (same cloud API) |
+| B10 | 🟡 Should work (same cloud API) |
+| C16 | 🟡 Should work (same cloud API) |
+| B05 | 🟡 Should work (same cloud API) |
 
 ## Requirements
 
