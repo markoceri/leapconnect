@@ -67,10 +67,30 @@ See [uv installation docs](https://docs.astral.sh/uv/getting-started/installatio
 
 ```bash
 uv sync
+uv run pre-commit install && uv run pre-commit install --hook-type pre-push
 uv run uvicorn main:app --host 0.0.0.0 --port 8099 --reload
 ```
 
 The API runs at **http://localhost:8099**.
+
+### Tests
+
+```bash
+uv run pytest
+```
+
+### Code Quality
+
+Pre-commit hooks run automatically:
+
+- **On commit**: trailing whitespace, end-of-file fix, YAML/TOML/JSON validation, ruff lint + format
+- **On push**: full pytest suite
+
+To run all checks manually:
+
+```bash
+uv run pre-commit run --all-files
+```
 
 ### Frontend
 
