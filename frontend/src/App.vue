@@ -364,12 +364,15 @@ onMounted(async () => {
   padding-top: 16px;
   gap: 6px;
   flex-shrink: 0;
+  overflow: hidden;
 }
 .sidebar-btn {
   width: 40px; height: 40px; border-radius: 10px;
   border: none; cursor: pointer; font-size: 16px;
   background: transparent; color: #3a4468;
   transition: all 0.2s; position: relative;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
 }
 .sidebar-btn.active {
   background: #00d4ff18;
