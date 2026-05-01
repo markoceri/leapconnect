@@ -26,7 +26,8 @@ Web dashboard for monitoring and controlling Leapmotor vehicles via the [leapmot
 
 ## Requirements
 
-- Docker & Docker Compose
+- Docker & Docker Compose (for production)
+- [uv](https://docs.astral.sh/uv/) (for local development)
 - Leapmotor app certificate files (`.pem`)
 - A valid Leapmotor account
 
@@ -57,8 +58,8 @@ Vehicle history data is persisted in a Docker volume (`app-data`).
 ### Backend
 
 ```bash
-pip install -r requirements.txt
-uvicorn main:app --host 0.0.0.0 --port 8099 --reload
+uv sync
+uv run uvicorn main:app --host 0.0.0.0 --port 8099 --reload
 ```
 
 The API runs at **http://localhost:8099**.
