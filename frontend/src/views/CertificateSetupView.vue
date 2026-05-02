@@ -21,26 +21,40 @@
         <form @submit.prevent="handleSubmit" autocomplete="off">
           <div class="form-group">
             <label>App Certificate (.crt / .pem)</label>
-            <div class="file-upload" :class="{ filled: certFile }" @click="$refs.certInput.click()">
+            <div
+              class="file-upload"
+              :class="{ filled: certFile, dragover: certDragover }"
+              @click="$refs.certInput.click()"
+              @dragover.prevent="certDragover = true"
+              @dragleave.prevent="certDragover = false"
+              @drop.prevent="onCertDrop"
+            >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
                 <polyline points="17 8 12 3 7 8" />
                 <line x1="12" y1="3" x2="12" y2="15" />
               </svg>
-              <span>{{ certFile ? certFile.name : 'Choose certificate file…' }}</span>
+              <span>{{ certFile ? certFile.name : 'Drop file here or click to choose…' }}</span>
             </div>
             <input ref="certInput" type="file" accept=".crt,.pem,.cer" hidden @change="onCertChange" />
           </div>
 
           <div class="form-group">
             <label>Private Key (.key / .pem)</label>
-            <div class="file-upload" :class="{ filled: keyFile }" @click="$refs.keyInput.click()">
+            <div
+              class="file-upload"
+              :class="{ filled: keyFile, dragover: keyDragover }"
+              @click="$refs.keyInput.click()"
+              @dragover.prevent="keyDragover = true"
+              @dragleave.prevent="keyDragover = false"
+              @drop.prevent="onKeyDrop"
+            >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
                 <polyline points="17 8 12 3 7 8" />
                 <line x1="12" y1="3" x2="12" y2="15" />
               </svg>
-              <span>{{ keyFile ? keyFile.name : 'Choose private key file…' }}</span>
+              <span>{{ keyFile ? keyFile.name : 'Drop file here or click to choose…' }}</span>
             </div>
             <input ref="keyInput" type="file" accept=".key,.pem" hidden @change="onKeyChange" />
           </div>
@@ -64,6 +78,8 @@ const submitting = ref(false)
 const error = ref('')
 const certFile = ref(null)
 const keyFile = ref(null)
+const certDragover = ref(false)
+const keyDragover = ref(false)
 
 function onCertChange(e) {
   certFile.value = e.target.files[0] || null
@@ -71,6 +87,18 @@ function onCertChange(e) {
 
 function onKeyChange(e) {
   keyFile.value = e.target.files[0] || null
+}
+
+function onCertDrop(e) {
+  certDragover.value = false
+  const file = e.dataTransfer.files[0]
+  if (file) certFile.value = file
+}
+
+function onKeyDrop(e) {
+  keyDragover.value = false
+  const file = e.dataTransfer.files[0]
+  if (file) keyFile.value = file
 }
 
 async function handleSubmit() {
@@ -191,7 +219,8 @@ async function handleSubmit() {
   cursor: pointer;
   transition: border-color 0.2s, background 0.2s;
 }
-.file-upload:hover {
+.file-upload:hover,
+.file-upload.dragover {
   border-color: #00d4ff55;
   background: #00d4ff08;
 }

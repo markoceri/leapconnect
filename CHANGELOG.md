@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added concise docstrings to every API endpoint
 - Added return type annotations to all endpoint functions
 - New response wrapper schemas: `FullVehicleDataResponse`, `VehicleHistoryResponse`, `DailySummaryResponse`, `SchedulerStatusResponse`, `MessageListResponse`, `UnreadCountResponse`, and others
+- Certificate setup page now supports drag & drop for certificate and key file uploads
 
 ### Changed
 
