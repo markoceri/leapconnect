@@ -148,6 +148,13 @@
       :on-exec="execSunshade"
       :sunshade="s.windows?.sun_shade"
     />
+
+    <ClimateControlModal
+      :visible="showClimateModal"
+      @close="showClimateModal = false"
+      :on-exec="execClimate"
+      :climate="s.climate"
+    />
   </div>
 </template>
 
@@ -161,11 +168,12 @@ import PinDialog from '../components/PinDialog.vue'
 import DynamicCarImage from '../components/DynamicCarImage.vue'
 import WindowControlModal from '../components/WindowControlModal.vue'
 import SunshadeControlModal from '../components/SunshadeControlModal.vue'
+import ClimateControlModal from '../components/ClimateControlModal.vue'
 import TrunkOpenIcon from '../components/icons/TrunkOpenIcon.vue'
 import {
   Zap, Snowflake, Lock, Unlock, Shield, Loader,
   Radio, ChevronUp, ChevronDown, Sun, Wind, Flame,
-  ThermometerSnowflake, BatteryCharging, Columns2
+  Thermometer, ThermometerSnowflake, BatteryCharging, Columns2
 } from 'lucide-vue-next'
 
 const props = defineProps({
@@ -212,6 +220,7 @@ const pendingAction = ref(null)
 const pinDialogRef = ref(null)
 const showWindowModal = ref(false)
 const showSunshadeModal = ref(false)
+const showClimateModal = ref(false)
 
 const pendingLimit = ref(props.status?.battery?.charge_soc_setting ?? 80)
 
@@ -222,17 +231,14 @@ const controls = [
   { action: 'find', icon: Radio, label: 'Find Car', color: '#00d4ff' },
   { action: 'windows', icon: Columns2, label: 'Windows', color: '#7c6aff', modal: 'windows' },
   { action: 'sunshade', icon: Sun, label: 'Sunshade', color: '#ffab40', modal: 'sunshade' },
-  { action: 'ac', icon: Snowflake, label: 'A/C Toggle', color: '#00d4ff' },
-  { action: 'quick-cool', icon: Wind, label: 'Quick Cool', color: '#00d4ff' },
-  { action: 'quick-heat', icon: Flame, label: 'Quick Heat', color: '#ff7043' },
-  { action: 'defrost', icon: ThermometerSnowflake, label: 'Defrost', color: '#7c6aff' },
+  { action: 'climate', icon: Thermometer, label: 'Climate', color: '#00d4ff', modal: 'climate' },
   { action: 'battery-preheat', icon: BatteryCharging, label: 'Battery Preheat', color: '#00e676' },
 ]
 
 function isActive(action) {
   if (action === 'lock') return s.value.doors?.is_locked
   if (action === 'unlock') return s.value.doors?.is_locked === false
-  if (action === 'ac') return s.value.climate?.ac_switch
+  if (action === 'ac' || action === 'climate') return s.value.climate?.ac_switch
   if (action === 'trunk/open') return s.value.doors?.bbcm_back_door_status
   return false
 }
@@ -308,9 +314,23 @@ async function execSunshade({ action, body }) {
   }
 }
 
+async function execClimate({ action, body }) {
+  const ok = await requirePin()
+  if (!ok) return
+  try {
+    await store.execControl(props.vehicle.vin, action, body)
+    toast('Climate command sent', 'success')
+    await store.refreshAfterCommand()
+    carImageKey.value = Date.now()
+  } catch (err) {
+    toast(`Climate: ${err.message}`, 'error')
+  }
+}
+
 function openModal(type) {
   if (type === 'windows') showWindowModal.value = true
   else if (type === 'sunshade') showSunshadeModal.value = true
+  else if (type === 'climate') showClimateModal.value = true
 }
 
 async function doSetChargeLimit() {

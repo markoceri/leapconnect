@@ -989,32 +989,54 @@ async def close_windows(vin: str, body: WindowsRequest | None = None) -> dict:
     return await client.close_windows(vin, value=value)
 
 
+class ClimateRequest(BaseModel):
+    circle: str | None = None  # "in" or "out"
+    mode: str | None = None  # "cold", "hot", "nohotcold"
+    operate: str | None = None  # "manual" or "auto"
+    position: str | None = None  # "all"
+    temperature: str | None = None  # e.g. "24"
+    windlevel: str | None = None  # e.g. "4"
+    wshld: str | None = None  # "1" (normal) or "2" (defrost)
+
+
 @app.post("/api/vehicles/{vin}/ac")
-async def ac_switch(vin: str) -> dict:
-    """Toggle the air conditioning on/off."""
+async def ac_switch(vin: str, body: ClimateRequest | None = None) -> dict:
+    """Toggle the air conditioning on/off with optional parameters."""
     client = _get_client()
-    return await client.ac_switch(vin)
+    params = {
+        k: v for k, v in (body.model_dump() if body else {}).items() if v is not None
+    } or None
+    return await client.ac_switch(vin, params=params)
 
 
 @app.post("/api/vehicles/{vin}/quick-cool")
-async def quick_cool(vin: str) -> dict:
-    """Activate quick cooling mode."""
+async def quick_cool(vin: str, body: ClimateRequest | None = None) -> dict:
+    """Activate quick cooling mode with optional parameter overrides."""
     client = _get_client()
-    return await client.quick_cool(vin)
+    params = {
+        k: v for k, v in (body.model_dump() if body else {}).items() if v is not None
+    } or None
+    return await client.quick_cool(vin, params=params)
 
 
 @app.post("/api/vehicles/{vin}/quick-heat")
-async def quick_heat(vin: str) -> dict:
-    """Activate quick heating mode."""
+async def quick_heat(vin: str, body: ClimateRequest | None = None) -> dict:
+    """Activate quick heating mode with optional parameter overrides."""
     client = _get_client()
-    return await client.quick_heat(vin)
+    params = {
+        k: v for k, v in (body.model_dump() if body else {}).items() if v is not None
+    } or None
+    return await client.quick_heat(vin, params=params)
 
 
 @app.post("/api/vehicles/{vin}/defrost")
-async def windshield_defrost(vin: str) -> dict:
-    """Activate windshield defrost."""
+async def windshield_defrost(vin: str, body: ClimateRequest | None = None) -> dict:
+    """Activate windshield defrost with optional parameter overrides."""
     client = _get_client()
-    return await client.windshield_defrost(vin)
+    params = {
+        k: v for k, v in (body.model_dump() if body else {}).items() if v is not None
+    } or None
+    return await client.windshield_defrost(vin, params=params)
 
 
 @app.post("/api/vehicles/{vin}/charge-limit")
