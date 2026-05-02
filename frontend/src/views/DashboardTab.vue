@@ -106,6 +106,7 @@
             <component v-else :is="c.icon" :size="16" />
           </span>
           <span class="ctrl-label">{{ c.label }}</span>
+          <span v-if="isActive(c.action)" class="ctrl-active-dot" :style="{ background: c.color }" />
         </button>
       </div>
     </div>
@@ -161,7 +162,7 @@ import DynamicCarImage from '../components/DynamicCarImage.vue'
 import WindowControlModal from '../components/WindowControlModal.vue'
 import SunshadeControlModal from '../components/SunshadeControlModal.vue'
 import {
-  Zap, Snowflake, Lock, Unlock, Package, Shield, Loader,
+  Zap, Snowflake, Lock, Unlock, Package, PackageOpen, Shield, Loader,
   Radio, ChevronUp, ChevronDown, Sun, Wind, Flame,
   ThermometerSnowflake, BatteryCharging, Columns2
 } from 'lucide-vue-next'
@@ -216,8 +217,7 @@ const pendingLimit = ref(props.status?.battery?.charge_soc_setting ?? 80)
 const controls = [
   { action: 'lock', icon: Lock, label: 'Lock', color: '#ffab40' },
   { action: 'unlock', icon: Unlock, label: 'Unlock', color: '#00e676' },
-  { action: 'trunk/open', icon: Package, label: 'Open Trunk', color: '#00d4ff' },
-  { action: 'trunk/close', icon: Package, label: 'Close Trunk', color: '#4a5468' },
+  { action: 'trunk/open', icon: PackageOpen, label: 'Open Trunk', color: '#00d4ff' },
   { action: 'find', icon: Radio, label: 'Find Car', color: '#00d4ff' },
   { action: 'windows', icon: Columns2, label: 'Windows', color: '#7c6aff', modal: 'windows' },
   { action: 'sunshade', icon: Sun, label: 'Sunshade', color: '#ffab40', modal: 'sunshade' },
@@ -474,6 +474,7 @@ async function doSetChargeLimit() {
   cursor: pointer;
   transition: all 0.15s;
   min-width: 0;
+  position: relative;
 }
 .ctrl-btn:hover {
   transform: scale(1.03);
@@ -501,6 +502,17 @@ async function doSetChargeLimit() {
   letter-spacing: 0.02em;
 }
 .ctrl-btn.active .ctrl-label { color: var(--c); }
+
+.ctrl-active-dot {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  box-shadow: 0 0 6px currentColor;
+  animation: lm-pulse 2s infinite;
+}
 
 /* Charge limit */
 .charge-limit-card {
