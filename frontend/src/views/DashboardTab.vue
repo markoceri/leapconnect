@@ -25,7 +25,7 @@
       <StatCard
         label="Battery" :value="s.battery?.soc ?? '—'" unit="%" :color="battColor"
         :sub="battSub"
-        :icon="s.is_charging ? Zap : null" :pulse="!!s.is_charging"
+        :icon="battIcon" :pulse="!!s.is_charging"
       />
       <StatCard
         label="Range" :value="s.battery?.expected_mileage ?? '—'" unit="km" color="#00d4ff"
@@ -207,12 +207,21 @@ const chargingPowerDisplay = computed(() => {
   return s.value.battery?.battery_power ?? '—'
 })
 
+const isSlowCharging = computed(() => {
+  return s.value.is_charging && s.value.battery?.charge_state_label === 'AC_CONNECTED'
+})
+
 const battSub = computed(() => {
-  if (s.value.is_charging) return 'Charging'
+  if (s.value.is_charging) return isSlowCharging.value ? 'Slow charging (AC)' : 'Fast charging (DC)'
   if (s.value.is_plugged) return 'Plugged in'
   if (s.value.is_regening) return 'Regen'
   if (s.value.battery?.is_discharging) return 'Discharging'
   return 'Not charging'
+})
+
+const battIcon = computed(() => {
+  if (!s.value.is_charging) return null
+  return isSlowCharging.value ? Plug : Zap
 })
 
 const hasPin = computed(() => store.hasPin)
