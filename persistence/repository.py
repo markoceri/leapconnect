@@ -7,26 +7,8 @@ snapshots.  Concrete adapters (e.g. SQLAlchemy/SQLite) implement this.
 from __future__ import annotations
 
 import abc
-from dataclasses import dataclass
-from datetime import datetime
 
-
-@dataclass(frozen=True, slots=True)
-class VehicleSnapshot:
-    """A single point-in-time snapshot of vehicle telemetry."""
-
-    vin: str
-    timestamp: datetime
-    battery_soc: int | None = None
-    expected_mileage: int | None = None
-    total_mileage: int | None = None
-    energy_kwh: float | None = None
-    outdoor_temp: int | None = None
-    is_charging: bool | None = None
-    latitude: float | None = None
-    longitude: float | None = None
-    charge_state: int | None = None
-    speed: int | None = None
+from models import VehicleSnapshot
 
 
 class VehicleHistoryRepository(abc.ABC):

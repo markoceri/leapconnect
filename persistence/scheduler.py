@@ -10,9 +10,10 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING
+
+from models import SchedulerSettings, VehicleSnapshot
 
 if TYPE_CHECKING:
     from leapmotor_api.async_client import AsyncLeapmotorApiClient
@@ -22,17 +23,8 @@ if TYPE_CHECKING:
 
 _LOGGER = logging.getLogger(__name__)
 
-DEFAULT_INTERVAL_MINUTES = 15
 MIN_INTERVAL_MINUTES = 1
 MAX_INTERVAL_MINUTES = 1440  # 24 h
-
-
-@dataclass
-class SchedulerSettings:
-    """User-facing scheduler configuration."""
-
-    enabled: bool = False
-    interval_minutes: int = DEFAULT_INTERVAL_MINUTES
 
 
 class VehicleDataScheduler:
@@ -152,8 +144,6 @@ class VehicleDataScheduler:
         if not self._client or not self._vehicles:
             _LOGGER.debug("Scheduler: no client or vehicles, skipping")
             return
-
-        from .repository import VehicleSnapshot
 
         _LOGGER.info("Scheduler: polling %d vehicle(s)", len(self._vehicles))
         self._total_runs += 1

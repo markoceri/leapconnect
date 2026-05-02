@@ -18,8 +18,9 @@ from sqlalchemy import (
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
-from .repository import VehicleHistoryRepository, VehicleSnapshot
-from .scheduler import SchedulerSettings
+from models import SchedulerSettings, VehicleSnapshot
+
+from .repository import VehicleHistoryRepository
 
 # ---------------------------------------------------------------------------
 # ORM model

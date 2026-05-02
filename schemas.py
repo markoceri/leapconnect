@@ -30,7 +30,7 @@ class VehicleSchema(BaseModel):
     rights: str | None = None
     abilities: list[str] = []
     module_rights: str | None = None
-    allocation_code: str | None = None
+    allocation_code: str | int | None = None
 
     @classmethod
     def from_model(cls, v: Vehicle) -> VehicleSchema:

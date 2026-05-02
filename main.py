@@ -27,7 +27,7 @@ from leapmotor_api.async_client import AsyncLeapmotorApiClient
 from leapmotor_api.image import CarImagePackage
 from leapmotor_api.models import MessageList, Vehicle, VehicleStatus
 
-from persistence.repository import VehicleSnapshot
+from models import VehicleSnapshot
 from persistence.scheduler import VehicleDataScheduler
 from persistence.sqlite_adapter import SQLAlchemyVehicleHistoryRepository
 from schemas import MessageSchema, VehicleSchema, VehicleStatusSchema
