@@ -55,7 +55,7 @@ async function preloadChargeFrames() {
   try {
     // Fetch all 15 frames in parallel
     const fetches = []
-    for (let i = 1; i <= 15; i++) {
+    for (let i = 15; i >= 1; i--) {
       fetches.push(
         fetch(`/api/vehicles/${props.vin}/picture/dynamic?charge_frame=${i}&_t=${ts}`, {
           signal: controller.signal,

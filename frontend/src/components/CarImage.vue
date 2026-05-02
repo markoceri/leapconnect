@@ -109,8 +109,9 @@ const chargeFrame = computed(() => {
 
 function startChargeAnimation() {
   if (chargeTimer) return
+  chargeFrameIndex.value = CHARGE_FRAMES
   chargeTimer = setInterval(() => {
-    chargeFrameIndex.value = (chargeFrameIndex.value % CHARGE_FRAMES) + 1
+    chargeFrameIndex.value = chargeFrameIndex.value <= 1 ? CHARGE_FRAMES : chargeFrameIndex.value - 1
   }, 200)
 }
 
