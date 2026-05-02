@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Battery information now exposes all available fields, including raw energy in Wh and converted kWh
 - Climate, door, window, and connectivity sections now include all available data points instead of a subset
 - Updated the entire frontend to work with the new field names
+- Moved data models (snapshot, scheduler settings) to a dedicated file for better organization
+- Moved the background data collection scheduler to a separate `services` folder, keeping storage-related code separate from application logic
 
 ### Removed
 
