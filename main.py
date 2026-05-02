@@ -926,18 +926,32 @@ async def find_vehicle(vin: str) -> dict:
     return await client.find_vehicle(vin)
 
 
-@app.post("/api/vehicles/{vin}/sunshade/open")
-async def open_sunshade(vin: str) -> dict:
-    """Open the sunshade remotely."""
+class SunshadeRequest(BaseModel):
+    value: str = "10"  # "0" (closed) to "10" (fully open)
+
+
+@app.post("/api/vehicles/{vin}/sunshade")
+async def control_sunshade(vin: str, body: SunshadeRequest | None = None) -> dict:
+    """Control sunshade remotely with optional position (0-10)."""
     client = _get_client()
-    return await client.open_sunshade(vin)
+    value = body.value if body else "10"
+    return await client.control_sunshade(vin, value=value)
+
+
+@app.post("/api/vehicles/{vin}/sunshade/open")
+async def open_sunshade(vin: str, body: SunshadeRequest | None = None) -> dict:
+    """Open the sunshade remotely (optionally to a specific level)."""
+    client = _get_client()
+    value = body.value if body else None
+    return await client.open_sunshade(vin, value=value)
 
 
 @app.post("/api/vehicles/{vin}/sunshade/close")
-async def close_sunshade(vin: str) -> dict:
-    """Close the sunshade remotely."""
+async def close_sunshade(vin: str, body: SunshadeRequest | None = None) -> dict:
+    """Close the sunshade remotely (optionally to a specific level)."""
     client = _get_client()
-    return await client.close_sunshade(vin)
+    value = body.value if body else None
+    return await client.close_sunshade(vin, value=value)
 
 
 @app.post("/api/vehicles/{vin}/battery-preheat")

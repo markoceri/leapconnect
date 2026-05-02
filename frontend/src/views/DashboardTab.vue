@@ -99,7 +99,7 @@
           class="ctrl-btn"
           :class="{ active: isActive(c.action), loading: loadingAction === c.action }"
           :style="{ '--c': c.color }"
-          @click="c.modal ? showWindowModal = true : exec(c.action)"
+          @click="c.modal ? openModal(c.modal) : exec(c.action)"
         >
           <span class="ctrl-icon" :class="{ spinning: loadingAction === c.action }">
             <Loader v-if="loadingAction === c.action" :size="16" />
@@ -139,6 +139,12 @@
       @close="showWindowModal = false"
       :on-exec="execWindow"
     />
+
+    <SunshadeControlModal
+      :visible="showSunshadeModal"
+      @close="showSunshadeModal = false"
+      :on-exec="execSunshade"
+    />
   </div>
 </template>
 
@@ -151,9 +157,10 @@ import StatCard from '../components/StatCard.vue'
 import PinDialog from '../components/PinDialog.vue'
 import DynamicCarImage from '../components/DynamicCarImage.vue'
 import WindowControlModal from '../components/WindowControlModal.vue'
+import SunshadeControlModal from '../components/SunshadeControlModal.vue'
 import {
   Zap, Snowflake, Lock, Unlock, Package, Shield, Loader,
-  Radio, ChevronUp, ChevronDown, Sun, MoonStar, Wind, Flame,
+  Radio, ChevronUp, ChevronDown, Sun, Wind, Flame,
   ThermometerSnowflake, BatteryCharging, Columns2
 } from 'lucide-vue-next'
 
@@ -200,6 +207,7 @@ const showPinDialog = ref(false)
 const pendingAction = ref(null)
 const pinDialogRef = ref(null)
 const showWindowModal = ref(false)
+const showSunshadeModal = ref(false)
 
 const pendingLimit = ref(props.status?.battery?.charge_soc_setting ?? 80)
 
@@ -209,9 +217,8 @@ const controls = [
   { action: 'trunk/open', icon: Package, label: 'Open Trunk', color: '#00d4ff' },
   { action: 'trunk/close', icon: Package, label: 'Close Trunk', color: '#4a5468' },
   { action: 'find', icon: Radio, label: 'Find Car', color: '#00d4ff' },
-  { action: 'windows', icon: Columns2, label: 'Windows', color: '#7c6aff', modal: true },
-  { action: 'sunshade/open', icon: Sun, label: 'Open Sunshade', color: '#ffab40' },
-  { action: 'sunshade/close', icon: MoonStar, label: 'Close Sunshade', color: '#4a5468' },
+  { action: 'windows', icon: Columns2, label: 'Windows', color: '#7c6aff', modal: 'windows' },
+  { action: 'sunshade', icon: Sun, label: 'Sunshade', color: '#ffab40', modal: 'sunshade' },
   { action: 'ac', icon: Snowflake, label: 'A/C Toggle', color: '#00d4ff' },
   { action: 'quick-cool', icon: Wind, label: 'Quick Cool', color: '#00d4ff' },
   { action: 'quick-heat', icon: Flame, label: 'Quick Heat', color: '#ff7043' },
@@ -283,6 +290,24 @@ async function execWindow({ action, body }) {
   } catch (err) {
     toast(`Windows: ${err.message}`, 'error')
   }
+}
+
+async function execSunshade({ action, body }) {
+  const ok = await requirePin()
+  if (!ok) return
+  try {
+    await store.execControl(props.vehicle.vin, action, body)
+    toast('Sunshade command sent', 'success')
+    await store.refreshCurrent()
+    carImageKey.value = Date.now()
+  } catch (err) {
+    toast(`Sunshade: ${err.message}`, 'error')
+  }
+}
+
+function openModal(type) {
+  if (type === 'windows') showWindowModal.value = true
+  else if (type === 'sunshade') showSunshadeModal.value = true
 }
 
 async function doSetChargeLimit() {
