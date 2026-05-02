@@ -11,7 +11,9 @@ import base64
 import io
 import logging
 import os
+import secrets
 import shutil
+import time
 import zipfile
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -20,7 +22,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from leapmotor_api import LeapmotorApiClient
 from leapmotor_api.async_client import AsyncLeapmotorApiClient
@@ -32,6 +34,7 @@ from models import VehicleSnapshot
 from persistence.sqlite_adapter import SQLAlchemyVehicleHistoryRepository
 from schemas import (
     AccountSetupResponse,
+    AuthLoginResponse,
     CertificateStatusResponse,
     CertificateUploadResponse,
     ConnectionStatusResponse,
@@ -79,6 +82,41 @@ _picture_cache: dict[str, dict[str, str]] = {}  # vin -> {filename: data-URI}
 _image_packages: dict[str, CarImagePackage] = {}  # vin -> CarImagePackage
 _history_repo: SQLAlchemyVehicleHistoryRepository | None = None
 _scheduler: VehicleDataScheduler | None = None
+
+# Session management — in-memory token store
+SESSION_COOKIE_NAME = "leapconnect_session"
+SESSION_MAX_AGE = 7 * 24 * 3600  # 7 days
+_sessions: dict[str, float] = {}  # token -> expiry timestamp
+
+# Endpoints that do NOT require a session
+_PUBLIC_PATHS: set[str] = {
+    "/api/setup/status",
+    "/api/setup/user",
+    "/api/auth/login",
+}
+
+
+def _create_session() -> str:
+    """Create a new session token and store it."""
+    token = secrets.token_urlsafe(32)
+    _sessions[token] = time.time() + SESSION_MAX_AGE
+    return token
+
+
+def _validate_session(token: str | None) -> bool:
+    """Check if a session token is valid and not expired."""
+    if not token or token not in _sessions:
+        return False
+    if time.time() > _sessions[token]:
+        _sessions.pop(token, None)
+        return False
+    return True
+
+
+def _invalidate_session(token: str | None) -> None:
+    """Remove a session token."""
+    if token:
+        _sessions.pop(token, None)
 
 
 def _get_client() -> AsyncLeapmotorApiClient:
@@ -195,6 +233,21 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+@app.middleware("http")
+async def session_middleware(request: Request, call_next):
+    """Require a valid session cookie for all /api/ routes except public ones."""
+    path = request.url.path
+    if path.startswith("/api/") and path not in _PUBLIC_PATHS:
+        token = request.cookies.get(SESSION_COOKIE_NAME)
+        if not _validate_session(token):
+            return JSONResponse(
+                status_code=401,
+                content={"detail": "Authentication required"},
+            )
+    return await call_next(request)
+
+
 # ---------------------------------------------------------------------------
 # Serve Vue SPA in production (built files in frontend/dist)
 # ---------------------------------------------------------------------------
@@ -212,13 +265,17 @@ if FRONTEND_DIST.is_dir():
 
 
 @app.get("/api/setup/status", response_model=SetupStatusResponse)
-async def setup_status() -> SetupStatusResponse:
+async def setup_status(request: Request) -> SetupStatusResponse:
     """Check if the app is configured (user + certificates + credentials)."""
     if not _history_repo:
         raise HTTPException(status_code=503, detail="DB not ready")
 
     user = await _history_repo.get_user()
     has_user = user is not None
+
+    # Check session authentication
+    token = request.cookies.get(SESSION_COOKIE_NAME)
+    authenticated = _validate_session(token)
 
     account = await _history_repo.get_account()
     has_account = account is not None
@@ -245,6 +302,7 @@ async def setup_status() -> SetupStatusResponse:
         has_account=has_account,
         has_certificates=has_certs,
         certificates_valid=certs_valid,
+        authenticated=authenticated,
         connected=_connected,
         vehicles=[VehicleSchema.from_model(v) for v in _vehicles],
     )
@@ -311,7 +369,7 @@ async def get_certificates() -> CertificateStatusResponse:
 
 
 @app.post("/api/setup/user", response_model=UserCreateResponse)
-async def create_user(request: Request) -> UserCreateResponse:
+async def create_user(request: Request) -> Response:
     """Create a LeapConnect application user."""
     if not _history_repo:
         raise HTTPException(status_code=503, detail="DB not ready")
@@ -334,7 +392,71 @@ async def create_user(request: Request) -> UserCreateResponse:
         raise HTTPException(status_code=409, detail="User already exists")
 
     user = await _history_repo.create_user(display_name, password)
-    return UserCreateResponse(status="ok", display_name=user["display_name"])
+
+    # Auto-login: create session for the new user
+    token = _create_session()
+    resp = JSONResponse(
+        content=UserCreateResponse(
+            status="ok", display_name=user["display_name"]
+        ).model_dump()
+    )
+    resp.set_cookie(
+        key=SESSION_COOKIE_NAME,
+        value=token,
+        max_age=SESSION_MAX_AGE,
+        httponly=True,
+        samesite="strict",
+    )
+    return resp
+
+
+# ---------------------------------------------------------------------------
+# Routes — Authentication
+# ---------------------------------------------------------------------------
+
+
+@app.post("/api/auth/login", response_model=AuthLoginResponse)
+async def auth_login(request: Request) -> Response:
+    """Authenticate with the LeapConnect user password."""
+    if not _history_repo:
+        raise HTTPException(status_code=503, detail="DB not ready")
+
+    body = await request.json()
+    password = body.get("password", "").strip()
+
+    if not password:
+        raise HTTPException(status_code=422, detail="Password is required")
+
+    valid = await _history_repo.verify_user_password(password)
+    if not valid:
+        raise HTTPException(status_code=401, detail="Invalid password")
+
+    user = await _history_repo.get_user()
+    token = _create_session()
+    resp = JSONResponse(
+        content=AuthLoginResponse(
+            status="ok",
+            display_name=user["display_name"] if user else "",
+        ).model_dump()
+    )
+    resp.set_cookie(
+        key=SESSION_COOKIE_NAME,
+        value=token,
+        max_age=SESSION_MAX_AGE,
+        httponly=True,
+        samesite="strict",
+    )
+    return resp
+
+
+@app.post("/api/auth/logout", response_model=StatusResponse)
+async def auth_logout(request: Request) -> Response:
+    """Logout from the LeapConnect session."""
+    token = request.cookies.get(SESSION_COOKIE_NAME)
+    _invalidate_session(token)
+    resp = JSONResponse(content=StatusResponse(status="ok").model_dump())
+    resp.delete_cookie(key=SESSION_COOKIE_NAME)
+    return resp
 
 
 @app.get("/api/setup/user", response_model=UserInfoResponse)

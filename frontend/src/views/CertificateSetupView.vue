@@ -113,6 +113,7 @@ async function handleSubmit() {
     const res = await fetch('/api/setup/certificates', {
       method: 'POST',
       body: formData,
+      credentials: 'include',
     })
     const data = await res.json()
     if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`)

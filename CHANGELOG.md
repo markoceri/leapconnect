@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Session-based authentication**: the app now requires login with the LeapConnect password before accessing any data; other devices can no longer auto-enter without authenticating
+- `POST /api/auth/login` endpoint: authenticates with LeapConnect user password and sets an HttpOnly session cookie (7-day expiry)
+- `POST /api/auth/logout` endpoint: invalidates the session and clears the cookie
+- HTTP middleware that blocks all `/api/` routes (except `/api/setup/status`, `/api/setup/user`, `/api/auth/login`) without a valid session cookie
+- `LoginView.vue`: password-only login screen shown to returning users who don't have a valid session
+- `authenticated` field in `SetupStatusResponse` schema
+- `AuthLoginResponse` schema for the login endpoint
+- Auto-login on first-time user creation (session cookie set by `POST /api/setup/user`)
+- 401 response handler in the frontend API composable — expired sessions redirect to login automatically
+- `auth_client` test fixture and session-aware tests (`test_status_requires_session`, `test_vehicles_requires_session`, `test_auth_login_wrong_password`)
+- Tests now use a temporary DB (`tmp_path`) to avoid stale state between runs
 - Separate LeapConnect user account from Leapmotor API credentials: first-time setup flow is now User → Certificates → Leapmotor credentials
 - `UserSetupView.vue`: new first-time setup screen to create a LeapConnect account (display name + password)
 - `leapconnect_users` DB table with hashed passwords (PBKDF2-SHA256 + salt) for local account management
@@ -32,6 +43,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Logout now clears the LeapConnect session only, without disconnecting the Leapmotor API (the background scheduler continues collecting data); user is redirected to the login screen
+- All frontend API requests now include `credentials: 'include'` for cookie-based session handling
 - Setup flow now requires creating a LeapConnect user first, then uploading certificates, then adding Leapmotor credentials (previously certificates → credentials only)
 - Settings "Account" section split into three: LeapConnect Account (display name, password), Leapmotor Credentials (email, password), Certificates (cert/key upload)
 - `SetupStatusResponse` and `ConnectionStatusResponse` now include `has_user` and `display_name` fields

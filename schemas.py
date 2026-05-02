@@ -344,6 +344,7 @@ class SetupStatusResponse(BaseModel):
     has_account: bool
     has_certificates: bool
     certificates_valid: bool
+    authenticated: bool = False
     connected: bool
     vehicles: list[VehicleSchema]
 
@@ -395,6 +396,11 @@ class ConnectionStatusResponse(BaseModel):
 
 
 class UserCreateResponse(BaseModel):
+    status: str = "ok"
+    display_name: str
+
+
+class AuthLoginResponse(BaseModel):
     status: str = "ok"
     display_name: str
 

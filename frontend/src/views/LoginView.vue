@@ -16,16 +16,12 @@
       <div class="login-card">
         <form @submit.prevent="handleLogin" autocomplete="off">
           <div class="form-group">
-            <label>Email</label>
-            <input v-model="form.username" type="email" placeholder="your@email.com" required />
-          </div>
-          <div class="form-group">
             <label>Password</label>
-            <input v-model="form.password" type="password" placeholder="Account password" required />
+            <input v-model="form.password" type="password" placeholder="Enter your password" required autofocus />
           </div>
 
           <button type="submit" class="btn-login" :disabled="submitting">
-            {{ submitting ? 'Connecting…' : 'Connect to Leapmotor' }}
+            {{ submitting ? 'Signing in…' : 'Sign In' }}
           </button>
           <div v-if="error" class="login-error visible">{{ error }}</div>
         </form>
@@ -37,16 +33,14 @@
 <script setup>
 import { ref, reactive } from 'vue'
 import { useAppStore } from '../stores/appStore'
-import { useToast } from '../composables/useToast'
+import { api } from '../composables/useApi'
 
 const store = useAppStore()
-const { toast } = useToast()
 
 const submitting = ref(false)
 const error = ref('')
 
 const form = reactive({
-  username: '',
   password: '',
 })
 
@@ -54,8 +48,9 @@ async function handleLogin() {
   error.value = ''
   submitting.value = true
   try {
-    await store.login(form)
-    toast('Connected successfully', 'success')
+    await api('POST', '/api/auth/login', { password: form.password })
+    // Re-check status — session cookie is now set
+    await store.checkStatus()
   } catch (err) {
     error.value = err.message
   } finally {

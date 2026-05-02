@@ -7,6 +7,9 @@
   <!-- User Setup (first-time) -->
   <UserSetupView v-else-if="store.screen === 'setup-user'" />
 
+  <!-- Login (returning user) -->
+  <LoginView v-else-if="store.screen === 'login'" />
+
   <!-- Certificate Setup -->
   <CertificateSetupView v-else-if="store.screen === 'setup-certs'" />
 
@@ -161,9 +164,11 @@
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { useAppStore } from './stores/appStore'
 import { useToast } from './composables/useToast'
+import { setOnUnauthorized } from './composables/useApi'
 import CertificateSetupView from './views/CertificateSetupView.vue'
 import AccountSetupView from './views/AccountSetupView.vue'
 import UserSetupView from './views/UserSetupView.vue'
+import LoginView from './views/LoginView.vue'
 import VehicleSelectorView from './views/VehicleSelectorView.vue'
 import DashboardTab from './views/DashboardTab.vue'
 import DetailsTab from './views/DetailsTab.vue'
@@ -242,15 +247,18 @@ function handleLogout() {
 let unreadInterval = null
 
 onMounted(async () => {
+  setOnUnauthorized(() => { store.screen = 'login' })
   const restored = await store.checkStatus()
   if (restored) {
     toast('Session restored', 'success')
   } else if (store.screen === 'app' && !store.connected) {
     toast('Offline mode — live data not available', 'warning')
   }
-  // Load unread count and poll every 60s
-  store.loadUnreadCount()
-  unreadInterval = setInterval(() => store.loadUnreadCount(), 60000)
+  // Load unread count and poll every 60s (only when authenticated)
+  if (store.screen === 'app') {
+    store.loadUnreadCount()
+    unreadInterval = setInterval(() => store.loadUnreadCount(), 60000)
+  }
 })
 
 onBeforeUnmount(() => {

@@ -62,7 +62,7 @@ export const useAppStore = defineStore('app', () => {
 
   async function logout() {
     try {
-      await api('POST', '/api/logout')
+      await api('POST', '/api/auth/logout')
     } catch {
       // ignore
     }
@@ -73,8 +73,7 @@ export const useAppStore = defineStore('app', () => {
     hasPin.value = false
     picturePackages.value = {}
     activeTab.value = 'dashboard'
-    // Stay in app — just disconnected, not wiping setup
-    screen.value = 'app'
+    screen.value = 'login'
   }
 
   async function checkStatus() {
@@ -85,6 +84,12 @@ export const useAppStore = defineStore('app', () => {
       if (!setup.has_user) {
         // No LeapConnect user — first-time setup
         screen.value = 'setup-user'
+        return false
+      }
+
+      if (!setup.authenticated) {
+        // User exists but not logged in — show login screen
+        screen.value = 'login'
         return false
       }
 
