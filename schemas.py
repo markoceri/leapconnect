@@ -31,6 +31,7 @@ class VehicleSchema(BaseModel):
     abilities: list[str] = []
     module_rights: str | None = None
     allocation_code: str | int | None = None
+    raw: dict | None = None
 
     @classmethod
     def from_model(cls, v: Vehicle) -> VehicleSchema:
@@ -55,6 +56,7 @@ class VehicleSchema(BaseModel):
             abilities=v.abilities or [],
             module_rights=v.module_rights,
             allocation_code=v.allocation_code,
+            raw=v.raw,
         )
 
 
@@ -185,6 +187,7 @@ class VehicleStatusSchema(BaseModel):
     is_regening: bool | None = None
     is_parked: bool | None = None
     timestamps: TimestampsSchema
+    raw: dict | None = None
 
     @classmethod
     def from_model(cls, status: VehicleStatus) -> VehicleStatusSchema:
@@ -294,6 +297,7 @@ class VehicleStatusSchema(BaseModel):
                 if status.create_time
                 else None,
             ),
+            raw=status.raw,
         )
 
 
@@ -400,6 +404,8 @@ class FullVehicleDataResponse(BaseModel):
     mileage: dict | None = None
     picture: dict | None = None
     errors: dict[str, str | None] = {}
+    vehicle_raw: dict | None = None
+    status_raw: dict | None = None
 
 
 class SnapshotSchema(BaseModel):

@@ -107,8 +107,15 @@
       <button class="raw-toggle" @click="showRaw = !showRaw">
         {{ showRaw ? 'Hide' : 'Show' }} full JSON
       </button>
-      <div v-if="showRaw" class="raw-panel">
-        <pre>{{ JSON.stringify(rawData, null, 2) }}</pre>
+      <div v-if="showRaw">
+        <div class="raw-tabs">
+          <button class="raw-tab" :class="{ active: rawTab === 'vehicle' }" @click="rawTab = 'vehicle'">Vehicle</button>
+          <button class="raw-tab" :class="{ active: rawTab === 'status' }" @click="rawTab = 'status'">Status</button>
+        </div>
+        <div class="raw-panel">
+          <pre v-if="rawTab === 'vehicle'">{{ JSON.stringify(rawData?.vehicle_raw, null, 2) }}</pre>
+          <pre v-else>{{ JSON.stringify(rawData?.status_raw, null, 2) }}</pre>
+        </div>
       </div>
     </SectionCard>
   </div>
@@ -128,6 +135,7 @@ const props = defineProps({
 })
 
 const showRaw = ref(false)
+const rawTab = ref('vehicle')
 const showAccountEdit = ref(false)
 const accountSaving = ref(false)
 const accountError = ref('')
@@ -435,9 +443,9 @@ onMounted(() => {
   max-height: 400px;
   overflow: auto;
   background: #0d1018;
-  border-radius: 8px;
+  border-radius: 0 0 8px 8px;
   padding: 12px;
-  margin-top: 12px;
+  margin-top: 0;
 }
 .raw-panel pre {
   font-family: var(--mono);
@@ -445,6 +453,27 @@ onMounted(() => {
   color: var(--muted3);
   white-space: pre-wrap;
   word-break: break-all;
+}
+.raw-tabs {
+  display: flex;
+  gap: 4px;
+  margin-top: 12px;
+}
+.raw-tab {
+  flex: 1;
+  padding: 8px 0;
+  border: none;
+  border-radius: 8px 8px 0 0;
+  background: #161a26;
+  color: #5c6478;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+}
+.raw-tab.active {
+  background: #0d1018;
+  color: #7c6aff;
 }
 
 /* Scheduler / Data Collection */

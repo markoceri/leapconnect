@@ -794,6 +794,8 @@ async def get_full_vehicle_data(vin: str) -> FullVehicleDataResponse:
             "mileage": str(results[1]) if isinstance(results[1], Exception) else None,
             "picture": str(results[2]) if isinstance(results[2], Exception) else None,
         },
+        vehicle_raw=vehicle.raw,
+        status_raw=status.raw if status else None,
     )
 
 
