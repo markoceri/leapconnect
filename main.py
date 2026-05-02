@@ -47,6 +47,9 @@ from schemas import (
     SnapshotSchema,
     StatusResponse,
     UnreadCountResponse,
+    UserCreateResponse,
+    UserInfoResponse,
+    UserUpdateResponse,
     VehicleHistoryResponse,
     VehicleListResponse,
     VehicleSchema,
@@ -210,9 +213,12 @@ if FRONTEND_DIST.is_dir():
 
 @app.get("/api/setup/status", response_model=SetupStatusResponse)
 async def setup_status() -> SetupStatusResponse:
-    """Check if the app is configured (certificates + credentials saved)."""
+    """Check if the app is configured (user + certificates + credentials)."""
     if not _history_repo:
         raise HTTPException(status_code=503, detail="DB not ready")
+
+    user = await _history_repo.get_user()
+    has_user = user is not None
 
     account = await _history_repo.get_account()
     has_account = account is not None
@@ -226,8 +232,16 @@ async def setup_status() -> SetupStatusResponse:
             and Path(account["cert_path"]).is_file()
             and Path(account["key_path"]).is_file()
         )
+    else:
+        # Check certs from settings (uploaded but no account yet)
+        cert_path = await _history_repo.get_setting("cert_path") or ""
+        key_path = await _history_repo.get_setting("key_path") or ""
+        if cert_path and key_path:
+            has_certs = True
+            certs_valid = Path(cert_path).is_file() and Path(key_path).is_file()
 
     return SetupStatusResponse(
+        has_user=has_user,
         has_account=has_account,
         has_certificates=has_certs,
         certificates_valid=certs_valid,
@@ -289,6 +303,88 @@ async def get_certificates() -> CertificateStatusResponse:
         cert_exists=bool(cert_path) and Path(cert_path).is_file(),
         key_exists=bool(key_path) and Path(key_path).is_file(),
     )
+
+
+# ---------------------------------------------------------------------------
+# Routes — LeapConnect User
+# ---------------------------------------------------------------------------
+
+
+@app.post("/api/setup/user", response_model=UserCreateResponse)
+async def create_user(request: Request) -> UserCreateResponse:
+    """Create a LeapConnect application user."""
+    if not _history_repo:
+        raise HTTPException(status_code=503, detail="DB not ready")
+
+    body = await request.json()
+    display_name = body.get("display_name", "").strip()
+    password = body.get("password", "").strip()
+
+    if not display_name or not password:
+        raise HTTPException(
+            status_code=422, detail="display_name and password are required"
+        )
+    if len(password) < 4:
+        raise HTTPException(
+            status_code=422, detail="Password must be at least 4 characters"
+        )
+
+    existing = await _history_repo.get_user()
+    if existing:
+        raise HTTPException(status_code=409, detail="User already exists")
+
+    user = await _history_repo.create_user(display_name, password)
+    return UserCreateResponse(status="ok", display_name=user["display_name"])
+
+
+@app.get("/api/setup/user", response_model=UserInfoResponse)
+async def get_user_info() -> UserInfoResponse:
+    """Get current LeapConnect user info."""
+    if not _history_repo:
+        raise HTTPException(status_code=503, detail="DB not ready")
+
+    user = await _history_repo.get_user()
+    return UserInfoResponse(
+        has_user=user is not None,
+        display_name=user["display_name"] if user else None,
+    )
+
+
+@app.put("/api/setup/user", response_model=UserUpdateResponse)
+async def update_user(request: Request) -> UserUpdateResponse:
+    """Update LeapConnect user display name and/or password."""
+    if not _history_repo:
+        raise HTTPException(status_code=503, detail="DB not ready")
+
+    body = await request.json()
+    display_name = body.get("display_name")
+    password = body.get("password")
+    current_password = body.get("current_password", "").strip()
+
+    if not current_password:
+        raise HTTPException(status_code=422, detail="current_password is required")
+
+    if not await _history_repo.verify_user_password(current_password):
+        raise HTTPException(status_code=403, detail="Current password is incorrect")
+
+    if display_name is not None:
+        display_name = display_name.strip()
+        if not display_name:
+            raise HTTPException(status_code=422, detail="display_name cannot be empty")
+
+    if password is not None:
+        password = password.strip()
+        if len(password) < 4:
+            raise HTTPException(
+                status_code=422,
+                detail="Password must be at least 4 characters",
+            )
+
+    user = await _history_repo.update_user(display_name=display_name, password=password)
+    if not user:
+        raise HTTPException(status_code=404, detail="No user found")
+
+    return UserUpdateResponse(status="ok", display_name=user["display_name"])
 
 
 @app.post("/api/setup/account", response_model=AccountSetupResponse)
@@ -530,16 +626,26 @@ async def logout() -> StatusResponse:
 async def connection_status() -> ConnectionStatusResponse:
     """Get current connection status, account info, and vehicle list."""
     has_account = False
+    has_user = False
+    display_name = None
+    leapmotor_email = None
     if _history_repo:
         account = await _history_repo.get_account()
         has_account = account is not None
-    return {
-        "connected": _connected,
-        "has_account": has_account,
-        "user_id": _sync_client.user_id if _sync_client else None,
-        "vehicles": [VehicleSchema.from_model(v).model_dump() for v in _vehicles],
-        "has_pin": bool(_sync_client and _sync_client.operation_password),
-    }
+        leapmotor_email = account["username"] if account else None
+        user = await _history_repo.get_user()
+        has_user = user is not None
+        display_name = user["display_name"] if user else None
+    return ConnectionStatusResponse(
+        connected=_connected,
+        has_account=has_account,
+        has_user=has_user,
+        user_id=_sync_client.user_id if _sync_client else None,
+        leapmotor_email=leapmotor_email,
+        display_name=display_name,
+        vehicles=[VehicleSchema.from_model(v) for v in _vehicles],
+        has_pin=bool(_sync_client and _sync_client.operation_password),
+    )
 
 
 # ---------------------------------------------------------------------------

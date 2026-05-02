@@ -4,10 +4,13 @@
     <div class="spinner" />
   </div>
 
+  <!-- User Setup (first-time) -->
+  <UserSetupView v-else-if="store.screen === 'setup-user'" />
+
   <!-- Certificate Setup -->
   <CertificateSetupView v-else-if="store.screen === 'setup-certs'" />
 
-  <!-- Account Setup -->
+  <!-- Account Setup (Leapmotor credentials) -->
   <AccountSetupView v-else-if="store.screen === 'setup-account'" />
 
   <!-- Vehicle Selector -->
@@ -160,6 +163,7 @@ import { useAppStore } from './stores/appStore'
 import { useToast } from './composables/useToast'
 import CertificateSetupView from './views/CertificateSetupView.vue'
 import AccountSetupView from './views/AccountSetupView.vue'
+import UserSetupView from './views/UserSetupView.vue'
 import VehicleSelectorView from './views/VehicleSelectorView.vue'
 import DashboardTab from './views/DashboardTab.vue'
 import DetailsTab from './views/DetailsTab.vue'

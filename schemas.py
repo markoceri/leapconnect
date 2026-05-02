@@ -340,6 +340,7 @@ class StatusResponse(BaseModel):
 
 
 class SetupStatusResponse(BaseModel):
+    has_user: bool
     has_account: bool
     has_certificates: bool
     certificates_valid: bool
@@ -385,9 +386,27 @@ class SetPinResponse(BaseModel):
 class ConnectionStatusResponse(BaseModel):
     connected: bool
     has_account: bool
+    has_user: bool
     user_id: str | None = None
+    leapmotor_email: str | None = None
+    display_name: str | None = None
     vehicles: list[VehicleSchema]
     has_pin: bool
+
+
+class UserCreateResponse(BaseModel):
+    status: str = "ok"
+    display_name: str
+
+
+class UserUpdateResponse(BaseModel):
+    status: str = "ok"
+    display_name: str
+
+
+class UserInfoResponse(BaseModel):
+    has_user: bool
+    display_name: str | None = None
 
 
 class VehicleListResponse(BaseModel):

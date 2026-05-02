@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Separate LeapConnect user account from Leapmotor API credentials: first-time setup flow is now User → Certificates → Leapmotor credentials
+- `UserSetupView.vue`: new first-time setup screen to create a LeapConnect account (display name + password)
+- `leapconnect_users` DB table with hashed passwords (PBKDF2-SHA256 + salt) for local account management
+- Backend endpoints: `POST /api/setup/user` (create), `GET /api/setup/user` (info), `PUT /api/setup/user` (update with password verification)
+- Settings now has 3 separate editable sections: LeapConnect Account, Leapmotor Credentials, Certificates
+- Certificate status indicators (installed/missing) in Settings
 - `ClimateControlModal` component: consolidated A/C Toggle, Quick Cool, Quick Heat, and Defrost into a single "Climate" modal with quick-action buttons and full parameter controls (temperature 16–32°C, fan level 1–7, mode cool/heat/fan, operate auto/manual, air circulation recirculate/fresh, windshield normal/defrost)
 - Backend `ClimateRequest` model with optional climate parameters (`circle`, `mode`, `operate`, `position`, `temperature`, `windlevel`, `wshld`)
 - Message notification dropdown in the top navbar with unread badge, inline message preview, infinite scroll, and periodic polling (60s)
@@ -26,6 +32,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Setup flow now requires creating a LeapConnect user first, then uploading certificates, then adding Leapmotor credentials (previously certificates → credentials only)
+- Settings "Account" section split into three: LeapConnect Account (display name, password), Leapmotor Credentials (email, password), Certificates (cert/key upload)
+- `SetupStatusResponse` and `ConnectionStatusResponse` now include `has_user` and `display_name` fields
 - Climate remote controls consolidated from four separate buttons (A/C Toggle, Quick Cool, Quick Heat, Defrost) into a single "Climate" button that opens a dedicated modal; quick actions remain available inside the modal
 - Backend climate endpoints (`ac`, `quick-cool`, `quick-heat`, `defrost`) now accept an optional `ClimateRequest` body to forward parameters to the leapmotor-api client
 - Window and sunshade remote controls consolidated from two separate buttons each into a single button that opens a dedicated modal

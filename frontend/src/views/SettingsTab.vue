@@ -1,27 +1,72 @@
 <template>
   <div class="settings-tab">
-    <!-- Account -->
-    <SectionCard title="Account" :icon="User">
+    <!-- LeapConnect Account -->
+    <SectionCard title="LeapConnect Account" :icon="User">
       <div class="account-row">
         <div class="account-avatar">{{ initials }}</div>
         <div>
           <div class="account-name">{{ displayName }}</div>
-          <div class="account-email">{{ accountEmail }}</div>
+          <div class="account-role">Local account</div>
         </div>
       </div>
-      <button class="action-btn" @click="showAccountEdit = !showAccountEdit">
-        {{ showAccountEdit ? 'Cancel' : 'Edit Credentials' }}
+      <button class="action-btn" @click="showUserEdit = !showUserEdit">
+        {{ showUserEdit ? 'Cancel' : 'Edit Account' }}
       </button>
-      <div v-if="showAccountEdit" class="edit-panel">
+      <div v-if="showUserEdit" class="edit-panel">
         <div class="form-group">
-          <label>Email</label>
+          <label>Display Name</label>
+          <input v-model="userForm.display_name" type="text" placeholder="Your name" />
+        </div>
+        <div class="form-group">
+          <label>New Password</label>
+          <input v-model="userForm.password" type="password" placeholder="Leave empty to keep current" />
+        </div>
+        <div class="form-divider">Verification</div>
+        <div class="form-group">
+          <label>Current Password</label>
+          <input v-model="userForm.current_password" type="password" placeholder="Required to save changes" />
+        </div>
+        <button class="save-btn" :disabled="userSaving" @click="saveUser">
+          {{ userSaving ? 'Saving…' : 'Save Changes' }}
+        </button>
+        <div v-if="userError" class="field-error">{{ userError }}</div>
+        <div v-if="userSuccess" class="field-success">{{ userSuccess }}</div>
+      </div>
+      <InfoRow label="App version" value="v2.5.0" color="#5c6478" />
+    </SectionCard>
+
+    <!-- Leapmotor Credentials -->
+    <SectionCard title="Leapmotor Credentials" :icon="KeyRound">
+      <InfoRow label="Email" :value="leapmotorEmail" color="#e2e6f0" />
+      <InfoRow label="Connection" :value="store.connected ? 'Connected' : 'Offline'" :color="store.connected ? '#00e676' : '#ffab40'" :dot="true" />
+      <button class="action-btn" @click="showLeapmotorEdit = !showLeapmotorEdit">
+        {{ showLeapmotorEdit ? 'Cancel' : 'Edit Credentials' }}
+      </button>
+      <div v-if="showLeapmotorEdit" class="edit-panel">
+        <div class="form-group">
+          <label>Leapmotor Email</label>
           <input v-model="accountForm.username" type="email" placeholder="your@email.com" />
         </div>
         <div class="form-group">
-          <label>Password</label>
-          <input v-model="accountForm.password" type="password" placeholder="New password" />
+          <label>Leapmotor Password</label>
+          <input v-model="accountForm.password" type="password" placeholder="Leapmotor account password" />
         </div>
-        <div class="form-divider">Certificates</div>
+        <button class="save-btn" :disabled="accountSaving" @click="saveLeapmotorAccount">
+          {{ accountSaving ? 'Saving…' : 'Save & Reconnect' }}
+        </button>
+        <div v-if="accountError" class="field-error">{{ accountError }}</div>
+        <div v-if="accountSuccess" class="field-success">{{ accountSuccess }}</div>
+      </div>
+    </SectionCard>
+
+    <!-- Certificates -->
+    <SectionCard title="Certificates" :icon="ShieldCheck">
+      <InfoRow label="App Certificate" :value="certsStatus.cert_exists ? 'Installed' : 'Missing'" :color="certsStatus.cert_exists ? '#00e676' : '#ff5252'" :dot="true" />
+      <InfoRow label="Private Key" :value="certsStatus.key_exists ? 'Installed' : 'Missing'" :color="certsStatus.key_exists ? '#00e676' : '#ff5252'" :dot="true" />
+      <button class="action-btn" @click="showCertEdit = !showCertEdit">
+        {{ showCertEdit ? 'Cancel' : 'Update Certificates' }}
+      </button>
+      <div v-if="showCertEdit" class="edit-panel">
         <div class="form-group">
           <label>App Certificate (.crt / .pem)</label>
           <div class="file-upload" :class="{ filled: certFile }" @click="$refs.certInput.click()">
@@ -36,14 +81,12 @@
           </div>
           <input ref="keyInput" type="file" accept=".key,.pem" hidden @change="e => keyFile = e.target.files[0]" />
         </div>
-        <small class="form-hint">Leave certificate fields empty to keep existing ones.</small>
-        <button class="save-btn" :disabled="accountSaving" @click="saveAccount">
-          {{ accountSaving ? 'Saving…' : 'Save & Reconnect' }}
+        <button class="save-btn" :disabled="certSaving || !certFile || !keyFile" @click="saveCertificates">
+          {{ certSaving ? 'Uploading…' : 'Upload Certificates' }}
         </button>
-        <div v-if="accountError" class="field-error">{{ accountError }}</div>
-        <div v-if="accountSuccess" class="field-success">{{ accountSuccess }}</div>
+        <div v-if="certError" class="field-error">{{ certError }}</div>
+        <div v-if="certSuccess" class="field-success">{{ certSuccess }}</div>
       </div>
-      <InfoRow label="App version" value="v2.4.1" color="#5c6478" />
     </SectionCard>
 
     <!-- Vehicle -->
@@ -127,7 +170,10 @@ import SectionCard from '../components/SectionCard.vue'
 import InfoRow from '../components/InfoRow.vue'
 import ToggleSwitch from '../components/ToggleSwitch.vue'
 import { api } from '../composables/useApi'
-import { User, Car, Bell, SlidersHorizontal, BarChart3, Code } from 'lucide-vue-next'
+import { useAppStore } from '../stores/appStore'
+import { User, Car, Bell, SlidersHorizontal, BarChart3, Code, KeyRound, ShieldCheck } from 'lucide-vue-next'
+
+const store = useAppStore()
 
 const props = defineProps({
   vehicle: { type: Object, required: true },
@@ -136,22 +182,32 @@ const props = defineProps({
 
 const showRaw = ref(false)
 const rawTab = ref('vehicle')
-const showAccountEdit = ref(false)
+
+// LeapConnect user edit
+const showUserEdit = ref(false)
+const userSaving = ref(false)
+const userError = ref('')
+const userSuccess = ref('')
+const userForm = reactive({ display_name: '', password: '', current_password: '' })
+const displayName = ref('User')
+
+// Leapmotor credentials edit
+const showLeapmotorEdit = ref(false)
 const accountSaving = ref(false)
 const accountError = ref('')
 const accountSuccess = ref('')
+const leapmotorEmail = ref('—')
+const accountForm = reactive({ username: '', password: '' })
+
+// Certificates edit
+const showCertEdit = ref(false)
+const certSaving = ref(false)
+const certError = ref('')
+const certSuccess = ref('')
 const certFile = ref(null)
 const keyFile = ref(null)
+const certsStatus = reactive({ cert_exists: false, key_exists: false })
 
-const accountForm = reactive({
-  username: '',
-  password: '',
-})
-
-const accountEmail = ref('—')
-
-const email = computed(() => accountEmail.value)
-const displayName = computed(() => props.vehicle.vehicle_nickname || 'User')
 const initials = computed(() => {
   const n = displayName.value
   return n.substring(0, 2).toUpperCase()
@@ -220,14 +276,49 @@ function formatTime(iso) {
 async function loadAccount() {
   try {
     const data = await api('GET', '/api/status')
-    if (data.user_id) {
-      accountEmail.value = data.user_id
-      accountForm.username = data.user_id
+    if (data.leapmotor_email) {
+      leapmotorEmail.value = data.leapmotor_email
+      accountForm.username = data.leapmotor_email
+    }
+    if (data.display_name) {
+      displayName.value = data.display_name
+      userForm.display_name = data.display_name
     }
   } catch { /* ignore */ }
 }
 
-async function saveAccount() {
+async function loadCertsStatus() {
+  try {
+    const data = await api('GET', '/api/setup/certificates')
+    Object.assign(certsStatus, data)
+  } catch { /* ignore */ }
+}
+
+async function saveUser() {
+  userError.value = ''
+  userSuccess.value = ''
+  if (!userForm.current_password) {
+    userError.value = 'Current password is required'
+    return
+  }
+  userSaving.value = true
+  try {
+    const payload = { current_password: userForm.current_password }
+    if (userForm.display_name) payload.display_name = userForm.display_name
+    if (userForm.password) payload.password = userForm.password
+    const result = await api('PUT', '/api/setup/user', payload)
+    displayName.value = result.display_name
+    userForm.current_password = ''
+    userForm.password = ''
+    userSuccess.value = 'Account updated successfully'
+  } catch (err) {
+    userError.value = err.message
+  } finally {
+    userSaving.value = false
+  }
+}
+
+async function saveLeapmotorAccount() {
   accountError.value = ''
   accountSuccess.value = ''
   if (!accountForm.username || !accountForm.password) {
@@ -236,30 +327,18 @@ async function saveAccount() {
   }
   accountSaving.value = true
   try {
-    // Upload new certificates if provided
-    if (certFile.value && keyFile.value) {
-      const formData = new FormData()
-      formData.append('cert_file', certFile.value)
-      formData.append('key_file', keyFile.value)
-      const certRes = await fetch('/api/setup/certificates', { method: 'POST', body: formData })
-      const certData = await certRes.json()
-      if (!certRes.ok) throw new Error(certData.detail || 'Certificate upload failed')
-    }
-
-    // Save account and reconnect
     const result = await api('POST', '/api/setup/account', {
       username: accountForm.username,
       password: accountForm.password,
     })
-
     if (result.connected) {
       accountSuccess.value = 'Credentials saved. Connected successfully.'
-      accountEmail.value = accountForm.username
+      leapmotorEmail.value = accountForm.username
+      store.connected = true
+      store.vehicles = result.vehicles || []
     } else {
-      accountSuccess.value = 'Credentials saved. ' + (result.connection_error || 'Connection failed — will retry on next restart.')
+      accountSuccess.value = 'Credentials saved. ' + (result.connection_error || 'Connection failed.')
     }
-    certFile.value = null
-    keyFile.value = null
   } catch (err) {
     accountError.value = err.message
   } finally {
@@ -267,9 +346,33 @@ async function saveAccount() {
   }
 }
 
+async function saveCertificates() {
+  certError.value = ''
+  certSuccess.value = ''
+  if (!certFile.value || !keyFile.value) return
+  certSaving.value = true
+  try {
+    const formData = new FormData()
+    formData.append('cert_file', certFile.value)
+    formData.append('key_file', keyFile.value)
+    const res = await fetch('/api/setup/certificates', { method: 'POST', body: formData })
+    const data = await res.json()
+    if (!res.ok) throw new Error(data.detail || 'Upload failed')
+    certSuccess.value = 'Certificates updated successfully'
+    certFile.value = null
+    keyFile.value = null
+    await loadCertsStatus()
+  } catch (err) {
+    certError.value = err.message
+  } finally {
+    certSaving.value = false
+  }
+}
+
 onMounted(() => {
   loadScheduler()
   loadAccount()
+  loadCertsStatus()
 })
 </script>
 
@@ -308,7 +411,7 @@ onMounted(() => {
   font-weight: 700;
   color: var(--text);
 }
-.account-email {
+.account-role {
   font-size: 12px;
   color: var(--muted);
   margin-top: 2px;

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import secrets
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -69,6 +71,18 @@ class AccountRow(Base):
     cert_path = Column(String(512), nullable=False)
     key_path = Column(String(512), nullable=False)
     p12_password = Column(String(256), nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
+class LeapConnectUserRow(Base):
+    """LeapConnect application user."""
+
+    __tablename__ = "leapconnect_users"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    display_name = Column(String(256), nullable=False)
+    password_hash = Column(String(512), nullable=False)
+    salt = Column(String(64), nullable=False)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
 
@@ -320,3 +334,76 @@ class SQLAlchemyVehicleHistoryRepository(VehicleHistoryRepository):
             else:
                 session.add(AppSettingRow(key=key, value=value))
             await session.commit()
+
+    # -- LeapConnect user management -----------------------------------------
+
+    @staticmethod
+    def _hash_password(password: str, salt: str) -> str:
+        return hashlib.pbkdf2_hmac(
+            "sha256", password.encode(), salt.encode(), 100_000
+        ).hex()
+
+    async def create_user(self, display_name: str, password: str) -> dict:
+        """Create a new LeapConnect user. Returns user dict."""
+        salt = secrets.token_hex(16)
+        pw_hash = self._hash_password(password, salt)
+        async with self._session_factory() as session:
+            row = LeapConnectUserRow(
+                display_name=display_name,
+                password_hash=pw_hash,
+                salt=salt,
+                created_at=datetime.utcnow(),
+            )
+            session.add(row)
+            await session.commit()
+            return {"id": row.id, "display_name": row.display_name}
+
+    async def get_user(self) -> dict | None:
+        """Return the first LeapConnect user or None."""
+        async with self._session_factory() as session:
+            stmt = (
+                select(LeapConnectUserRow)
+                .order_by(LeapConnectUserRow.id.asc())
+                .limit(1)
+            )
+            result = await session.execute(stmt)
+            row = result.scalar_one_or_none()
+            if not row:
+                return None
+            return {"id": row.id, "display_name": row.display_name}
+
+    async def verify_user_password(self, password: str) -> bool:
+        """Verify the LeapConnect user password."""
+        async with self._session_factory() as session:
+            stmt = (
+                select(LeapConnectUserRow)
+                .order_by(LeapConnectUserRow.id.asc())
+                .limit(1)
+            )
+            result = await session.execute(stmt)
+            row = result.scalar_one_or_none()
+            if not row:
+                return False
+            return self._hash_password(password, row.salt) == row.password_hash
+
+    async def update_user(
+        self, display_name: str | None = None, password: str | None = None
+    ) -> dict | None:
+        """Update LeapConnect user display name and/or password."""
+        async with self._session_factory() as session:
+            stmt = (
+                select(LeapConnectUserRow)
+                .order_by(LeapConnectUserRow.id.asc())
+                .limit(1)
+            )
+            result = await session.execute(stmt)
+            row = result.scalar_one_or_none()
+            if not row:
+                return None
+            if display_name is not None:
+                row.display_name = display_name
+            if password is not None:
+                row.salt = secrets.token_hex(16)
+                row.password_hash = self._hash_password(password, row.salt)
+            await session.commit()
+            return {"id": row.id, "display_name": row.display_name}

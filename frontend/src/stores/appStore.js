@@ -82,14 +82,21 @@ export const useAppStore = defineStore('app', () => {
       // First check setup status
       const setup = await api('GET', '/api/setup/status')
 
+      if (!setup.has_user) {
+        // No LeapConnect user — first-time setup
+        screen.value = 'setup-user'
+        return false
+      }
+
+      if (!setup.has_certificates) {
+        // User exists but no certificates
+        screen.value = 'setup-certs'
+        return false
+      }
+
       if (!setup.has_account) {
-        // No account configured — check if certificates are set
-        const certs = await api('GET', '/api/setup/certificates')
-        if (!certs.cert_exists || !certs.key_exists) {
-          screen.value = 'setup-certs'
-        } else {
-          screen.value = 'setup-account'
-        }
+        // Certs exist but no Leapmotor credentials
+        screen.value = 'setup-account'
         return false
       }
 
@@ -111,7 +118,7 @@ export const useAppStore = defineStore('app', () => {
       return false
     } catch {
       // API not reachable
-      screen.value = 'setup-certs'
+      screen.value = 'setup-user'
       return false
     }
   }
