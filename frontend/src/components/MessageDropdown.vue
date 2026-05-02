@@ -202,9 +202,9 @@ onBeforeUnmount(() => {
 }
 
 .msg-panel {
-  position: absolute;
-  top: calc(100% + 8px);
-  right: 0;
+  position: fixed;
+  top: 56px;
+  right: 12px;
   width: 340px;
   max-height: 420px;
   background: var(--bg2);
@@ -220,7 +220,7 @@ onBeforeUnmount(() => {
 @media (max-width: 400px) {
   .msg-panel {
     width: calc(100vw - 24px);
-    right: -8px;
+    right: 12px;
   }
 }
 
