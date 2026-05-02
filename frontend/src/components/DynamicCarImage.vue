@@ -28,7 +28,7 @@ const staticSrc = computed(() => {
 })
 
 // --- Charging animation ---
-const charging = computed(() => !!props.status?.battery?.is_charging)
+const charging = computed(() => !!props.status?.is_charging)
 const chargeFrameUrls = ref([])   // Object URLs for frames 1-15
 const chargeIndex = ref(0)
 let chargeTimer = null

@@ -2,11 +2,11 @@
   <div class="dashboard-tab">
     <!-- Hero -->
     <div class="hero">
-      <!-- <div class="hero-glow" :class="{ charging: s.battery?.is_charging, ac: s.climate?.ac_switch }" /> -->
+      <!-- <div class="hero-glow" :class="{ charging: s.is_charging, ac: s.climate?.ac_switch }" /> -->
       <div class="hero-car">
         <DynamicCarImage :vin="vehicle.vin" :status="s" :refresh-key="carImageKey" />
         <div class="hero-badges">
-          <span v-if="s.battery?.is_charging" class="badge badge-charging"><Zap :size="14" /></span>
+          <span v-if="s.is_charging" class="badge badge-charging"><Zap :size="14" /></span>
           <span v-if="s.is_regening" class="badge badge-regen"><Zap :size="14" /></span>
           <span v-if="s.climate?.ac_switch" class="badge badge-ac"><Snowflake :size="14" /></span>
           <span v-if="s.doors?.is_locked" class="badge badge-lock"><Lock :size="14" /></span>
@@ -24,7 +24,7 @@
       <StatCard
         label="Battery" :value="s.battery?.soc ?? '—'" unit="%" :color="battColor"
         :sub="battSub"
-        :icon="s.battery?.is_charging ? Zap : null" :pulse="!!s.battery?.is_charging"
+        :icon="s.is_charging ? Zap : null" :pulse="!!s.is_charging"
       />
       <StatCard
         label="Range" :value="s.battery?.expected_mileage ?? '—'" unit="km" color="#00d4ff"
@@ -47,7 +47,7 @@
 
     <!-- Battery bar -->
     <div class="battery-bar-container">
-      <div class="battery-bar-fill" :style="{ width: (s.battery?.soc ?? 0) + '%', background: battColor, boxShadow: s.battery?.is_charging ? `0 0 8px ${battColor}` : 'none' }" />
+      <div class="battery-bar-fill" :style="{ width: (s.battery?.soc ?? 0) + '%', background: battColor, boxShadow: s.is_charging ? `0 0 8px ${battColor}` : 'none' }" />
     </div>
 
     <!-- Lock status + charging info row -->
@@ -63,7 +63,7 @@
         <div class="lock-time">Updated {{ s.timestamps?.collect_time ? formatTime(s.timestamps.collect_time) : '—' }}</div>
       </div>
 
-      <div v-if="s.battery?.is_charging" class="charging-widget">
+      <div v-if="s.is_charging" class="charging-widget">
         <div class="lock-label">Charging</div>
         <div class="charging-stats">
           <div class="charging-stat">
@@ -181,7 +181,7 @@ const chargingPowerDisplay = computed(() => {
 })
 
 const battSub = computed(() => {
-  if (s.value.battery?.is_charging) return 'Charging'
+  if (s.value.is_charging) return 'Charging'
   if (s.value.is_regening) return 'Regen'
   if (s.value.battery?.is_discharging) return 'Discharging'
   return 'Not charging'

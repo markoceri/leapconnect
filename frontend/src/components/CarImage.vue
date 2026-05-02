@@ -88,7 +88,7 @@ const doors = computed(() => ({
 
 const trunk = computed(() => !!s.value.doors?.bbcm_back_door_status)
 const hood = computed(() => false) // no hood status from API
-const charging = computed(() => !!s.value.battery?.is_charging)
+const charging = computed(() => !!s.value.is_charging)
 const acOn = computed(() => !!s.value.climate?.ac_switch)
 
 // Windows: open when percent > 0

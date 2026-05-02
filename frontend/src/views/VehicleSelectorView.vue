@@ -35,8 +35,8 @@
                 <div class="vs-card-name">{{ v.vehicle_nickname || v.car_type || 'Leapmotor' }}</div>
                 <div class="vs-card-vin">{{ v.vin }}</div>
               </div>
-              <div class="vs-card-badge" :class="{ charging: getStatus(v.vin, 'battery', 'is_charging') }">
-                <template v-if="getStatus(v.vin, 'battery', 'is_charging')"><Zap :size="12" /> Ricarica</template>
+              <div class="vs-card-badge" :class="{ charging: store.vehicleData[v.vin]?.status?.is_charging }">
+                <template v-if="store.vehicleData[v.vin]?.status?.is_charging"><Zap :size="12" /> Ricarica</template>
                 <template v-else>{{ v.car_type || 'EV' }}</template>
               </div>
             </div>
