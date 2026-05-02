@@ -38,34 +38,41 @@
 
             <!-- Slider -->
             <div class="wc-slider-area">
-              <div class="wc-slider-labels">
-                <span class="wc-label-top">0% — Closed</span>
-                <span class="wc-label-bottom">100% — Open</span>
-              </div>
-              <div class="wc-slider-track-wrapper">
-                <div class="wc-slider-track">
-                  <div class="wc-slider-fill" :style="{ height: sliderValue + '%' }" />
-                  <!-- Current min indicator -->
-                  <div v-if="currentMin != null" class="wc-indicator wc-indicator-min" :style="{ bottom: currentMin + '%' }" title="Min window">
-                    <span class="wc-indicator-line" />
-                    <span class="wc-indicator-label">{{ currentMin }}%</span>
-                  </div>
-                  <!-- Current max indicator -->
-                  <div v-if="currentMax != null && currentMax !== currentMin" class="wc-indicator wc-indicator-max" :style="{ bottom: currentMax + '%' }" title="Max window">
-                    <span class="wc-indicator-line" />
-                    <span class="wc-indicator-label">{{ currentMax }}%</span>
-                  </div>
-                  <input
-                    type="range"
-                    min="0"
-                    max="100"
-                    step="5"
-                    v-model.number="sliderValue"
-                    class="wc-slider-input"
-                    orient="vertical"
-                  />
+              <div class="wc-slider-track">
+                <div class="wc-slider-fill" :style="{ width: sliderValue + '%' }" />
+                <!-- Individual window indicators -->
+                <div
+                  v-for="win in windowIndicators"
+                  :key="win.key"
+                  class="wc-indicator"
+                  :class="'wc-indicator-' + win.side"
+                  :style="{ left: win.value + '%', '--wc': win.color }"
+                  :title="win.label + ': ' + win.value + '%'"
+                >
+                  <span class="wc-indicator-dot" />
+                  <span class="wc-indicator-val">{{ win.value }}%</span>
                 </div>
-                <div class="wc-slider-value">{{ sliderValue }}%</div>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  step="5"
+                  v-model.number="sliderValue"
+                  class="wc-slider-input"
+                />
+              </div>
+              <div class="wc-slider-labels">
+                <span class="wc-label-left">0% — Closed</span>
+                <span class="wc-slider-value">{{ sliderValue }}%</span>
+                <span class="wc-label-right">100% — Open</span>
+              </div>
+            </div>
+
+            <!-- Legend -->
+            <div v-if="windowIndicators.length > 0" class="wc-legend">
+              <div v-for="win in windowIndicators" :key="win.key" class="wc-legend-item">
+                <span class="wc-legend-dot" :style="{ background: win.color }" />
+                <span class="wc-legend-label">{{ win.label }}</span>
               </div>
             </div>
 
@@ -101,31 +108,25 @@ const emit = defineEmits(['close'])
 const sliderValue = ref(0)
 const loadingAction = ref(null)
 
-const windowPercents = computed(() => {
+const windowIndicators = computed(() => {
   const w = props.windows
   if (!w) return []
-  return [
-    w.left_front_window_percent,
-    w.right_front_window_percent,
-    w.left_rear_window_percent,
-    w.right_rear_window_percent,
-  ].filter(v => v != null)
-})
-
-const currentMin = computed(() => {
-  if (windowPercents.value.length === 0) return null
-  return Math.min(...windowPercents.value)
-})
-
-const currentMax = computed(() => {
-  if (windowPercents.value.length === 0) return null
-  return Math.max(...windowPercents.value)
+  const defs = [
+    { key: 'lf', field: 'left_front_window_percent', label: 'Left Front', color: '#00d4ff', side: 'bottom' },
+    { key: 'rf', field: 'right_front_window_percent', label: 'Right Front', color: '#7c6aff', side: 'top' },
+    { key: 'lr', field: 'left_rear_window_percent', label: 'Left Rear', color: '#00e676', side: 'bottom' },
+    { key: 'rr', field: 'right_rear_window_percent', label: 'Right Rear', color: '#ffab40', side: 'top' },
+  ]
+  return defs
+    .filter(d => w[d.field] != null)
+    .map(d => ({ ...d, value: w[d.field] }))
 })
 
 // Initialize slider to average of current window positions when modal opens
 watch(() => props.visible, (val) => {
-  if (val && windowPercents.value.length > 0) {
-    const avg = Math.round(windowPercents.value.reduce((a, b) => a + b, 0) / windowPercents.value.length / 5) * 5
+  if (val && windowIndicators.value.length > 0) {
+    const vals = windowIndicators.value.map(w => w.value)
+    const avg = Math.round(vals.reduce((a, b) => a + b, 0) / vals.length / 5) * 5
     sliderValue.value = avg
   }
 })
@@ -166,7 +167,7 @@ async function applyCustom() {
   background: var(--bg2);
   border: 1px solid var(--border2);
   border-radius: 16px;
-  width: 300px;
+  width: 320px;
   max-height: 90vh;
   overflow: hidden;
   box-shadow: 0 16px 48px #00000088;
@@ -262,40 +263,16 @@ async function applyCustom() {
 /* Slider area */
 .wc-slider-area {
   display: flex;
-  align-items: stretch;
-  gap: 16px;
-}
-
-.wc-slider-labels {
-  display: flex;
   flex-direction: column;
-  justify-content: space-between;
-  font-size: 10px;
-  color: var(--muted);
-  letter-spacing: 0.02em;
-  flex-shrink: 0;
-  width: 90px;
-}
-
-.wc-label-top {
-  text-align: right;
-}
-.wc-label-bottom {
-  text-align: right;
-}
-
-.wc-slider-track-wrapper {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  flex: 1;
+  gap: 10px;
+  padding-top: 28px;
+  padding-bottom: 10px;
 }
 
 .wc-slider-track {
   position: relative;
-  width: 40px;
-  height: 180px;
+  width: 100%;
+  height: 40px;
   background: #0d1422;
   border: 1px solid var(--border2);
   border-radius: 20px;
@@ -304,12 +281,12 @@ async function applyCustom() {
 
 .wc-slider-fill {
   position: absolute;
-  bottom: 0;
+  top: 0;
   left: 0;
-  right: 0;
-  background: linear-gradient(to top, #7c6aff, #00d4ff);
-  border-radius: 0 0 20px 20px;
-  transition: height 0.15s ease;
+  bottom: 0;
+  background: linear-gradient(to right, #7c6aff, #00d4ff);
+  border-radius: 20px 0 0 20px;
+  transition: width 0.15s ease;
   pointer-events: none;
 }
 
@@ -320,11 +297,23 @@ async function applyCustom() {
   height: 100%;
   opacity: 0;
   cursor: pointer;
-  writing-mode: vertical-lr;
-  direction: rtl;
   -webkit-appearance: none;
   appearance: none;
   margin: 0;
+}
+
+.wc-slider-labels {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 24px;
+}
+
+.wc-label-left,
+.wc-label-right {
+  font-size: 10px;
+  color: var(--muted);
+  letter-spacing: 0.02em;
 }
 
 .wc-slider-value {
@@ -338,42 +327,72 @@ async function applyCustom() {
 /* Current state indicators */
 .wc-indicator {
   position: absolute;
-  left: 100%;
-  transform: translateY(50%);
+  transform: translateX(-50%);
   display: flex;
+  flex-direction: column;
   align-items: center;
   pointer-events: none;
   z-index: 2;
 }
 
-.wc-indicator-line {
-  width: 12px;
-  height: 2px;
+.wc-indicator-bottom {
+  top: 100%;
+  margin-top: 4px;
+}
+
+.wc-indicator-top {
+  bottom: 100%;
+  margin-bottom: 4px;
+  flex-direction: column-reverse;
+}
+
+.wc-indicator-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--wc);
+  box-shadow: 0 0 5px var(--wc);
   flex-shrink: 0;
 }
 
-.wc-indicator-min .wc-indicator-line {
-  background: #00d4ff;
-}
-
-.wc-indicator-max .wc-indicator-line {
-  background: #7c6aff;
-}
-
-.wc-indicator-label {
+.wc-indicator-val {
   font-size: 9px;
   font-weight: 700;
   font-family: var(--mono);
+  color: var(--wc);
   white-space: nowrap;
-  margin-left: 4px;
+  margin-top: 2px;
 }
 
-.wc-indicator-min .wc-indicator-label {
-  color: #00d4ff;
+.wc-indicator-top .wc-indicator-val {
+  margin-top: 0;
+  margin-bottom: 2px;
 }
 
-.wc-indicator-max .wc-indicator-label {
-  color: #7c6aff;
+/* Legend */
+.wc-legend {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 12px;
+}
+
+.wc-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.wc-legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.wc-legend-label {
+  font-size: 10px;
+  color: var(--muted);
+  font-weight: 600;
 }
 
 /* Apply button */
