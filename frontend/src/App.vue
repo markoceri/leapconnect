@@ -37,6 +37,7 @@
           <span>{{ store.connected ? 'CONNECTED' : 'OFFLINE' }}</span>
         </div>
         <!-- <div class="connection-dot sm:hidden" :class="{ offline: !store.connected }" style="width:8px;height:8px;border-radius:50%" /> -->
+        <MessageDropdown />
         <button v-if="!store.connected" class="nav-btn" @click="handleReconnect">
           <RefreshCw :size="14" />
           <span class="hidden sm:inline">Reconnect</span>
@@ -81,7 +82,10 @@
           :title="t.label"
           @click="store.activeTab = t.id"
         >
-          <component :is="t.icon" :size="18" />
+          <div class="sidebar-icon-wrap">
+            <component :is="t.icon" :size="18" />
+            <span v-if="t.id === 'messages' && store.unreadMessages > 0" class="tab-unread-dot" />
+          </div>
           <div v-if="store.activeTab === t.id" class="sidebar-indicator" />
         </button>
       </div>
@@ -138,7 +142,10 @@
         :class="{ active: store.activeTab === t.id }"
         @click="store.activeTab = t.id"
       >
-        <component :is="t.icon" :size="20" />
+        <div class="bottom-icon-wrap">
+          <component :is="t.icon" :size="20" />
+          <span v-if="t.id === 'messages' && store.unreadMessages > 0" class="tab-unread-dot" />
+        </div>
         <span class="bottom-tab-label">{{ t.label }}</span>
       </button>
     </div>
@@ -148,7 +155,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { useAppStore } from './stores/appStore'
 import { useToast } from './composables/useToast'
 import CertificateSetupView from './views/CertificateSetupView.vue'
@@ -160,6 +167,7 @@ import HistoryTab from './views/HistoryTab.vue'
 import MessagesTab from './views/MessagesTab.vue'
 import SettingsTab from './views/SettingsTab.vue'
 import ToastContainer from './components/ToastContainer.vue'
+import MessageDropdown from './components/MessageDropdown.vue'
 import { LayoutDashboard, List, TrendingUp, Mail, Settings, RefreshCw, LogOut } from 'lucide-vue-next'
 
 const store = useAppStore()
@@ -227,6 +235,8 @@ function handleLogout() {
   store.logout()
 }
 
+let unreadInterval = null
+
 onMounted(async () => {
   const restored = await store.checkStatus()
   if (restored) {
@@ -234,6 +244,13 @@ onMounted(async () => {
   } else if (store.screen === 'app' && !store.connected) {
     toast('Offline mode — live data not available', 'warning')
   }
+  // Load unread count and poll every 60s
+  store.loadUnreadCount()
+  unreadInterval = setInterval(() => store.loadUnreadCount(), 60000)
+})
+
+onBeforeUnmount(() => {
+  if (unreadInterval) clearInterval(unreadInterval)
 })
 </script>
 
@@ -461,5 +478,23 @@ onMounted(async () => {
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.02em;
+}
+
+/* Unread dot on sidebar/bottom tabs */
+.sidebar-icon-wrap,
+.bottom-icon-wrap {
+  position: relative;
+  display: inline-flex;
+}
+.tab-unread-dot {
+  position: absolute;
+  top: -3px;
+  right: -4px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ff5252;
+  box-shadow: 0 0 6px #ff525288;
+  pointer-events: none;
 }
 </style>

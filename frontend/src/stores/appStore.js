@@ -17,6 +17,7 @@ export const useAppStore = defineStore('app', () => {
   const refreshing = ref(false)
   const picturePackages = ref({})
   const tempSetup = ref(null)
+  const unreadMessages = ref(0)
 
   const selectedVehicle = computed(() =>
     vehicles.value.find((v) => v.vin === selectedVin.value) || null,
@@ -170,6 +171,15 @@ export const useAppStore = defineStore('app', () => {
     })
   }
 
+  async function loadUnreadCount() {
+    try {
+      const data = await api('GET', '/api/messages/unread-count')
+      unreadMessages.value = data.unread || 0
+    } catch {
+      // ignore
+    }
+  }
+
   return {
     screen,
     activeTab,
@@ -198,5 +208,7 @@ export const useAppStore = defineStore('app', () => {
     sendDestination,
     submitPin,
     loadPicturePackage,
+    unreadMessages,
+    loadUnreadCount,
   }
 })
