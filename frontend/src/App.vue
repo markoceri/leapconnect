@@ -36,7 +36,7 @@
           <span class="connection-dot" :class="{ offline: !store.connected }" />
           <span>{{ store.connected ? 'CONNECTED' : 'OFFLINE' }}</span>
         </div>
-        <div class="connection-dot sm:hidden" :class="{ offline: !store.connected }" style="width:8px;height:8px;border-radius:50%" />
+        <!-- <div class="connection-dot sm:hidden" :class="{ offline: !store.connected }" style="width:8px;height:8px;border-radius:50%" /> -->
         <button v-if="!store.connected" class="nav-btn" @click="handleReconnect">
           <RefreshCw :size="14" />
           <span class="hidden sm:inline">Reconnect</span>
