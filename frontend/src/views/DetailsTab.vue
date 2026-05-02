@@ -49,6 +49,7 @@
     <SectionCard title="Battery & Charging" :icon="Battery">
       <InfoRow label="State of Charge" :value="bat.soc != null ? `${bat.soc}%` : '—'" :color="bat.soc > 50 ? '#00e676' : bat.soc > 20 ? '#ffab40' : '#ff5252'" />
       <InfoRow label="Charging" :value="props.status?.is_charging === true ? 'Yes' : props.status?.is_charging === false ? 'No' : '—'" :color="props.status?.is_charging ? '#00e676' : '#5c6478'" :dot="!!props.status?.is_charging" />
+      <InfoRow label="Plugged In" :value="props.status?.is_plugged === true ? 'Yes' : props.status?.is_plugged === false ? 'No' : '—'" :color="props.status?.is_plugged ? '#ffab40' : '#5c6478'" :dot="!!props.status?.is_plugged" />
       <InfoRow label="Discharging" :value="bat.is_discharging === true ? 'Yes' : bat.is_discharging === false ? 'No' : '—'" :color="bat.is_discharging ? '#ffab40' : '#5c6478'" />
       <InfoRow label="Regen Braking" :value="props.status?.is_regening === true ? 'Yes' : props.status?.is_regening === false ? 'No' : '—'" :color="props.status?.is_regening ? '#00d4ff' : '#5c6478'" />
       <InfoRow label="Charge State" :value="bat.charge_state_label || '—'" :color="bat.charge_state != null && bat.charge_state > 0 ? '#00e676' : '#5c6478'" />

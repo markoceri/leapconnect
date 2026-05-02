@@ -7,6 +7,7 @@
         <DynamicCarImage :vin="vehicle.vin" :status="s" :refresh-key="carImageKey" />
         <div class="hero-badges">
           <span v-if="s.is_charging" class="badge badge-charging"><Zap :size="14" /></span>
+          <span v-if="s.is_plugged" class="badge badge-plugged"><Plug :size="14" /></span>
           <span v-if="s.is_regening" class="badge badge-regen"><Zap :size="14" /></span>
           <span v-if="s.climate?.ac_switch" class="badge badge-ac"><Snowflake :size="14" /></span>
           <span v-if="s.doors?.is_locked" class="badge badge-lock"><Lock :size="14" /></span>
@@ -171,7 +172,7 @@ import SunshadeControlModal from '../components/SunshadeControlModal.vue'
 import ClimateControlModal from '../components/ClimateControlModal.vue'
 import TrunkOpenIcon from '../components/icons/TrunkOpenIcon.vue'
 import {
-  Zap, Snowflake, Lock, Unlock, Shield, Loader,
+  Zap, Snowflake, Lock, Unlock, Shield, Loader, Plug,
   Radio, ChevronUp, ChevronDown, Sun, Wind, Flame,
   Thermometer, ThermometerSnowflake, BatteryCharging, Columns2
 } from 'lucide-vue-next'
@@ -208,6 +209,7 @@ const chargingPowerDisplay = computed(() => {
 
 const battSub = computed(() => {
   if (s.value.is_charging) return 'Charging'
+  if (s.value.is_plugged) return 'Plugged in'
   if (s.value.is_regening) return 'Regen'
   if (s.value.battery?.is_discharging) return 'Discharging'
   return 'Not charging'
@@ -393,6 +395,7 @@ async function doSetChargeLimit() {
   backdrop-filter: blur(6px);
 }
 .badge-charging { background: rgba(0,230,118,0.15); border: 1px solid rgba(0,230,118,0.5); }
+.badge-plugged { background: rgba(255,171,64,0.15); border: 1px solid rgba(255,171,64,0.5); }
 .badge-regen { background: rgba(0,212,255,0.15); border: 1px solid rgba(0,212,255,0.5); }
 .badge-ac { background: rgba(0,212,255,0.12); border: 1px solid rgba(0,212,255,0.45); }
 .badge-lock { background: rgba(255,171,64,0.15); border: 1px solid rgba(255,171,64,0.5); }

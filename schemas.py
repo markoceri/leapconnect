@@ -184,6 +184,7 @@ class VehicleStatusSchema(BaseModel):
     # Computed (top-level convenience)
     is_locked: bool | None = None
     is_charging: bool | None = None
+    is_plugged: bool | None = None
     is_regening: bool | None = None
     is_parked: bool | None = None
     timestamps: TimestampsSchema
@@ -287,6 +288,7 @@ class VehicleStatusSchema(BaseModel):
             ),
             is_locked=status.is_locked,
             is_charging=status.is_charging,
+            is_plugged=status.is_plugged,
             is_regening=status.is_regening,
             is_parked=status.is_parked,
             timestamps=TimestampsSchema(
@@ -441,6 +443,7 @@ class SnapshotSchema(BaseModel):
     energy_kwh: float | None = None
     outdoor_temp: int | None = None
     is_charging: bool | None = None
+    is_plugged: bool | None = None
     latitude: float | None = None
     longitude: float | None = None
     speed: int | None = None

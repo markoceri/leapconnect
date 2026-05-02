@@ -805,6 +805,7 @@ async def get_vehicle_status(vin: str) -> VehicleStatusResponse:
             energy_kwh=status.battery.dump_energy_kwh,
             outdoor_temp=status.climate.outdoor_temp,
             is_charging=status.is_charging,
+            is_plugged=status.is_plugged,
             latitude=status.location.latitude,
             longitude=status.location.longitude,
             charge_state=status.battery.charge_state.value
@@ -1053,6 +1054,7 @@ async def get_vehicle_history(vin: str, days: int = 30) -> VehicleHistoryRespons
                 energy_kwh=s.energy_kwh,
                 outdoor_temp=s.outdoor_temp,
                 is_charging=s.is_charging,
+                is_plugged=s.is_plugged,
                 latitude=s.latitude,
                 longitude=s.longitude,
                 speed=s.speed,

@@ -15,8 +15,8 @@
 
     <div class="vs-content">
       <div class="vs-header">
-        <h1>I tuoi veicoli</h1>
-        <p>Seleziona un veicolo per accedere al pannello di controllo</p>
+        <h1>Your vehicles</h1>
+        <p>Select a vehicle to access the control panel</p>
       </div>
 
       <div class="vs-grid">
@@ -35,8 +35,9 @@
                 <div class="vs-card-name">{{ v.vehicle_nickname || v.car_type || 'Leapmotor' }}</div>
                 <div class="vs-card-vin">{{ v.vin }}</div>
               </div>
-              <div class="vs-card-badge" :class="{ charging: store.vehicleData[v.vin]?.status?.is_charging }">
-                <template v-if="store.vehicleData[v.vin]?.status?.is_charging"><Zap :size="12" /> Ricarica</template>
+              <div class="vs-card-badge" :class="{ charging: store.vehicleData[v.vin]?.status?.is_charging, plugged: store.vehicleData[v.vin]?.status?.is_plugged }">
+                <template v-if="store.vehicleData[v.vin]?.status?.is_charging"><Zap :size="12" /> Charging</template>
+                <template v-else-if="store.vehicleData[v.vin]?.status?.is_plugged"><Plug :size="12" /> Plugged in</template>
                 <template v-else>{{ v.car_type || 'EV' }}</template>
               </div>
             </div>
@@ -45,13 +46,13 @@
                 <div class="vs-stat-value" :style="{ color: battColor(v.vin) }">
                   {{ getStatus(v.vin, 'battery', 'soc') ?? '—' }}{{ getStatus(v.vin, 'battery', 'soc') != null ? '%' : '' }}
                 </div>
-                <div class="vs-stat-label">Batteria</div>
+                <div class="vs-stat-label">Battery</div>
               </div>
               <div class="vs-stat">
                 <div class="vs-stat-value" style="color:#00d4ff">
                   {{ getStatus(v.vin, 'battery', 'expected_mileage') ?? '—' }}{{ getStatus(v.vin, 'battery', 'expected_mileage') != null ? ' km' : '' }}
                 </div>
-                <div class="vs-stat-label">Autonomia</div>
+                <div class="vs-stat-label">Range</div>
               </div>
               <div class="vs-stat">
                 <div class="vs-stat-value" style="color:#8892a8">
@@ -70,7 +71,7 @@
 <script setup>
 import { useAppStore } from '../stores/appStore'
 import DynamicCarImage from '../components/DynamicCarImage.vue'
-import { Zap } from 'lucide-vue-next'
+import { Zap, Plug } from 'lucide-vue-next'
 
 defineProps({
   vehicles: { type: Array, required: true },
@@ -215,6 +216,11 @@ function formatOdo(vin) {
   background: #00e67614;
   color: #00e676;
   border-color: #00e67644;
+}
+.vs-card-badge.plugged {
+  background: #ffab4014;
+  color: #ffab40;
+  border-color: #ffab4044;
 }
 .vs-card-stats {
   display: flex;

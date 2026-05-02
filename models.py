@@ -20,6 +20,7 @@ class VehicleSnapshot:
     energy_kwh: float | None = None
     outdoor_temp: int | None = None
     is_charging: bool | None = None
+    is_plugged: bool | None = None
     latitude: float | None = None
     longitude: float | None = None
     charge_state: int | None = None

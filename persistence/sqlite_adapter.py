@@ -45,6 +45,7 @@ class VehicleSnapshotRow(Base):
     energy_kwh = Column(Float, nullable=True)
     outdoor_temp = Column(Integer, nullable=True)
     is_charging = Column(Boolean, nullable=True)
+    is_plugged = Column(Boolean, nullable=True)
     latitude = Column(Float, nullable=True)
     longitude = Column(Float, nullable=True)
     charge_state = Column(Integer, nullable=True)
@@ -120,6 +121,7 @@ class SQLAlchemyVehicleHistoryRepository(VehicleHistoryRepository):
             energy_kwh=snapshot.energy_kwh,
             outdoor_temp=snapshot.outdoor_temp,
             is_charging=snapshot.is_charging,
+            is_plugged=snapshot.is_plugged,
             latitude=snapshot.latitude,
             longitude=snapshot.longitude,
             charge_state=snapshot.charge_state,
@@ -157,6 +159,7 @@ class SQLAlchemyVehicleHistoryRepository(VehicleHistoryRepository):
                 energy_kwh=r.energy_kwh,
                 outdoor_temp=r.outdoor_temp,
                 is_charging=r.is_charging,
+                is_plugged=r.is_plugged,
                 latitude=r.latitude,
                 longitude=r.longitude,
                 charge_state=r.charge_state,
