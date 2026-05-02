@@ -139,11 +139,37 @@ export const useAppStore = defineStore('app', () => {
     if (selectedVin.value) {
       refreshing.value = true
       try {
-        delete vehicleData.value[selectedVin.value]
-        await loadVehicleData(selectedVin.value)
+        const data = await api('GET', `/api/vehicles/${selectedVin.value}/full`)
+        vehicleData.value[selectedVin.value] = data
       } finally {
         refreshing.value = false
       }
+    }
+  }
+
+  // Refresh with retries after a command — the car takes time to report new state
+  let _pendingRetries = null
+  async function refreshAfterCommand() {
+    // Cancel any previous retry chain
+    if (_pendingRetries) {
+      clearTimeout(_pendingRetries)
+      _pendingRetries = null
+    }
+    // Immediate refresh
+    await refreshCurrent()
+    // Then retry at 3s, 6s, 12s to catch delayed state updates
+    const delays = [3000, 6000, 12000]
+    for (const delay of delays) {
+      _pendingRetries = setTimeout(async () => {
+        if (selectedVin.value && connected.value) {
+          try {
+            const data = await api('GET', `/api/vehicles/${selectedVin.value}/full`)
+            vehicleData.value[selectedVin.value] = data
+          } catch {
+            // ignore background refresh errors
+          }
+        }
+      }, delay)
     }
   }
 
@@ -201,6 +227,7 @@ export const useAppStore = defineStore('app', () => {
     checkStatus,
     loadVehicleData,
     refreshCurrent,
+    refreshAfterCommand,
     selectVehicle,
     goToVehicleSelector,
     execControl,

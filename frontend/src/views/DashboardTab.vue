@@ -272,7 +272,7 @@ async function exec(action, body = null) {
   try {
     await store.execControl(props.vehicle.vin, action, body)
     toast(`${action} executed successfully`, 'success')
-    await store.refreshCurrent()
+    await store.refreshAfterCommand()
     carImageKey.value = Date.now()
   } catch (err) {
     toast(`${action} failed: ${err.message}`, 'error')
@@ -287,7 +287,7 @@ async function execWindow({ action, body }) {
   try {
     await store.execControl(props.vehicle.vin, action, body)
     toast('Windows command sent', 'success')
-    await store.refreshCurrent()
+    await store.refreshAfterCommand()
     carImageKey.value = Date.now()
   } catch (err) {
     toast(`Windows: ${err.message}`, 'error')
@@ -300,7 +300,7 @@ async function execSunshade({ action, body }) {
   try {
     await store.execControl(props.vehicle.vin, action, body)
     toast('Sunshade command sent', 'success')
-    await store.refreshCurrent()
+    await store.refreshAfterCommand()
     carImageKey.value = Date.now()
   } catch (err) {
     toast(`Sunshade: ${err.message}`, 'error')
