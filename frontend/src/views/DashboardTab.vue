@@ -69,19 +69,19 @@
         <div class="charging-stats">
           <div class="charging-stat">
             <div class="charging-val" style="color:#00e676">{{ chargeTimeStr }}</div>
-            <div class="charging-sub">Rimanente</div>
+            <div class="charging-sub">Remaining</div>
           </div>
           <div class="charging-stat">
             <div class="charging-val" style="color:#ff9100">{{ chargingPowerDisplay }} kW</div>
-            <div class="charging-sub">Potenza</div>
+            <div class="charging-sub">Power</div>
           </div>
           <div class="charging-stat">
             <div class="charging-val" style="color:#00d4ff">{{ Math.abs(s.battery?.battery_current ?? 0) }} A</div>
-            <div class="charging-sub">Corrente</div>
+            <div class="charging-sub">Current</div>
           </div>
           <div class="charging-stat">
             <div class="charging-val" style="color:#7c6aff">{{ s.battery?.battery_voltage ?? '—' }} V</div>
-            <div class="charging-sub">Voltaggio</div>
+            <div class="charging-sub">Voltage</div>
           </div>
         </div>
       </div>
