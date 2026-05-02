@@ -14,6 +14,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added return type annotations to all endpoint functions
 - New response wrapper schemas: `FullVehicleDataResponse`, `VehicleHistoryResponse`, `DailySummaryResponse`, `SchedulerStatusResponse`, `MessageListResponse`, `UnreadCountResponse`, and others
 - Certificate setup page now supports drag & drop for certificate and key file uploads
+- New `schemas.py` file with Pydantic models for all API responses (vehicle, status, messages), each with a `from_model` method for easy conversion
+- Migrated from pip/venv to uv (Astral) for dependency and environment management
+- Replaced `requirements.txt` with `uv.lock` for deterministic builds
+- Updated Dockerfile to use uv for dependency installation
+- Updated `requires-python` from `>=3.11` to `>=3.12` (required by leapmotor-api)
+- Updated leapmotor-api dependency to v0.1.2
+- `bump-my-version` for automated versioning across `pyproject.toml` and `frontend/package.json`
+- Pre-commit hooks: trailing whitespace, end-of-file fixer, YAML/TOML/JSON validation, ruff lint + format
+- Pre-push hook: pytest suite must pass before pushing
+- Test suite with pytest + pytest-asyncio
+- `.python-version` file (3.13)
+- Added menu to read messages from leapmotor account
+
+### Fixed
+
+- Charging status in the frontend now uses the vehicle-level `is_charging` property instead of the battery-level one, which was incorrectly showing charging during regenerative braking
 
 ### Changed
 
@@ -31,24 +47,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 
 - Removed manual data conversion helpers in favor of Pydantic response schemas
-
-### Added
-
-- New `schemas.py` file with Pydantic models for all API responses (vehicle, status, messages), each with a `from_model` method for easy conversion
-- Migrated from pip/venv to uv (Astral) for dependency and environment management
-- Replaced `requirements.txt` with `uv.lock` for deterministic builds
-- Updated Dockerfile to use uv for dependency installation
-- Updated `requires-python` from `>=3.11` to `>=3.12` (required by leapmotor-api)
-- Updated leapmotor-api dependency to v0.1.2
-
-### Added
-
-- `bump-my-version` for automated versioning across `pyproject.toml` and `frontend/package.json`
-- Pre-commit hooks: trailing whitespace, end-of-file fixer, YAML/TOML/JSON validation, ruff lint + format
-- Pre-push hook: pytest suite must pass before pushing
-- Test suite with pytest + pytest-asyncio
-- `.python-version` file (3.13)
-- Added menu to read messages from leapmotor account
 
 ## [0.1.0] - 2026-05-01
 
