@@ -10,7 +10,7 @@
           <span v-if="s.is_regening" class="badge badge-regen"><Zap :size="14" /></span>
           <span v-if="s.climate?.ac_switch" class="badge badge-ac"><Snowflake :size="14" /></span>
           <span v-if="s.doors?.is_locked" class="badge badge-lock"><Lock :size="14" /></span>
-          <span v-if="s.doors?.bbcm_back_door_status" class="badge badge-trunk"><Package :size="14" /></span>
+          <span v-if="s.doors?.bbcm_back_door_status" class="badge badge-trunk"><TrunkOpenIcon :size="14" /></span>
         </div>
       </div>
       <div class="hero-info">
@@ -161,8 +161,9 @@ import PinDialog from '../components/PinDialog.vue'
 import DynamicCarImage from '../components/DynamicCarImage.vue'
 import WindowControlModal from '../components/WindowControlModal.vue'
 import SunshadeControlModal from '../components/SunshadeControlModal.vue'
+import TrunkOpenIcon from '../components/icons/TrunkOpenIcon.vue'
 import {
-  Zap, Snowflake, Lock, Unlock, Package, PackageOpen, Shield, Loader,
+  Zap, Snowflake, Lock, Unlock, Shield, Loader,
   Radio, ChevronUp, ChevronDown, Sun, Wind, Flame,
   ThermometerSnowflake, BatteryCharging, Columns2
 } from 'lucide-vue-next'
@@ -217,7 +218,7 @@ const pendingLimit = ref(props.status?.battery?.charge_soc_setting ?? 80)
 const controls = [
   { action: 'lock', icon: Lock, label: 'Lock', color: '#ffab40' },
   { action: 'unlock', icon: Unlock, label: 'Unlock', color: '#00e676' },
-  { action: 'trunk/open', icon: PackageOpen, label: 'Open Trunk', color: '#00d4ff' },
+  { action: 'trunk/open', icon: TrunkOpenIcon, label: 'Open Trunk', color: '#00d4ff' },
   { action: 'find', icon: Radio, label: 'Find Car', color: '#00d4ff' },
   { action: 'windows', icon: Columns2, label: 'Windows', color: '#7c6aff', modal: 'windows' },
   { action: 'sunshade', icon: Sun, label: 'Sunshade', color: '#ffab40', modal: 'sunshade' },
