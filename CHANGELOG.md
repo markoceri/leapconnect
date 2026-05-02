@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-05-02
+
 ### Added
 
 - **Session-based authentication**: the app now requires login with the LeapConnect password before accessing any data; other devices can no longer auto-enter without authenticating
