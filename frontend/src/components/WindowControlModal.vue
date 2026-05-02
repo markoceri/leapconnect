@@ -45,6 +45,16 @@
               <div class="wc-slider-track-wrapper">
                 <div class="wc-slider-track">
                   <div class="wc-slider-fill" :style="{ height: sliderValue + '%' }" />
+                  <!-- Current min indicator -->
+                  <div v-if="currentMin != null" class="wc-indicator wc-indicator-min" :style="{ bottom: currentMin + '%' }" title="Min window">
+                    <span class="wc-indicator-line" />
+                    <span class="wc-indicator-label">{{ currentMin }}%</span>
+                  </div>
+                  <!-- Current max indicator -->
+                  <div v-if="currentMax != null && currentMax !== currentMin" class="wc-indicator wc-indicator-max" :style="{ bottom: currentMax + '%' }" title="Max window">
+                    <span class="wc-indicator-line" />
+                    <span class="wc-indicator-label">{{ currentMax }}%</span>
+                  </div>
                   <input
                     type="range"
                     min="0"
@@ -77,18 +87,48 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { ChevronUp, ChevronDown, Columns2, Loader } from 'lucide-vue-next'
 
 const props = defineProps({
   visible: Boolean,
   onExec: Function,
+  windows: { type: Object, default: null },
 })
 
 const emit = defineEmits(['close'])
 
 const sliderValue = ref(0)
 const loadingAction = ref(null)
+
+const windowPercents = computed(() => {
+  const w = props.windows
+  if (!w) return []
+  return [
+    w.left_front_window_percent,
+    w.right_front_window_percent,
+    w.left_rear_window_percent,
+    w.right_rear_window_percent,
+  ].filter(v => v != null)
+})
+
+const currentMin = computed(() => {
+  if (windowPercents.value.length === 0) return null
+  return Math.min(...windowPercents.value)
+})
+
+const currentMax = computed(() => {
+  if (windowPercents.value.length === 0) return null
+  return Math.max(...windowPercents.value)
+})
+
+// Initialize slider to average of current window positions when modal opens
+watch(() => props.visible, (val) => {
+  if (val && windowPercents.value.length > 0) {
+    const avg = Math.round(windowPercents.value.reduce((a, b) => a + b, 0) / windowPercents.value.length / 5) * 5
+    sliderValue.value = avg
+  }
+})
 
 async function quickAction(type) {
   const action = type === 'open' ? 'windows/open' : 'windows/close'
@@ -259,7 +299,7 @@ async function applyCustom() {
   background: #0d1422;
   border: 1px solid var(--border2);
   border-radius: 20px;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .wc-slider-fill {
@@ -293,6 +333,47 @@ async function applyCustom() {
   color: var(--text);
   font-family: var(--mono);
   letter-spacing: -0.02em;
+}
+
+/* Current state indicators */
+.wc-indicator {
+  position: absolute;
+  left: 100%;
+  transform: translateY(50%);
+  display: flex;
+  align-items: center;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.wc-indicator-line {
+  width: 12px;
+  height: 2px;
+  flex-shrink: 0;
+}
+
+.wc-indicator-min .wc-indicator-line {
+  background: #00d4ff;
+}
+
+.wc-indicator-max .wc-indicator-line {
+  background: #7c6aff;
+}
+
+.wc-indicator-label {
+  font-size: 9px;
+  font-weight: 700;
+  font-family: var(--mono);
+  white-space: nowrap;
+  margin-left: 4px;
+}
+
+.wc-indicator-min .wc-indicator-label {
+  color: #00d4ff;
+}
+
+.wc-indicator-max .wc-indicator-label {
+  color: #7c6aff;
 }
 
 /* Apply button */

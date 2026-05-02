@@ -138,12 +138,14 @@
       :visible="showWindowModal"
       @close="showWindowModal = false"
       :on-exec="execWindow"
+      :windows="s.windows"
     />
 
     <SunshadeControlModal
       :visible="showSunshadeModal"
       @close="showSunshadeModal = false"
       :on-exec="execSunshade"
+      :sunshade="s.windows?.sun_shade"
     />
   </div>
 </template>

@@ -40,6 +40,11 @@
             <div class="sc-slider-area">
               <div class="sc-slider-track">
                 <div class="sc-slider-fill" :style="{ width: (sliderValue / 10 * 100) + '%' }" />
+                <!-- Current state indicator -->
+                <div v-if="currentValue != null" class="sc-indicator" :style="{ left: (currentValue / 10 * 100) + '%' }">
+                  <span class="sc-indicator-line" />
+                  <span class="sc-indicator-label">{{ currentValue }}</span>
+                </div>
                 <input
                   type="range"
                   min="0"
@@ -74,18 +79,30 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { Sun, MoonStar, Loader } from 'lucide-vue-next'
 
 const props = defineProps({
   visible: Boolean,
   onExec: Function,
+  sunshade: { type: Number, default: null },
 })
 
 const emit = defineEmits(['close'])
 
 const sliderValue = ref(0)
 const loadingAction = ref(null)
+
+const currentValue = computed(() => {
+  return props.sunshade != null ? props.sunshade : null
+})
+
+// Initialize slider to current sunshade value when modal opens
+watch(() => props.visible, (val) => {
+  if (val && props.sunshade != null) {
+    sliderValue.value = props.sunshade
+  }
+})
 
 async function quickAction(type) {
   const action = type === 'open' ? 'sunshade/open' : 'sunshade/close'
@@ -230,7 +247,7 @@ async function applyCustom() {
   background: #0d1422;
   border: 1px solid var(--border2);
   border-radius: 20px;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .sc-slider-fill {
@@ -275,6 +292,32 @@ async function applyCustom() {
   color: var(--text);
   font-family: var(--mono);
   letter-spacing: -0.02em;
+}
+
+/* Current state indicator */
+.sc-indicator {
+  position: absolute;
+  top: 100%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.sc-indicator-line {
+  width: 2px;
+  height: 10px;
+  background: #ffab40;
+}
+
+.sc-indicator-label {
+  font-size: 9px;
+  font-weight: 700;
+  font-family: var(--mono);
+  color: #ffab40;
+  margin-top: 2px;
 }
 
 /* Apply button */
