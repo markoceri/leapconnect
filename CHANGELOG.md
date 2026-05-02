@@ -20,6 +20,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Backend `POST /api/vehicles/{vin}/sunshade` endpoint accepting a `value` parameter (0–10) for arbitrary sunshade position
 - `execControl()` in the store now supports an optional request body for parameterized commands
 - Active state dot indicator on remote control buttons (pulsing colored dot) for trunk open, lock/unlock, and A/C status
+- Raw data viewer in Settings tab with tabbed UI (Vehicle / Status) showing the unprocessed API responses for both `Vehicle.raw` and `VehicleStatus.raw`
+- `vehicle_raw` and `status_raw` fields in `FullVehicleDataResponse` API schema
+- `raw` field in `VehicleSchema` and `VehicleStatusSchema`
 
 ### Changed
 
