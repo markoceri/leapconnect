@@ -29,7 +29,29 @@ from leapmotor_api.models import MessageList, Vehicle, VehicleStatus
 
 from models import VehicleSnapshot
 from persistence.sqlite_adapter import SQLAlchemyVehicleHistoryRepository
-from schemas import MessageSchema, VehicleSchema, VehicleStatusSchema
+from schemas import (
+    AccountSetupResponse,
+    CertificateStatusResponse,
+    CertificateUploadResponse,
+    ConnectionStatusResponse,
+    DailySummaryResponse,
+    FullVehicleDataResponse,
+    LoginResponse,
+    MessageListResponse,
+    MessageSchema,
+    ReconnectResponse,
+    SchedulerStatusResponse,
+    SetPinResponse,
+    SetupStatusResponse,
+    SnapshotSchema,
+    StatusResponse,
+    UnreadCountResponse,
+    VehicleHistoryResponse,
+    VehicleListResponse,
+    VehicleSchema,
+    VehicleStatusResponse,
+    VehicleStatusSchema,
+)
 from services.scheduler import VehicleDataScheduler
 
 # Load .env from the webapp directory
@@ -185,8 +207,8 @@ if FRONTEND_DIST.is_dir():
 # ---------------------------------------------------------------------------
 
 
-@app.get("/api/setup/status")
-async def setup_status():
+@app.get("/api/setup/status", response_model=SetupStatusResponse)
+async def setup_status() -> SetupStatusResponse:
     """Check if the app is configured (certificates + credentials saved)."""
     if not _history_repo:
         raise HTTPException(status_code=503, detail="DB not ready")
@@ -204,21 +226,21 @@ async def setup_status():
             and Path(account["key_path"]).is_file()
         )
 
-    return {
-        "has_account": has_account,
-        "has_certificates": has_certs,
-        "certificates_valid": certs_valid,
-        "connected": _connected,
-        "vehicles": [VehicleSchema.from_model(v).model_dump() for v in _vehicles],
-    }
+    return SetupStatusResponse(
+        has_account=has_account,
+        has_certificates=has_certs,
+        certificates_valid=certs_valid,
+        connected=_connected,
+        vehicles=[VehicleSchema.from_model(v) for v in _vehicles],
+    )
 
 
-@app.post("/api/setup/certificates")
+@app.post("/api/setup/certificates", response_model=CertificateUploadResponse)
 async def upload_certificates(
     cert_file: UploadFile = File(...),  # noqa: B008
     key_file: UploadFile = File(...),  # noqa: B008
-):
-    """Upload certificate files (cert + key). Saved to DATA_DIR/certs/."""
+) -> CertificateUploadResponse:
+    """Upload certificate files (cert + key) for API authentication."""
     if not _history_repo:
         raise HTTPException(status_code=503, detail="DB not ready")
 
@@ -243,12 +265,14 @@ async def upload_certificates(
     await _history_repo.save_setting("cert_path", str(cert_dest))
     await _history_repo.save_setting("key_path", str(key_dest))
 
-    return {"status": "ok", "cert_path": str(cert_dest), "key_path": str(key_dest)}
+    return CertificateUploadResponse(
+        status="ok", cert_path=str(cert_dest), key_path=str(key_dest)
+    )
 
 
-@app.get("/api/setup/certificates")
-async def get_certificates():
-    """Return current certificate status."""
+@app.get("/api/setup/certificates", response_model=CertificateStatusResponse)
+async def get_certificates() -> CertificateStatusResponse:
+    """Check whether certificate files are present."""
     if not _history_repo:
         raise HTTPException(status_code=503, detail="DB not ready")
 
@@ -260,15 +284,15 @@ async def get_certificates():
         cert_path = await _history_repo.get_setting("cert_path") or ""
         key_path = await _history_repo.get_setting("key_path") or ""
 
-    return {
-        "cert_exists": bool(cert_path) and Path(cert_path).is_file(),
-        "key_exists": bool(key_path) and Path(key_path).is_file(),
-    }
+    return CertificateStatusResponse(
+        cert_exists=bool(cert_path) and Path(cert_path).is_file(),
+        key_exists=bool(key_path) and Path(key_path).is_file(),
+    )
 
 
-@app.post("/api/setup/account")
-async def save_account(request: Request):
-    """Save Leapmotor account credentials and attempt connection."""
+@app.post("/api/setup/account", response_model=AccountSetupResponse)
+async def save_account(request: Request) -> AccountSetupResponse:
+    """Save account credentials and attempt to connect."""
     global _sync_client, _client, _vehicles, _connected
 
     if not _history_repo:
@@ -327,11 +351,11 @@ async def save_account(request: Request):
             _scheduler.set_client(_client, _vehicles)
             _scheduler.start()
 
-        return {
-            "status": "ok",
-            "connected": True,
-            "vehicles": [VehicleSchema.from_model(v).model_dump() for v in _vehicles],
-        }
+        return AccountSetupResponse(
+            status="ok",
+            connected=True,
+            vehicles=[VehicleSchema.from_model(v) for v in _vehicles],
+        )
     except Exception as exc:
         # Credentials saved but connection failed — that's ok, app works offline
         _connected = False
@@ -340,17 +364,17 @@ async def save_account(request: Request):
         _vehicles = []
         if _scheduler:
             _scheduler.set_client(None, [])
-        return {
-            "status": "ok",
-            "connected": False,
-            "connection_error": str(exc),
-            "vehicles": [],
-        }
+        return AccountSetupResponse(
+            status="ok",
+            connected=False,
+            connection_error=str(exc),
+            vehicles=[],
+        )
 
 
-@app.post("/api/reconnect")
-async def reconnect():
-    """Try to reconnect using saved credentials."""
+@app.post("/api/reconnect", response_model=ReconnectResponse)
+async def reconnect() -> ReconnectResponse:
+    """Reconnect using previously saved credentials."""
     global _sync_client, _client, _vehicles, _connected
 
     if not _history_repo:
@@ -380,11 +404,11 @@ async def reconnect():
             _scheduler.set_client(_client, _vehicles)
             _scheduler.start()
 
-        return {
-            "status": "ok",
-            "connected": True,
-            "vehicles": [VehicleSchema.from_model(v).model_dump() for v in _vehicles],
-        }
+        return ReconnectResponse(
+            status="ok",
+            connected=True,
+            vehicles=[VehicleSchema.from_model(v) for v in _vehicles],
+        )
     except Exception as exc:
         _connected = False
         _sync_client = None
@@ -400,8 +424,9 @@ async def reconnect():
 # ---------------------------------------------------------------------------
 
 
-@app.post("/api/login")
-async def login(request: Request):
+@app.post("/api/login", response_model=LoginResponse)
+async def login(request: Request) -> LoginResponse:
+    """Authenticate with Leapmotor using email and password."""
     global _sync_client, _client, _vehicles, _connected
 
     body = await request.json()
@@ -455,11 +480,11 @@ async def login(request: Request):
             _scheduler.set_client(_client, _vehicles)
             _scheduler.start()
 
-        return {
-            "status": "ok",
-            "user_id": _sync_client.user_id,
-            "vehicles": [VehicleSchema.from_model(v).model_dump() for v in _vehicles],
-        }
+        return LoginResponse(
+            status="ok",
+            user_id=_sync_client.user_id,
+            vehicles=[VehicleSchema.from_model(v) for v in _vehicles],
+        )
     except Exception as exc:
         _connected = False
         _sync_client = None
@@ -470,9 +495,9 @@ async def login(request: Request):
         raise HTTPException(status_code=401, detail=str(exc)) from exc
 
 
-@app.post("/api/set-pin")
-async def set_pin(request: Request):
-    """Set the vehicle operation PIN after login."""
+@app.post("/api/set-pin", response_model=SetPinResponse)
+async def set_pin(request: Request) -> SetPinResponse:
+    """Set the vehicle operation PIN required for remote controls."""
     if not _sync_client:
         raise HTTPException(status_code=400, detail="Not connected")
     body = await request.json()
@@ -480,11 +505,12 @@ async def set_pin(request: Request):
     if not pin:
         raise HTTPException(status_code=422, detail="PIN is required")
     _sync_client.operation_password = pin
-    return {"status": "ok", "has_pin": True}
+    return SetPinResponse(status="ok", has_pin=True)
 
 
-@app.post("/api/logout")
-async def logout():
+@app.post("/api/logout", response_model=StatusResponse)
+async def logout() -> StatusResponse:
+    """Disconnect from the Leapmotor API and clear session data."""
     global _sync_client, _client, _vehicles, _connected
     if _scheduler:
         _scheduler.set_client(None, [])
@@ -496,11 +522,12 @@ async def logout():
     _connected = False
     _picture_cache.clear()
     _image_packages.clear()
-    return {"status": "ok"}
+    return StatusResponse(status="ok")
 
 
-@app.get("/api/status")
-async def connection_status():
+@app.get("/api/status", response_model=ConnectionStatusResponse)
+async def connection_status() -> ConnectionStatusResponse:
+    """Get current connection status, account info, and vehicle list."""
     has_account = False
     if _history_repo:
         account = await _history_repo.get_account()
@@ -524,11 +551,14 @@ async def get_vehicles():
     client = _get_client()
     global _vehicles
     _vehicles = await client.get_vehicle_list()
-    return {"vehicles": [VehicleSchema.from_model(v).model_dump() for v in _vehicles]}
+    return VehicleListResponse(
+        vehicles=[VehicleSchema.from_model(v) for v in _vehicles]
+    )
 
 
-@app.get("/api/vehicles/{vin}/status")
-async def get_vehicle_status(vin: str):
+@app.get("/api/vehicles/{vin}/status", response_model=VehicleStatusResponse)
+async def get_vehicle_status(vin: str) -> VehicleStatusResponse:
+    """Get the current real-time status of a vehicle."""
     client = _get_client()
     vehicle = _find_vehicle(vin)
     status = await client.get_vehicle_status(vehicle)
@@ -553,7 +583,7 @@ async def get_vehicle_status(vin: str):
         )
         asyncio.create_task(_save_snapshot_safe(snapshot))
 
-    return {"status": VehicleStatusSchema.from_model(status).model_dump()}
+    return VehicleStatusResponse(status=VehicleStatusSchema.from_model(status))
 
 
 async def _save_snapshot_safe(snapshot: VehicleSnapshot) -> None:
@@ -565,7 +595,8 @@ async def _save_snapshot_safe(snapshot: VehicleSnapshot) -> None:
 
 
 @app.get("/api/vehicles/{vin}/raw-status")
-async def get_vehicle_raw_status(vin: str):
+async def get_vehicle_raw_status(vin: str) -> dict:
+    """Get the raw unprocessed status data from the API."""
     client = _get_client()
     vehicle = _find_vehicle(vin)
     raw = await client.get_vehicle_raw_status(vehicle)
@@ -573,7 +604,8 @@ async def get_vehicle_raw_status(vin: str):
 
 
 @app.get("/api/vehicles/{vin}/mileage")
-async def get_mileage(vin: str):
+async def get_mileage(vin: str) -> dict:
+    """Get mileage and energy consumption details."""
     client = _get_client()
     vehicle = _find_vehicle(vin)
     data = await client.get_mileage_energy_detail(vehicle)
@@ -581,7 +613,8 @@ async def get_mileage(vin: str):
 
 
 @app.get("/api/vehicles/{vin}/picture")
-async def get_picture(vin: str):
+async def get_picture(vin: str) -> dict:
+    """Get the car picture metadata and download key."""
     client = _get_client()
     vehicle = _find_vehicle(vin)
     data = await client.get_car_picture(vehicle)
@@ -589,15 +622,16 @@ async def get_picture(vin: str):
 
 
 @app.get("/api/vehicles/{vin}/picture/download")
-async def download_picture(vin: str, key: str):
+async def download_picture(vin: str, key: str) -> Response:
+    """Download the raw car picture ZIP package."""
     client = _get_client()
     data = await client.download_car_picture_package(picture_key=key)
     return Response(content=data, media_type="application/zip")
 
 
 @app.get("/api/vehicles/{vin}/picture/image")
-async def get_picture_image(vin: str):
-    """Get car picture key, download the ZIP package, extract and serve the PNG."""
+async def get_picture_image(vin: str) -> Response:
+    """Download the car picture ZIP, extract and serve the main image."""
     client = _get_client()
     vehicle = _find_vehicle(vin)
     picture_data = await client.get_car_picture(vehicle)
@@ -646,11 +680,8 @@ async def get_picture_image(vin: str):
 
 
 @app.get("/api/vehicles/{vin}/picture/package")
-async def get_picture_package(vin: str):
-    """Download the picture ZIP, extract all images, and return as {name: dataURI}.
-
-    Cached per VIN for the lifetime of the session.
-    """
+async def get_picture_package(vin: str) -> dict[str, str]:
+    """Extract all images from the picture ZIP and return as data URIs."""
     if vin in _picture_cache:
         return _picture_cache[vin]
 
@@ -709,14 +740,8 @@ async def _get_image_package(vin: str) -> CarImagePackage:
 
 
 @app.get("/api/vehicles/{vin}/picture/dynamic")
-async def get_dynamic_picture(vin: str, charge_frame: int = 0):
-    """Compose and return the car image based on current vehicle status.
-
-    Each frame is a lossless PNG — the frontend handles animation by
-    cycling ``charge_frame`` (1-15) when the vehicle is charging.
-    Pass ``charge_frame=0`` (default) to get the image without the
-    animated charge-level overlay (charge port still shown if charging).
-    """
+async def get_dynamic_picture(vin: str, charge_frame: int = 0) -> Response:
+    """Compose a dynamic car image reflecting current vehicle status."""
     client = _get_client()
     vehicle = _find_vehicle(vin)
 
@@ -737,9 +762,9 @@ async def get_dynamic_picture(vin: str, charge_frame: int = 0):
     )
 
 
-@app.get("/api/vehicles/{vin}/full")
-async def get_full_vehicle_data(vin: str):
-    """Fetch all data for a vehicle in one call."""
+@app.get("/api/vehicles/{vin}/full", response_model=FullVehicleDataResponse)
+async def get_full_vehicle_data(vin: str) -> FullVehicleDataResponse:
+    """Fetch status, mileage, and picture data for a vehicle in one call."""
     client = _get_client()
     vehicle = _find_vehicle(vin)
 
@@ -758,19 +783,17 @@ async def get_full_vehicle_data(vin: str):
     mileage = results[1] if not isinstance(results[1], Exception) else None
     picture = results[2] if not isinstance(results[2], Exception) else None
 
-    return {
-        "vehicle": VehicleSchema.from_model(vehicle).model_dump(),
-        "status": VehicleStatusSchema.from_model(status).model_dump()
-        if status
-        else None,
-        "mileage": mileage if isinstance(mileage, dict) else None,
-        "picture": picture if isinstance(picture, dict) else None,
-        "errors": {
+    return FullVehicleDataResponse(
+        vehicle=VehicleSchema.from_model(vehicle),
+        status=VehicleStatusSchema.from_model(status) if status else None,
+        mileage=mileage if isinstance(mileage, dict) else None,
+        picture=picture if isinstance(picture, dict) else None,
+        errors={
             "status": str(results[0]) if isinstance(results[0], Exception) else None,
             "mileage": str(results[1]) if isinstance(results[1], Exception) else None,
             "picture": str(results[2]) if isinstance(results[2], Exception) else None,
         },
-    }
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -778,46 +801,46 @@ async def get_full_vehicle_data(vin: str):
 # ---------------------------------------------------------------------------
 
 
-@app.get("/api/vehicles/{vin}/history")
-async def get_vehicle_history(vin: str, days: int = 30):
-    """Return raw snapshots for the given VIN."""
+@app.get("/api/vehicles/{vin}/history", response_model=VehicleHistoryResponse)
+async def get_vehicle_history(vin: str, days: int = 30) -> VehicleHistoryResponse:
+    """Get historical vehicle snapshots for a given time period."""
     if not _history_repo:
         raise HTTPException(status_code=503, detail="History not available")
     snapshots = await _history_repo.get_history(vin, days=days)
-    return {
-        "vin": vin,
-        "days": days,
-        "count": len(snapshots),
-        "snapshots": [
-            {
-                "timestamp": s.timestamp.isoformat(),
-                "battery_soc": s.battery_soc,
-                "expected_mileage": s.expected_mileage,
-                "total_mileage": s.total_mileage,
-                "energy_kwh": s.energy_kwh,
-                "outdoor_temp": s.outdoor_temp,
-                "is_charging": s.is_charging,
-                "latitude": s.latitude,
-                "longitude": s.longitude,
-                "speed": s.speed,
-            }
+    return VehicleHistoryResponse(
+        vin=vin,
+        days=days,
+        count=len(snapshots),
+        snapshots=[
+            SnapshotSchema(
+                timestamp=s.timestamp.isoformat(),
+                battery_soc=s.battery_soc,
+                expected_mileage=s.expected_mileage,
+                total_mileage=s.total_mileage,
+                energy_kwh=s.energy_kwh,
+                outdoor_temp=s.outdoor_temp,
+                is_charging=s.is_charging,
+                latitude=s.latitude,
+                longitude=s.longitude,
+                speed=s.speed,
+            )
             for s in snapshots
         ],
-    }
+    )
 
 
-@app.get("/api/vehicles/{vin}/history/daily")
-async def get_vehicle_daily_summary(vin: str, days: int = 30):
-    """Return aggregated daily summaries for charts."""
+@app.get("/api/vehicles/{vin}/history/daily", response_model=DailySummaryResponse)
+async def get_vehicle_daily_summary(vin: str, days: int = 30) -> DailySummaryResponse:
+    """Get aggregated daily summaries for charts and statistics."""
     if not _history_repo:
         raise HTTPException(status_code=503, detail="History not available")
     summaries = await _history_repo.get_daily_summary(vin, days=days)
-    return {
-        "vin": vin,
-        "days": days,
-        "count": len(summaries),
-        "daily": summaries,
-    }
+    return DailySummaryResponse(
+        vin=vin,
+        days=days,
+        count=len(summaries),
+        daily=summaries,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -825,17 +848,17 @@ async def get_vehicle_daily_summary(vin: str, days: int = 30):
 # ---------------------------------------------------------------------------
 
 
-@app.get("/api/scheduler")
-async def get_scheduler_status():
-    """Return current scheduler status and settings."""
+@app.get("/api/scheduler", response_model=SchedulerStatusResponse)
+async def get_scheduler_status() -> SchedulerStatusResponse:
+    """Get current background data collection scheduler status."""
     if not _scheduler:
         raise HTTPException(status_code=503, detail="Scheduler not available")
     return _scheduler.status_dict()
 
 
-@app.put("/api/scheduler")
-async def update_scheduler_settings(request: Request):
-    """Update scheduler settings (enabled, interval_minutes)."""
+@app.put("/api/scheduler", response_model=SchedulerStatusResponse)
+async def update_scheduler_settings(request: Request) -> SchedulerStatusResponse:
+    """Enable/disable or change the interval of background data collection."""
     if not _scheduler or not _history_repo:
         raise HTTPException(status_code=503, detail="Scheduler not available")
 
@@ -868,91 +891,106 @@ async def update_scheduler_settings(request: Request):
 
 
 @app.post("/api/vehicles/{vin}/lock")
-async def lock_vehicle(vin: str):
+async def lock_vehicle(vin: str) -> dict:
+    """Lock the vehicle remotely."""
     client = _get_client()
     return await client.lock_vehicle(vin)
 
 
 @app.post("/api/vehicles/{vin}/unlock")
-async def unlock_vehicle(vin: str):
+async def unlock_vehicle(vin: str) -> dict:
+    """Unlock the vehicle remotely."""
     client = _get_client()
     return await client.unlock_vehicle(vin)
 
 
 @app.post("/api/vehicles/{vin}/trunk/open")
-async def open_trunk(vin: str):
+async def open_trunk(vin: str) -> dict:
+    """Open the trunk remotely."""
     client = _get_client()
     return await client.open_trunk(vin)
 
 
 @app.post("/api/vehicles/{vin}/trunk/close")
-async def close_trunk(vin: str):
+async def close_trunk(vin: str) -> dict:
+    """Close the trunk remotely."""
     client = _get_client()
     return await client.close_trunk(vin)
 
 
 @app.post("/api/vehicles/{vin}/find")
-async def find_vehicle(vin: str):
+async def find_vehicle(vin: str) -> dict:
+    """Trigger the vehicle finder (flash lights and honk)."""
     client = _get_client()
     return await client.find_vehicle(vin)
 
 
 @app.post("/api/vehicles/{vin}/sunshade/open")
-async def open_sunshade(vin: str):
+async def open_sunshade(vin: str) -> dict:
+    """Open the sunshade remotely."""
     client = _get_client()
     return await client.open_sunshade(vin)
 
 
 @app.post("/api/vehicles/{vin}/sunshade/close")
-async def close_sunshade(vin: str):
+async def close_sunshade(vin: str) -> dict:
+    """Close the sunshade remotely."""
     client = _get_client()
     return await client.close_sunshade(vin)
 
 
 @app.post("/api/vehicles/{vin}/battery-preheat")
-async def battery_preheat(vin: str):
+async def battery_preheat(vin: str) -> dict:
+    """Start battery preheating remotely."""
     client = _get_client()
     return await client.battery_preheat(vin)
 
 
 @app.post("/api/vehicles/{vin}/windows/open")
-async def open_windows(vin: str):
+async def open_windows(vin: str) -> dict:
+    """Open all windows remotely."""
     client = _get_client()
     return await client.open_windows(vin)
 
 
 @app.post("/api/vehicles/{vin}/windows/close")
-async def close_windows(vin: str):
+async def close_windows(vin: str) -> dict:
+    """Close all windows remotely."""
     client = _get_client()
     return await client.close_windows(vin)
 
 
 @app.post("/api/vehicles/{vin}/ac")
-async def ac_switch(vin: str):
+async def ac_switch(vin: str) -> dict:
+    """Toggle the air conditioning on/off."""
     client = _get_client()
     return await client.ac_switch(vin)
 
 
 @app.post("/api/vehicles/{vin}/quick-cool")
-async def quick_cool(vin: str):
+async def quick_cool(vin: str) -> dict:
+    """Activate quick cooling mode."""
     client = _get_client()
     return await client.quick_cool(vin)
 
 
 @app.post("/api/vehicles/{vin}/quick-heat")
-async def quick_heat(vin: str):
+async def quick_heat(vin: str) -> dict:
+    """Activate quick heating mode."""
     client = _get_client()
     return await client.quick_heat(vin)
 
 
 @app.post("/api/vehicles/{vin}/defrost")
-async def windshield_defrost(vin: str):
+async def windshield_defrost(vin: str) -> dict:
+    """Activate windshield defrost."""
     client = _get_client()
     return await client.windshield_defrost(vin)
 
 
 @app.post("/api/vehicles/{vin}/charge-limit")
-async def set_charge_limit(vin: str, request: Request):
+async def set_charge_limit(vin: str, request: Request) -> dict:
+    """Set the maximum charge level (20–100%)."""
     client = _get_client()
     body = await request.json()
     limit = body.get("limit")
@@ -964,8 +1002,8 @@ async def set_charge_limit(vin: str, request: Request):
 
 
 @app.post("/api/vehicles/{vin}/send-destination")
-async def send_destination(vin: str, request: Request):
-    """Send a navigation destination to the vehicle."""
+async def send_destination(vin: str, request: Request) -> dict:
+    """Send a navigation destination to the vehicle's infotainment system."""
     client = _get_client()
     body = await request.json()
     address = body.get("address", "").strip()
@@ -990,29 +1028,27 @@ async def send_destination(vin: str, request: Request):
 # ---------------------------------------------------------------------------
 
 
-@app.get("/api/messages")
-async def get_messages(page_no: int = 1, page_size: int = 20):
-    """Fetch paginated notification messages."""
+@app.get("/api/messages", response_model=MessageListResponse)
+async def get_messages(page_no: int = 1, page_size: int = 20) -> MessageListResponse:
+    """Get paginated notification messages from the account."""
     client = _get_client()
     msg_list: MessageList = await client.get_message_list(
         page_no=page_no, page_size=page_size
     )
-    return {
-        "count": msg_list.count,
-        "page_no": page_no,
-        "page_size": page_size,
-        "messages": [
-            MessageSchema.from_model(m).model_dump() for m in msg_list.messages
-        ],
-    }
+    return MessageListResponse(
+        count=msg_list.count,
+        page_no=page_no,
+        page_size=page_size,
+        messages=[MessageSchema.from_model(m) for m in msg_list.messages],
+    )
 
 
-@app.get("/api/messages/unread-count")
-async def get_unread_message_count():
-    """Get the number of unread messages."""
+@app.get("/api/messages/unread-count", response_model=UnreadCountResponse)
+async def get_unread_message_count() -> UnreadCountResponse:
+    """Get the number of unread notification messages."""
     client = _get_client()
     count = await client.get_unread_message_count()
-    return {"unread": count}
+    return UnreadCountResponse(unread=count)
 
 
 # ---------------------------------------------------------------------------

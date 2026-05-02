@@ -324,3 +324,127 @@ class MessageSchema(BaseModel):
             url=m.url,
             msg_type=m.msg_type,
         )
+
+
+# ---------------------------------------------------------------------------
+# API Response schemas
+# ---------------------------------------------------------------------------
+
+
+class StatusResponse(BaseModel):
+    status: str = "ok"
+
+
+class SetupStatusResponse(BaseModel):
+    has_account: bool
+    has_certificates: bool
+    certificates_valid: bool
+    connected: bool
+    vehicles: list[VehicleSchema]
+
+
+class CertificateUploadResponse(BaseModel):
+    status: str = "ok"
+    cert_path: str
+    key_path: str
+
+
+class CertificateStatusResponse(BaseModel):
+    cert_exists: bool
+    key_exists: bool
+
+
+class AccountSetupResponse(BaseModel):
+    status: str = "ok"
+    connected: bool
+    vehicles: list[VehicleSchema] = []
+    connection_error: str | None = None
+
+
+class ReconnectResponse(BaseModel):
+    status: str = "ok"
+    connected: bool
+    vehicles: list[VehicleSchema]
+
+
+class LoginResponse(BaseModel):
+    status: str = "ok"
+    user_id: str | None = None
+    vehicles: list[VehicleSchema]
+
+
+class SetPinResponse(BaseModel):
+    status: str = "ok"
+    has_pin: bool
+
+
+class ConnectionStatusResponse(BaseModel):
+    connected: bool
+    has_account: bool
+    user_id: str | None = None
+    vehicles: list[VehicleSchema]
+    has_pin: bool
+
+
+class VehicleListResponse(BaseModel):
+    vehicles: list[VehicleSchema]
+
+
+class VehicleStatusResponse(BaseModel):
+    status: VehicleStatusSchema
+
+
+class FullVehicleDataResponse(BaseModel):
+    vehicle: VehicleSchema
+    status: VehicleStatusSchema | None = None
+    mileage: dict | None = None
+    picture: dict | None = None
+    errors: dict[str, str | None] = {}
+
+
+class SnapshotSchema(BaseModel):
+    timestamp: str
+    battery_soc: int | None = None
+    expected_mileage: int | None = None
+    total_mileage: int | None = None
+    energy_kwh: float | None = None
+    outdoor_temp: int | None = None
+    is_charging: bool | None = None
+    latitude: float | None = None
+    longitude: float | None = None
+    speed: int | None = None
+
+
+class VehicleHistoryResponse(BaseModel):
+    vin: str
+    days: int
+    count: int
+    snapshots: list[SnapshotSchema]
+
+
+class DailySummaryResponse(BaseModel):
+    vin: str
+    days: int
+    count: int
+    daily: list[dict]
+
+
+class SchedulerStatusResponse(BaseModel):
+    enabled: bool
+    interval_minutes: int
+    is_running: bool
+    last_run: str | None = None
+    last_error: str | None = None
+    total_runs: int
+    total_errors: int
+
+
+class MessageListResponse(BaseModel):
+    count: int
+    page_no: int
+    page_size: int
+    messages: list[MessageSchema]
+
+
+class UnreadCountResponse(BaseModel):
+    unread: int
