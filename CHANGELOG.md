@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Message notification dropdown in the top navbar with unread badge, inline message preview, infinite scroll, and periodic polling (60s)
+- Unread indicator dot on the Messages tab icon in both the sidebar and bottom tab bar
+- `unreadMessages` reactive state and `loadUnreadCount()` action in the app store
+- `WindowControlModal` component: merged open/close windows into a single control with quick-action buttons and a vertical slider (0–100%) for precise window positioning
+- `SunshadeControlModal` component: merged open/close sunshade into a single control with quick-action buttons and a horizontal slider (0–10) for precise sunshade positioning
+- Backend `POST /api/vehicles/{vin}/windows` endpoint accepting a `value` parameter (0–100) for arbitrary window position
+- Backend `POST /api/vehicles/{vin}/sunshade` endpoint accepting a `value` parameter (0–10) for arbitrary sunshade position
+- `execControl()` in the store now supports an optional request body for parameterized commands
+
+### Changed
+
+- Window and sunshade remote controls consolidated from two separate buttons each into a single button that opens a dedicated modal
+- Existing `windows/open`, `windows/close`, `sunshade/open`, `sunshade/close` endpoints now accept an optional `value` body parameter to override defaults
 - All FastAPI endpoints now declare `response_model` with typed Pydantic schemas where applicable, enabling automatic validation and OpenAPI documentation
 - Added concise docstrings to every API endpoint
 - Added return type annotations to all endpoint functions
@@ -30,6 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Charging status in the frontend now uses the vehicle-level `is_charging` property instead of the battery-level one, which was incorrectly showing charging during regenerative braking
+- Swap icons for window controls to match action labels
 
 ### Changed
 
