@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- Updated leapmotor-api dependency to v0.1.2
+
+### Changed
 
 - Migrated from pip/venv to uv (Astral) for dependency and environment management
 - Replaced `requirements.txt` with `uv.lock` for deterministic builds

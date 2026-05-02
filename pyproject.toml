@@ -9,7 +9,7 @@ dependencies = [
     "python-dotenv>=1.0.0",
     "sqlalchemy[asyncio]>=2.0.0",
     "aiosqlite>=0.20.0",
-    "leapmotor-api>=0.1.1",
+    "leapmotor-api>=0.1.2",
     "Pillow>=10.0.0",
 ]
 
