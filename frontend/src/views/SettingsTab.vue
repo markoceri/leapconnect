@@ -116,23 +116,39 @@
 
     <!-- Data Collection Scheduler -->
     <SectionCard title="Data Collection" :icon="BarChart3">
-      <div class="notif-row">
-        <span class="notif-label">Automatic collection</span>
-        <ToggleSwitch :modelValue="scheduler.enabled" @update:modelValue="toggleScheduler" />
+      <div class="scheduler-service">
+        <div class="service-status">
+          <span class="status-dot" :class="scheduler.is_running ? 'running' : 'stopped'" />
+          <span class="service-text">
+            {{ scheduler.is_running ? 'Running' : 'Stopped' }}
+            <span v-if="scheduler.is_running" class="service-interval">· every {{ scheduler.interval_minutes }} min</span>
+          </span>
+        </div>
+        <button
+          class="service-btn"
+          :class="scheduler.is_running ? 'btn-stop' : 'btn-start'"
+          :disabled="schedulerUpdating"
+          @click="toggleScheduler(!scheduler.enabled)"
+        >
+          {{ scheduler.is_running ? 'Stop' : 'Start' }}
+        </button>
       </div>
+
       <div class="interval-row">
         <span class="interval-label">Collection interval</span>
         <div class="interval-control">
-          <button class="interval-btn" :disabled="!scheduler.enabled" @click="changeInterval(-5)">−</button>
-          <span class="interval-value" :class="{ disabled: !scheduler.enabled }">{{ scheduler.interval_minutes }} min</span>
-          <button class="interval-btn" :disabled="!scheduler.enabled" @click="changeInterval(5)">+</button>
+          <button class="interval-btn" @click="pendingInterval = Math.max(1, pendingInterval - 5)">−</button>
+          <span class="interval-value">{{ pendingInterval }} min</span>
+          <button class="interval-btn" @click="pendingInterval = Math.min(1440, pendingInterval + 5)">+</button>
+          <button
+            class="interval-set-btn"
+            :disabled="pendingInterval === scheduler.interval_minutes || schedulerUpdating"
+            @click="applyInterval"
+          >Set</button>
         </div>
       </div>
+
       <div class="scheduler-status">
-        <div class="status-row">
-          <span class="status-dot" :class="scheduler.is_running ? 'running' : 'stopped'" />
-          <span class="status-text">{{ scheduler.is_running ? 'Running' : 'Stopped' }}</span>
-        </div>
         <div v-if="scheduler.last_run" class="status-detail">
           Last update: {{ formatTime(scheduler.last_run) }}
         </div>
@@ -231,28 +247,30 @@ const scheduler = reactive({
   total_errors: 0,
 })
 
-let schedulerUpdating = false
+const pendingInterval = ref(15)
+const schedulerUpdating = ref(false)
 
 async function loadScheduler() {
   try {
     const data = await api('GET', '/api/scheduler')
     Object.assign(scheduler, data)
+    pendingInterval.value = data.interval_minutes
   } catch {
     // scheduler not available yet
   }
 }
 
 async function updateScheduler(patch) {
-  if (schedulerUpdating) return
-  schedulerUpdating = true
+  if (schedulerUpdating.value) return
+  schedulerUpdating.value = true
   try {
     const data = await api('PUT', '/api/scheduler', patch)
     Object.assign(scheduler, data)
+    pendingInterval.value = data.interval_minutes
   } catch {
-    // revert on error — reload current state
     await loadScheduler()
   } finally {
-    schedulerUpdating = false
+    schedulerUpdating.value = false
   }
 }
 
@@ -260,10 +278,9 @@ function toggleScheduler(val) {
   updateScheduler({ enabled: val })
 }
 
-function changeInterval(delta) {
-  const next = Math.max(1, Math.min(1440, scheduler.interval_minutes + delta))
-  if (next !== scheduler.interval_minutes) {
-    updateScheduler({ interval_minutes: next })
+function applyInterval() {
+  if (pendingInterval.value !== scheduler.interval_minutes) {
+    updateScheduler({ interval_minutes: pendingInterval.value })
   }
 }
 
@@ -580,6 +597,50 @@ onMounted(() => {
 }
 
 /* Scheduler / Data Collection */
+.scheduler-service {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 0;
+  border-bottom: 1px solid #181d2c;
+}
+.service-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.service-text {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--sub);
+}
+.service-interval {
+  font-weight: 400;
+  color: var(--muted);
+}
+.service-btn {
+  padding: 6px 16px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  border: 1px solid;
+}
+.service-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-start {
+  background: #00e67618;
+  border-color: #00e67644;
+  color: #00e676;
+}
+.btn-start:hover:not(:disabled) { background: #00e67630; }
+.btn-stop {
+  background: #ff525218;
+  border-color: #ff525244;
+  color: #ff5252;
+}
+.btn-stop:hover:not(:disabled) { background: #ff525230; }
+
 .interval-row {
   display: flex;
   justify-content: space-between;
@@ -627,9 +688,20 @@ onMounted(() => {
   text-align: center;
   font-family: var(--mono);
 }
-.interval-value.disabled {
-  color: var(--muted);
+.interval-set-btn {
+  padding: 4px 12px;
+  background: #1c2240;
+  border: 1px solid #2a3060;
+  border-radius: 6px;
+  color: var(--sub);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+  margin-left: 4px;
 }
+.interval-set-btn:hover:not(:disabled) { background: #252d50; color: #00d4ff; }
+.interval-set-btn:disabled { opacity: 0.35; cursor: not-allowed; }
 .scheduler-status {
   margin-top: 12px;
   padding: 10px 12px;
@@ -638,11 +710,6 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 6px;
-}
-.status-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
 }
 .status-dot {
   width: 8px;
@@ -655,11 +722,6 @@ onMounted(() => {
 }
 .status-dot.stopped {
   background: #5c6478;
-}
-.status-text {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--sub);
 }
 .status-detail {
   font-size: 11px;

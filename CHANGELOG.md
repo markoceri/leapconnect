@@ -15,6 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The data collection scheduler in Settings now has explicit Start/Stop buttons instead of a toggle switch
+- Changing the collection interval no longer applies immediately; you pick the desired time first, then confirm with a "Set" button
+- The scheduler status now shows the current interval alongside the running state (e.g. "Running · every 15 min")
 - `/api/login` endpoint now reads certificate paths from the database instead of environment variables, consistent with the setup flow and auto-connect logic
 
 ### Removed
