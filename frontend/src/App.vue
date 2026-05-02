@@ -62,7 +62,7 @@
           :class="{ active: store.selectedVin === v.vin }"
           @click="store.selectVehicle(v.vin)"
         >
-          <div class="vtab-name">{{ v.nickname || v.car_type || 'Vehicle' }}</div>
+          <div class="vtab-name">{{ v.vehicle_nickname || v.car_type || 'Vehicle' }}</div>
           <div class="vtab-id">{{ v.vin.slice(-8) }}</div>
         </button>
         <button v-if="store.vehicles.length > 1" class="vtab vtab-add" @click="store.goToVehicleSelector()">+ Add</button>

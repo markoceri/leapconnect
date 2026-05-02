@@ -3,16 +3,16 @@
     <!-- Doors & Windows -->
     <SectionCard title="Doors & Windows" :icon="DoorOpen">
       <InfoRow label="Vehicle Lock" :value="doors.is_locked === true ? 'Locked' : doors.is_locked === false ? 'Unlocked' : '—'" :color="doors.is_locked === true ? '#00e676' : '#ffab40'" :dot="doors.is_locked != null" />
-      <InfoRow label="Driver Door" :value="doorText(doors.driver_door)" :color="doorColor(doors.driver_door)" />
-      <InfoRow label="Passenger Door" :value="doorText(doors.passenger_door)" :color="doorColor(doors.passenger_door)" />
-      <InfoRow label="Left Rear" :value="doorText(doors.left_rear)" :color="doorColor(doors.left_rear)" />
-      <InfoRow label="Right Rear" :value="doorText(doors.right_rear)" :color="doorColor(doors.right_rear)" />
-      <InfoRow label="Trunk" :value="doorText(doors.trunk)" :color="doorColor(doors.trunk)" />
+      <InfoRow label="Driver Door" :value="doorText(doors.lbcm_driver_door_status)" :color="doorColor(doors.lbcm_driver_door_status)" />
+      <InfoRow label="Passenger Door" :value="doorText(doors.rbcm_driver_door_status)" :color="doorColor(doors.rbcm_driver_door_status)" />
+      <InfoRow label="Left Rear" :value="doorText(doors.lbcm_left_rear_door_status)" :color="doorColor(doors.lbcm_left_rear_door_status)" />
+      <InfoRow label="Right Rear" :value="doorText(doors.rbcm_right_rear_door_status)" :color="doorColor(doors.rbcm_right_rear_door_status)" />
+      <InfoRow label="Trunk" :value="doorText(doors.bbcm_back_door_status)" :color="doorColor(doors.bbcm_back_door_status)" />
       <div class="section-divider" />
-      <InfoRow label="LF Window" :value="winText(windows.left_front_percent)" :color="winColor(windows.left_front_percent)" />
-      <InfoRow label="RF Window" :value="winText(windows.right_front_percent)" :color="winColor(windows.right_front_percent)" />
-      <InfoRow label="LR Window" :value="winText(windows.left_rear_percent)" :color="winColor(windows.left_rear_percent)" />
-      <InfoRow label="RR Window" :value="winText(windows.right_rear_percent)" :color="winColor(windows.right_rear_percent)" />
+      <InfoRow label="LF Window" :value="winText(windows.left_front_window_percent)" :color="winColor(windows.left_front_window_percent)" />
+      <InfoRow label="RF Window" :value="winText(windows.right_front_window_percent)" :color="winColor(windows.right_front_window_percent)" />
+      <InfoRow label="LR Window" :value="winText(windows.left_rear_window_percent)" :color="winColor(windows.left_rear_window_percent)" />
+      <InfoRow label="RR Window" :value="winText(windows.right_rear_window_percent)" :color="winColor(windows.right_rear_window_percent)" />
       <InfoRow label="Sun Shade" :value="sunShadeText" :color="windows.sun_shade > 0 ? '#ffab40' : '#5c6478'" />
     </SectionCard>
 
@@ -59,7 +59,7 @@
       <InfoRow label="Battery Power" :value="bat.battery_power != null ? `${bat.battery_power} kW` : '—'" color="#ff9100" />
       <InfoRow label="Charging Power" :value="bat.charging_power_kw != null ? `${bat.charging_power_kw} kW` : '—'" color="#00e676" />
       <InfoRow label="Discharging Power" :value="bat.discharging_power_kw != null ? `${bat.discharging_power_kw} kW` : '—'" color="#ffab40" />
-      <InfoRow label="Energy Available" :value="bat.dump_energy != null ? `${bat.dump_energy} kWh` : '—'" color="#00d4ff" />
+      <InfoRow label="Energy Available" :value="bat.dump_energy_kwh != null ? `${bat.dump_energy_kwh} kWh` : '—'" color="#00d4ff" />
       <div class="batt-bar">
         <div class="batt-bar-fill" :style="{ width: `${bat.soc ?? 0}%`, boxShadow: bat.is_charging ? '0 0 10px #00e67688' : 'none' }" />
       </div>
@@ -70,10 +70,10 @@
 
     <!-- Connectivity -->
     <SectionCard title="Connectivity" :icon="Wifi">
-      <InfoRow label="Bluetooth" :value="connectivity.bluetooth ? 'On' : connectivity.bluetooth === false ? 'Off' : '—'" :color="connectivity.bluetooth ? '#00d4ff' : '#5c6478'" :dot="!!connectivity.bluetooth" />
-      <InfoRow label="Wi-Fi Hotspot" :value="connectivity.hotspot ? 'On' : connectivity.hotspot === false ? 'Off' : '—'" :color="connectivity.hotspot ? '#00e676' : '#5c6478'" :dot="!!connectivity.hotspot" />
-      <InfoRow label="Ignition ON1" :value="ignition.on1 != null ? (ignition.on1 ? 'Yes' : 'No') : '—'" :color="ignition.on1 ? '#00e676' : '#5c6478'" />
-      <InfoRow label="Ignition ON3" :value="ignition.on3 != null ? (ignition.on3 ? 'Yes' : 'No') : '—'" :color="ignition.on3 ? '#00e676' : '#5c6478'" />
+      <InfoRow label="Bluetooth" :value="connectivity.bluetooth_state ? 'On' : connectivity.bluetooth_state === false ? 'Off' : '—'" :color="connectivity.bluetooth_state ? '#00d4ff' : '#5c6478'" :dot="!!connectivity.bluetooth_state" />
+      <InfoRow label="Wi-Fi Hotspot" :value="connectivity.hotspot_state ? 'On' : connectivity.hotspot_state === false ? 'Off' : '—'" :color="connectivity.hotspot_state ? '#00e676' : '#5c6478'" :dot="!!connectivity.hotspot_state" />
+      <InfoRow label="Ignition ON1" :value="ignition.bcm_key_position_on1 != null ? (ignition.bcm_key_position_on1 ? 'Yes' : 'No') : '—'" :color="ignition.bcm_key_position_on1 ? '#00e676' : '#5c6478'" />
+      <InfoRow label="Ignition ON3" :value="ignition.bcm_key_position_on3 != null ? (ignition.bcm_key_position_on3 ? 'Yes' : 'No') : '—'" :color="ignition.bcm_key_position_on3 ? '#00e676' : '#5c6478'" />
       <InfoRow label="Gear Status" :value="driving.gear_status != null ? gearLabel(driving.gear_status) : '—'" color="#e2e6f0" />
       <InfoRow label="Last Update" :value="timestamps.collect_time ? formatTime(timestamps.collect_time) : '—'" color="#5c6478" />
     </SectionCard>
@@ -84,7 +84,7 @@
         <span style="font-family:var(--mono);font-size:11px">{{ vehicle.vin || '—' }}</span>
       </InfoRow>
       <InfoRow label="Model" :value="vehicle.car_type || '—'" color="#e2e6f0" />
-      <InfoRow label="Nickname" :value="vehicle.nickname || '—'" color="#00d4ff" />
+      <InfoRow label="Nickname" :value="vehicle.vehicle_nickname || '—'" color="#00d4ff" />
       <InfoRow label="Plate Number" :value="vehicle.plate_number || '—'" color="#e2e6f0" />
       <InfoRow label="Color" :value="vehicle.out_color || '—'" color="#e2e6f0" />
       <InfoRow label="Year" :value="vehicle.year || '—'" color="#e2e6f0" />
@@ -97,7 +97,7 @@
     <SectionCard title="Mileage & Energy" :icon="Zap">
       <InfoRow label="Total Mileage" :value="driving.total_mileage != null ? `${driving.total_mileage.toLocaleString()} km` : '—'" color="#ffab40" />
       <InfoRow label="Total Mileage (mi)" :value="driving.total_mileage != null ? `${(driving.total_mileage * 0.621371).toFixed(1)} mi` : '—'" color="#8892a8" />
-      <InfoRow label="Energy Available" :value="bat.dump_energy != null ? `${bat.dump_energy} kWh` : '—'" color="#00d4ff" />
+      <InfoRow label="Energy Available" :value="bat.dump_energy_kwh != null ? `${bat.dump_energy_kwh} kWh` : '—'" color="#00d4ff" />
       <InfoRow v-if="mileage?.deliveryDays != null" label="Days Since Delivery" :value="mileage.deliveryDays" color="#e2e6f0" />
     </SectionCard>
   </div>
@@ -133,10 +133,10 @@ const timestamps = computed(() => props.status?.timestamps || {})
 const tireItems = computed(() => {
   const t = props.status?.tires || {}
   return [
-    { label: 'Front Left', value: t.front_left },
-    { label: 'Front Right', value: t.front_right },
-    { label: 'Rear Left', value: t.rear_left },
-    { label: 'Rear Right', value: t.rear_right },
+    { label: 'Front Left', value: t.front_left_bar },
+    { label: 'Front Right', value: t.front_right_bar },
+    { label: 'Rear Left', value: t.rear_left_bar },
+    { label: 'Rear Right', value: t.rear_right_bar },
   ]
 })
 

@@ -80,21 +80,21 @@ const s = computed(() => props.status || {})
 
 // Door state: true = open
 const doors = computed(() => ({
-  leftFront: !!s.value.doors?.driver_door,
-  leftRear: !!s.value.doors?.left_rear,
-  rightFront: !!s.value.doors?.passenger_door,
-  rightRear: !!s.value.doors?.right_rear,
+  leftFront: !!s.value.doors?.lbcm_driver_door_status,
+  leftRear: !!s.value.doors?.lbcm_left_rear_door_status,
+  rightFront: !!s.value.doors?.rbcm_driver_door_status,
+  rightRear: !!s.value.doors?.rbcm_right_rear_door_status,
 }))
 
-const trunk = computed(() => !!s.value.doors?.trunk)
+const trunk = computed(() => !!s.value.doors?.bbcm_back_door_status)
 const hood = computed(() => false) // no hood status from API
 const charging = computed(() => !!s.value.battery?.is_charging)
 const acOn = computed(() => !!s.value.climate?.ac_switch)
 
 // Windows: open when percent > 0
 const windows = computed(() => ({
-  leftFrontOpen: (s.value.windows?.left_front_percent ?? 0) > 0,
-  leftRearOpen: (s.value.windows?.left_rear_percent ?? 0) > 0,
+  leftFrontOpen: (s.value.windows?.left_front_window_percent ?? 0) > 0,
+  leftRearOpen: (s.value.windows?.left_rear_window_percent ?? 0) > 0,
 }))
 
 // Charging animation — cycle through charge1..15

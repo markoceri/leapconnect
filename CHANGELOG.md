@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Vehicle data now uses structured response schemas, making the API output consistent and complete with the underlying vehicle model
+- All vehicle properties (doors, windows, tires, connectivity, ignition, etc.) now use their original field names instead of shortened aliases
+- The vehicle nickname field is now returned as `vehicle_nickname` to match the data source
+- Tire pressure data now includes both raw kPa values and converted bar values, plus a status indicator for each wheel
+- Battery information now exposes all available fields, including raw energy in Wh and converted kWh
+- Climate, door, window, and connectivity sections now include all available data points instead of a subset
+- Updated the entire frontend to work with the new field names
+
+### Removed
+
+- Removed manual data conversion helpers in favor of Pydantic response schemas
+
+### Added
+
+- New `schemas.py` file with Pydantic models for all API responses (vehicle, status, messages), each with a `from_model` method for easy conversion
 - Migrated from pip/venv to uv (Astral) for dependency and environment management
 - Replaced `requirements.txt` with `uv.lock` for deterministic builds
 - Updated Dockerfile to use uv for dependency installation

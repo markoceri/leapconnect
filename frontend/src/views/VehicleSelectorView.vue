@@ -32,7 +32,7 @@
           <div class="vs-card-info">
             <div class="vs-card-top">
               <div>
-                <div class="vs-card-name">{{ v.nickname || v.car_type || 'Leapmotor' }}</div>
+                <div class="vs-card-name">{{ v.vehicle_nickname || v.car_type || 'Leapmotor' }}</div>
                 <div class="vs-card-vin">{{ v.vin }}</div>
               </div>
               <div class="vs-card-badge" :class="{ charging: getStatus(v.vin, 'battery', 'is_charging') }">

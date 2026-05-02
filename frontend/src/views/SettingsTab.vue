@@ -48,11 +48,11 @@
 
     <!-- Vehicle -->
     <SectionCard title="Vehicle" :icon="Car">
-      <InfoRow label="Model" :value="`${vehicle.year || ''} Leapmotor ${vehicle.car_type || ''}`" color="#e2e6f0" />
+      <InfoRow label="Model" :value="`Leapmotor ${vehicle.car_type || ''} ${vehicle.year || ''}`" color="#e2e6f0" />
       <InfoRow label="VIN" color="#e2e6f0">
         <span style="font-family:var(--mono);font-size:11px">{{ vehicle.vin || '—' }}</span>
       </InfoRow>
-      <InfoRow label="Nickname" :value="vehicle.nickname || '—'" color="#00d4ff" />
+      <InfoRow label="Nickname" :value="vehicle.vehicle_nickname || '—'" color="#00d4ff" />
     </SectionCard>
 
     <!-- Notifications -->
@@ -143,7 +143,7 @@ const accountForm = reactive({
 const accountEmail = ref('—')
 
 const email = computed(() => accountEmail.value)
-const displayName = computed(() => props.vehicle.nickname || 'User')
+const displayName = computed(() => props.vehicle.vehicle_nickname || 'User')
 const initials = computed(() => {
   const n = displayName.value
   return n.substring(0, 2).toUpperCase()

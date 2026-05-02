@@ -169,7 +169,7 @@ function initMap() {
   if (hasVehicleLocation.value) {
     vehicleMarker = L.marker([vehicleLat.value, vehicleLng.value], { icon: vehicleIcon })
       .addTo(map)
-      .bindPopup(`<b>Vehicle</b><br>${props.vehicle.nickname || props.vehicle.car_type || 'Leapmotor'}`)
+      .bindPopup(`<b>Vehicle</b><br>${props.vehicle.vehicle_nickname || props.vehicle.car_type || 'Leapmotor'}`)
   }
 
   // Map click handler for destination
@@ -296,7 +296,7 @@ watch(() => props.location, (loc) => {
     } else {
       vehicleMarker = L.marker(pos, { icon: vehicleIcon })
         .addTo(map)
-        .bindPopup(`<b>Vehicle</b><br>${props.vehicle.nickname || props.vehicle.car_type || 'Leapmotor'}`)
+        .bindPopup(`<b>Vehicle</b><br>${props.vehicle.vehicle_nickname || props.vehicle.car_type || 'Leapmotor'}`)
     }
     map.setView(pos, map.getZoom())
   }

@@ -16,7 +16,6 @@ import zipfile
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
-from typing import Any
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
@@ -26,11 +25,12 @@ from fastapi.staticfiles import StaticFiles
 from leapmotor_api import LeapmotorApiClient
 from leapmotor_api.async_client import AsyncLeapmotorApiClient
 from leapmotor_api.image import CarImagePackage
-from leapmotor_api.models import Message, MessageList, Vehicle, VehicleStatus
+from leapmotor_api.models import MessageList, Vehicle, VehicleStatus
 
 from persistence.repository import VehicleSnapshot
 from persistence.scheduler import VehicleDataScheduler
 from persistence.sqlite_adapter import SQLAlchemyVehicleHistoryRepository
+from schemas import MessageSchema, VehicleSchema, VehicleStatusSchema
 
 # Load .env from the webapp directory
 load_dotenv(Path(__file__).resolve().parent / ".env")
@@ -209,7 +209,7 @@ async def setup_status():
         "has_certificates": has_certs,
         "certificates_valid": certs_valid,
         "connected": _connected,
-        "vehicles": [_vehicle_to_dict(v) for v in _vehicles],
+        "vehicles": [VehicleSchema.from_model(v).model_dump() for v in _vehicles],
     }
 
 
@@ -330,7 +330,7 @@ async def save_account(request: Request):
         return {
             "status": "ok",
             "connected": True,
-            "vehicles": [_vehicle_to_dict(v) for v in _vehicles],
+            "vehicles": [VehicleSchema.from_model(v).model_dump() for v in _vehicles],
         }
     except Exception as exc:
         # Credentials saved but connection failed — that's ok, app works offline
@@ -383,7 +383,7 @@ async def reconnect():
         return {
             "status": "ok",
             "connected": True,
-            "vehicles": [_vehicle_to_dict(v) for v in _vehicles],
+            "vehicles": [VehicleSchema.from_model(v).model_dump() for v in _vehicles],
         }
     except Exception as exc:
         _connected = False
@@ -458,7 +458,7 @@ async def login(request: Request):
         return {
             "status": "ok",
             "user_id": _sync_client.user_id,
-            "vehicles": [_vehicle_to_dict(v) for v in _vehicles],
+            "vehicles": [VehicleSchema.from_model(v).model_dump() for v in _vehicles],
         }
     except Exception as exc:
         _connected = False
@@ -509,7 +509,7 @@ async def connection_status():
         "connected": _connected,
         "has_account": has_account,
         "user_id": _sync_client.user_id if _sync_client else None,
-        "vehicles": [_vehicle_to_dict(v) for v in _vehicles],
+        "vehicles": [VehicleSchema.from_model(v).model_dump() for v in _vehicles],
         "has_pin": bool(_sync_client and _sync_client.operation_password),
     }
 
@@ -524,7 +524,7 @@ async def get_vehicles():
     client = _get_client()
     global _vehicles
     _vehicles = await client.get_vehicle_list()
-    return {"vehicles": [_vehicle_to_dict(v) for v in _vehicles]}
+    return {"vehicles": [VehicleSchema.from_model(v).model_dump() for v in _vehicles]}
 
 
 @app.get("/api/vehicles/{vin}/status")
@@ -553,7 +553,7 @@ async def get_vehicle_status(vin: str):
         )
         asyncio.create_task(_save_snapshot_safe(snapshot))
 
-    return {"status": _vehicle_status_to_dict(status)}
+    return {"status": VehicleStatusSchema.from_model(status).model_dump()}
 
 
 async def _save_snapshot_safe(snapshot: VehicleSnapshot) -> None:
@@ -759,8 +759,10 @@ async def get_full_vehicle_data(vin: str):
     picture = results[2] if not isinstance(results[2], Exception) else None
 
     return {
-        "vehicle": _vehicle_to_dict(vehicle),
-        "status": _vehicle_status_to_dict(status) if status else None,
+        "vehicle": VehicleSchema.from_model(vehicle).model_dump(),
+        "status": VehicleStatusSchema.from_model(status).model_dump()
+        if status
+        else None,
         "mileage": mileage if isinstance(mileage, dict) else None,
         "picture": picture if isinstance(picture, dict) else None,
         "errors": {
@@ -999,7 +1001,9 @@ async def get_messages(page_no: int = 1, page_size: int = 20):
         "count": msg_list.count,
         "page_no": page_no,
         "page_size": page_size,
-        "messages": [_message_to_dict(m) for m in msg_list.messages],
+        "messages": [
+            MessageSchema.from_model(m).model_dump() for m in msg_list.messages
+        ],
     }
 
 
@@ -1009,116 +1013,6 @@ async def get_unread_message_count():
     client = _get_client()
     count = await client.get_unread_message_count()
     return {"unread": count}
-
-
-def _message_to_dict(m: Message) -> dict[str, Any]:
-    return {
-        "id": m.id,
-        "vin": m.vin,
-        "title": m.title,
-        "message": m.message,
-        "send_time": m.send_datetime.isoformat() if m.send_datetime else None,
-        "is_read": m.is_read,
-        "url": m.url,
-        "msg_type": m.msg_type,
-    }
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
-def _vehicle_to_dict(v: Vehicle) -> dict[str, Any]:
-    return {
-        "vin": v.vin,
-        "car_id": v.car_id,
-        "car_type": v.car_type,
-        "nickname": v.vehicle_nickname,
-        "plate_number": v.plate_number,
-        "out_color": v.out_color,
-        "seat_layout": v.seat_layout,
-        "rudder": v.rudder,
-        "is_shared": v.is_shared,
-        "year": v.year,
-        "abilities": v.abilities or [],
-    }
-
-
-def _vehicle_status_to_dict(status: VehicleStatus) -> dict[str, Any]:
-    return {
-        "battery": {
-            "soc": status.battery.soc,
-            "is_charging": status.is_charging,
-            "is_discharging": status.battery.is_discharging,
-            "charge_state": status.battery.charge_state.value
-            if status.battery.charge_state
-            else None,
-            "charge_state_label": status.battery.charge_state.name
-            if status.battery.charge_state
-            else None,
-            "charge_remain_time": status.battery.charge_remain_time,
-            "charge_soc_setting": status.battery.charge_soc_setting,
-            "expected_mileage": status.battery.expected_mileage,
-            "dump_energy": status.battery.dump_energy_kwh,
-            "battery_current": status.battery.battery_current,
-            "battery_voltage": status.battery.battery_voltage,
-            "battery_power": status.battery.battery_power,
-            "charging_power_kw": status.battery.charging_power_kw,
-            "discharging_power_kw": status.battery.discharging_power_kw,
-        },
-        "driving": {
-            "speed": status.driving.speed,
-            "total_mileage": status.driving.total_mileage,
-            "gear_status": status.driving.gear_status,
-            "is_parked": status.driving.is_parked,
-        },
-        "location": {
-            "latitude": status.location.latitude,
-            "longitude": status.location.longitude,
-        },
-        "climate": {
-            "ac_switch": status.climate.ac_switch,
-            "ac_setting": status.climate.ac_setting,
-            "ac_air_volume": status.climate.ac_air_volume,
-            "outdoor_temp": status.climate.outdoor_temp,
-            "ac_cooling_and_heating": status.climate.ac_cooling_and_heating,
-            "ac_circle_mode": status.climate.ac_circle_mode,
-        },
-        "doors": {
-            "is_locked": status.doors.is_locked,
-            "driver_door": status.doors.lbcm_driver_door_status,
-            "passenger_door": status.doors.rbcm_driver_door_status,
-            "left_rear": status.doors.lbcm_left_rear_door_status,
-            "right_rear": status.doors.rbcm_right_rear_door_status,
-            "trunk": status.doors.bbcm_back_door_status,
-        },
-        "windows": {
-            "left_front_percent": status.windows.left_front_window_percent,
-            "right_front_percent": status.windows.right_front_window_percent,
-            "left_rear_percent": status.windows.left_rear_window_percent,
-            "right_rear_percent": status.windows.right_rear_window_percent,
-            "sun_shade": status.windows.sun_shade,
-        },
-        "tires": status.tires.all_bar,
-        "connectivity": {
-            "bluetooth": status.connectivity.bluetooth_state,
-            "hotspot": status.connectivity.hotspot_state,
-        },
-        "ignition": {
-            "on1": status.ignition.bcm_key_position_on1,
-            "on3": status.ignition.bcm_key_position_on3,
-        },
-        "is_regening": status.is_regening,
-        "timestamps": {
-            "collect_time": status.collect_time.isoformat()
-            if status.collect_time
-            else None,
-            "create_time": status.create_time.isoformat()
-            if status.create_time
-            else None,
-        },
-    }
 
 
 # ---------------------------------------------------------------------------

@@ -10,11 +10,11 @@
           <span v-if="s.is_regening" class="badge badge-regen"><Zap :size="14" /></span>
           <span v-if="s.climate?.ac_switch" class="badge badge-ac"><Snowflake :size="14" /></span>
           <span v-if="s.doors?.is_locked" class="badge badge-lock"><Lock :size="14" /></span>
-          <span v-if="s.doors?.trunk" class="badge badge-trunk"><Package :size="14" /></span>
+          <span v-if="s.doors?.bbcm_back_door_status" class="badge badge-trunk"><Package :size="14" /></span>
         </div>
       </div>
       <div class="hero-info">
-        <div class="hero-name">{{ vehicle.nickname || vehicle.car_type || 'Leapmotor' }}</div>
+        <div class="hero-name">{{ vehicle.vehicle_nickname || vehicle.car_type || 'Leapmotor' }}</div>
         <div class="hero-vin">{{ vehicle.vin }}</div>
       </div>
     </div>
@@ -28,7 +28,7 @@
       />
       <StatCard
         label="Range" :value="s.battery?.expected_mileage ?? '—'" unit="km" color="#00d4ff"
-        :sub="s.battery?.dump_energy != null ? `${s.battery.dump_energy} kWh available` : ''"
+        :sub="s.battery?.dump_energy_kwh != null ? `${s.battery.dump_energy_kwh} kWh available` : ''"
       />
       <StatCard
         label="Speed" :value="s.driving?.speed ?? 0" unit="km/h" color="#e2e6f0"
@@ -216,7 +216,7 @@ function isActive(action) {
   if (action === 'lock') return s.value.doors?.is_locked
   if (action === 'unlock') return s.value.doors?.is_locked === false
   if (action === 'ac') return s.value.climate?.ac_switch
-  if (action === 'trunk/open') return s.value.doors?.trunk
+  if (action === 'trunk/open') return s.value.doors?.bbcm_back_door_status
   return false
 }
 
