@@ -28,9 +28,9 @@ from leapmotor_api.image import CarImagePackage
 from leapmotor_api.models import MessageList, Vehicle, VehicleStatus
 
 from models import VehicleSnapshot
-from persistence.scheduler import VehicleDataScheduler
 from persistence.sqlite_adapter import SQLAlchemyVehicleHistoryRepository
 from schemas import MessageSchema, VehicleSchema, VehicleStatusSchema
+from services.scheduler import VehicleDataScheduler
 
 # Load .env from the webapp directory
 load_dotenv(Path(__file__).resolve().parent / ".env")

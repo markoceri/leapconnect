@@ -19,7 +19,7 @@ if TYPE_CHECKING:
     from leapmotor_api.async_client import AsyncLeapmotorApiClient
     from leapmotor_api.models import Vehicle
 
-    from .repository import VehicleHistoryRepository
+    from persistence.repository import VehicleHistoryRepository
 
 _LOGGER = logging.getLogger(__name__)
 
