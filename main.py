@@ -293,11 +293,19 @@ async def setup_status(request: Request) -> SetupStatusResponse:
             has_certs = True
             certs_valid = Path(cert_path).is_file() and Path(key_path).is_file()
 
+    # Detect cert files on disk even if the DB has no record of them
+    certs_found_on_disk = (
+        not has_certs
+        and (CERTS_DIR / "app.crt").is_file()
+        and (CERTS_DIR / "app.key").is_file()
+    )
+
     return SetupStatusResponse(
         has_user=has_user,
         has_account=has_account,
         has_certificates=has_certs,
         certificates_valid=certs_valid,
+        certs_found_on_disk=certs_found_on_disk,
         authenticated=authenticated,
         connected=_connected,
         vehicles=[VehicleSchema.from_model(v) for v in _vehicles],
@@ -330,6 +338,28 @@ async def upload_certificates(
 
     # Restrict permissions on the key file
     key_dest.chmod(0o600)
+
+    await _history_repo.save_setting("cert_path", str(cert_dest))
+    await _history_repo.save_setting("key_path", str(key_dest))
+
+    return CertificateUploadResponse(
+        status="ok", cert_path=str(cert_dest), key_path=str(key_dest)
+    )
+
+
+@app.post("/api/setup/certificates/adopt", response_model=CertificateUploadResponse)
+async def adopt_certificates() -> CertificateUploadResponse:
+    """Adopt certificate files already present on disk without re-uploading."""
+    if not _history_repo:
+        raise HTTPException(status_code=503, detail="DB not ready")
+
+    cert_dest = CERTS_DIR / "app.crt"
+    key_dest = CERTS_DIR / "app.key"
+
+    if not cert_dest.is_file() or not key_dest.is_file():
+        raise HTTPException(
+            status_code=404, detail="Certificate files not found on disk"
+        )
 
     await _history_repo.save_setting("cert_path", str(cert_dest))
     await _history_repo.save_setting("key_path", str(key_dest))

@@ -346,6 +346,7 @@ class SetupStatusResponse(BaseModel):
     has_account: bool
     has_certificates: bool
     certificates_valid: bool
+    certs_found_on_disk: bool = False
     authenticated: bool = False
     connected: bool
     vehicles: list[VehicleSchema]

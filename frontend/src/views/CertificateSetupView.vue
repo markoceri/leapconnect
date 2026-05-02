@@ -13,6 +13,24 @@
       </div>
 
       <div class="setup-card">
+        <div v-if="certsOnDisk" class="certs-found-banner">
+          <div class="certs-found-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+              <polyline points="22 4 12 14.01 9 11.01" />
+            </svg>
+          </div>
+          <div class="certs-found-text">
+            <strong>Certificates already found</strong>
+            <span>Valid certificate files were detected on the server. You can use them directly or upload new ones.</span>
+          </div>
+          <button class="btn-adopt" :disabled="adopting" @click="handleAdopt">
+            {{ adopting ? 'Applying…' : 'Use existing certificates' }}
+          </button>
+          <div v-if="adoptError" class="setup-error">{{ adoptError }}</div>
+          <div class="certs-found-divider"><span>or upload new ones</span></div>
+        </div>
+
         <p class="setup-description">
           To communicate with Leapmotor servers, TLS certificates are required.
           Upload your certificate and private key files below.
@@ -70,8 +88,9 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useAppStore } from '../stores/appStore'
+import { api } from '../composables/useApi'
 
 const store = useAppStore()
 const submitting = ref(false)
@@ -80,6 +99,31 @@ const certFile = ref(null)
 const keyFile = ref(null)
 const certDragover = ref(false)
 const keyDragover = ref(false)
+const certsOnDisk = ref(false)
+const adopting = ref(false)
+const adoptError = ref('')
+
+onMounted(async () => {
+  try {
+    const status = await api('GET', '/api/setup/status')
+    certsOnDisk.value = !!status.certs_found_on_disk
+  } catch {
+    // ignore — just don't show the banner
+  }
+})
+
+async function handleAdopt() {
+  adopting.value = true
+  adoptError.value = ''
+  try {
+    await api('POST', '/api/setup/certificates/adopt')
+    store.screen = 'setup-account'
+  } catch (err) {
+    adoptError.value = err.message
+  } finally {
+    adopting.value = false
+  }
+}
 
 function onCertChange(e) {
   certFile.value = e.target.files[0] || null
@@ -263,5 +307,74 @@ async function handleSubmit() {
   border-radius: 8px;
   color: var(--red);
   font-size: 12px;
+}
+
+.certs-found-banner {
+  margin-bottom: 1.5rem;
+}
+
+.certs-found-icon {
+  width: 36px;
+  height: 36px;
+  margin: 0 auto 12px;
+  border-radius: 50%;
+  background: #00e67618;
+  border: 1px solid #00e67644;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.certs-found-icon svg { width: 18px; height: 18px; color: #00e676; }
+
+.certs-found-text {
+  text-align: center;
+  margin-bottom: 14px;
+}
+.certs-found-text strong {
+  display: block;
+  font-size: 14px;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+.certs-found-text span {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.btn-adopt {
+  width: 100%;
+  padding: 12px;
+  background: linear-gradient(135deg, #00e67622, #00e67644);
+  border: 1px solid #00e67655;
+  border-radius: 10px;
+  color: #00e676;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  letter-spacing: 0.04em;
+}
+.btn-adopt:hover {
+  background: linear-gradient(135deg, #00e67633, #00e67655);
+}
+.btn-adopt:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.certs-found-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 18px;
+  color: var(--muted2);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.certs-found-divider::before,
+.certs-found-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
 }
 </style>
