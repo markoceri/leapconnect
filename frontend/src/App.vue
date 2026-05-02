@@ -97,6 +97,9 @@
             :vehicle="vehicle"
             :raw-data="store.currentData"
           />
+          <MessagesTab
+            v-else-if="store.activeTab === 'messages'"
+          />
           <HistoryTab
             v-else-if="store.activeTab === 'history'"
             :status="status"
@@ -154,9 +157,10 @@ import VehicleSelectorView from './views/VehicleSelectorView.vue'
 import DashboardTab from './views/DashboardTab.vue'
 import DetailsTab from './views/DetailsTab.vue'
 import HistoryTab from './views/HistoryTab.vue'
+import MessagesTab from './views/MessagesTab.vue'
 import SettingsTab from './views/SettingsTab.vue'
 import ToastContainer from './components/ToastContainer.vue'
-import { LayoutDashboard, List, TrendingUp, Settings, RefreshCw, LogOut } from 'lucide-vue-next'
+import { LayoutDashboard, List, TrendingUp, Mail, Settings, RefreshCw, LogOut } from 'lucide-vue-next'
 
 const store = useAppStore()
 const { toast } = useToast()
@@ -166,6 +170,7 @@ const errorMsg = ref('')
 const tabs = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { id: 'details', label: 'Details', icon: List },
+  { id: 'messages', label: 'Messages', icon: Mail },
   { id: 'history', label: 'History', icon: TrendingUp },
   { id: 'settings', label: 'Settings', icon: Settings },
 ]

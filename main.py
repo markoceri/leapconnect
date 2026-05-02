@@ -26,7 +26,7 @@ from fastapi.staticfiles import StaticFiles
 from leapmotor_api import LeapmotorApiClient
 from leapmotor_api.async_client import AsyncLeapmotorApiClient
 from leapmotor_api.image import CarImagePackage
-from leapmotor_api.models import Vehicle, VehicleStatus
+from leapmotor_api.models import Message, MessageList, Vehicle, VehicleStatus
 
 from persistence.repository import VehicleSnapshot
 from persistence.scheduler import VehicleDataScheduler
@@ -981,6 +981,47 @@ async def send_destination(vin: str, request: Request):
         latitude=float(latitude),
         longitude=float(longitude),
     )
+
+
+# ---------------------------------------------------------------------------
+# Routes — Messages
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/messages")
+async def get_messages(page_no: int = 1, page_size: int = 20):
+    """Fetch paginated notification messages."""
+    client = _get_client()
+    msg_list: MessageList = await client.get_message_list(
+        page_no=page_no, page_size=page_size
+    )
+    return {
+        "count": msg_list.count,
+        "page_no": page_no,
+        "page_size": page_size,
+        "messages": [_message_to_dict(m) for m in msg_list.messages],
+    }
+
+
+@app.get("/api/messages/unread-count")
+async def get_unread_message_count():
+    """Get the number of unread messages."""
+    client = _get_client()
+    count = await client.get_unread_message_count()
+    return {"unread": count}
+
+
+def _message_to_dict(m: Message) -> dict[str, Any]:
+    return {
+        "id": m.id,
+        "vin": m.vin,
+        "title": m.title,
+        "message": m.message,
+        "send_time": m.send_datetime.isoformat() if m.send_datetime else None,
+        "is_read": m.is_read,
+        "url": m.url,
+        "msg_type": m.msg_type,
+    }
 
 
 # ---------------------------------------------------------------------------

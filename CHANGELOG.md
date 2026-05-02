@@ -8,14 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
-- Updated leapmotor-api dependency to v0.1.2
-
-### Changed
 
 - Migrated from pip/venv to uv (Astral) for dependency and environment management
 - Replaced `requirements.txt` with `uv.lock` for deterministic builds
 - Updated Dockerfile to use uv for dependency installation
 - Updated `requires-python` from `>=3.11` to `>=3.12` (required by leapmotor-api)
+- Updated leapmotor-api dependency to v0.1.2
 
 ### Added
 
@@ -24,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Pre-push hook: pytest suite must pass before pushing
 - Test suite with pytest + pytest-asyncio
 - `.python-version` file (3.13)
+- Added menu to read messages from leapmotor account
 
 ## [0.1.0] - 2026-05-01
 
