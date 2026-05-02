@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `ClimateControlModal` component: consolidated A/C Toggle, Quick Cool, Quick Heat, and Defrost into a single "Climate" modal with quick-action buttons and full parameter controls (temperature 16–32°C, fan level 1–7, mode cool/heat/fan, operate auto/manual, air circulation recirculate/fresh, windshield normal/defrost)
+- Backend `ClimateRequest` model with optional climate parameters (`circle`, `mode`, `operate`, `position`, `temperature`, `windlevel`, `wshld`)
 - Message notification dropdown in the top navbar with unread badge, inline message preview, infinite scroll, and periodic polling (60s)
 - Unread indicator dot on the Messages tab icon in both the sidebar and bottom tab bar
 - `unreadMessages` reactive state and `loadUnreadCount()` action in the app store
@@ -21,6 +23,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Climate remote controls consolidated from four separate buttons (A/C Toggle, Quick Cool, Quick Heat, Defrost) into a single "Climate" button that opens a dedicated modal; quick actions remain available inside the modal
+- Backend climate endpoints (`ac`, `quick-cool`, `quick-heat`, `defrost`) now accept an optional `ClimateRequest` body to forward parameters to the leapmotor-api client
 - Window and sunshade remote controls consolidated from two separate buttons each into a single button that opens a dedicated modal
 - Removed "Close Trunk" button (not supported); trunk control is now a single "Open Trunk" button with `PackageOpen` icon
 - Existing `windows/open`, `windows/close`, `sunshade/open`, `sunshade/close` endpoints now accept an optional `value` body parameter to override defaults
