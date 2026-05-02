@@ -19,7 +19,6 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
 
-from dotenv import load_dotenv
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response
@@ -60,9 +59,6 @@ from schemas import (
     VehicleStatusSchema,
 )
 from services.scheduler import VehicleDataScheduler
-
-# Load .env from the webapp directory
-load_dotenv(Path(__file__).resolve().parent / ".env")
 
 logging.basicConfig(level=logging.INFO)
 _LOGGER = logging.getLogger(__name__)
@@ -655,18 +651,24 @@ async def login(request: Request) -> LoginResponse:
     if not all([username, password]):
         raise HTTPException(status_code=422, detail="Missing email or password")
 
-    # Certificate paths from .env
-    app_cert_path = os.environ.get("APP_CERT_PATH", "").strip()
-    app_key_path = os.environ.get("APP_KEY_PATH", "").strip()
-    account_p12_password = os.environ.get("ACCOUNT_P12_PASSWORD", "").strip() or None
+    if not _history_repo:
+        raise HTTPException(status_code=503, detail="DB not ready")
+
+    # Certificate paths from DB (uploaded via /api/setup/certificates)
+    account = await _history_repo.get_account()
+    if account:
+        app_cert_path = account.get("cert_path", "")
+        app_key_path = account.get("key_path", "")
+        account_p12_password = account.get("p12_password")
+    else:
+        app_cert_path = await _history_repo.get_setting("cert_path") or ""
+        app_key_path = await _history_repo.get_setting("key_path") or ""
+        account_p12_password = None
 
     if not app_cert_path or not app_key_path:
         raise HTTPException(
             status_code=500,
-            detail=(
-                "Server misconfigured: "
-                "APP_CERT_PATH and APP_KEY_PATH must be set in .env"
-            ),
+            detail="Certificates not configured. Upload them via setup first.",
         )
     if not Path(app_cert_path).is_file():
         raise HTTPException(

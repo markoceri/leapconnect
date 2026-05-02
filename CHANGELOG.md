@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `/api/login` endpoint now reads certificate paths from the database instead of environment variables, consistent with the setup flow and auto-connect logic
+
+### Removed
+
+- Removed `.env` / `.env.example` and all `python-dotenv` usage; certificates are now managed entirely via the web UI (`/api/setup/certificates`); `DATA_DIR` and `HISTORY_DB_PATH` can still be set as standard environment variables (e.g. in `docker-compose.yml`)
+
 ## [0.2.0] - 2026-05-02
 
 ### Added
