@@ -99,7 +99,7 @@
           class="ctrl-btn"
           :class="{ active: isActive(c.action), loading: loadingAction === c.action }"
           :style="{ '--c': c.color }"
-          @click="exec(c.action)"
+          @click="c.modal ? showWindowModal = true : exec(c.action)"
         >
           <span class="ctrl-icon" :class="{ spinning: loadingAction === c.action }">
             <Loader v-if="loadingAction === c.action" :size="16" />
@@ -133,6 +133,12 @@
       @confirmed="onPinConfirmed"
       @cancelled="onPinCancelled"
     />
+
+    <WindowControlModal
+      :visible="showWindowModal"
+      @close="showWindowModal = false"
+      :on-exec="execWindow"
+    />
   </div>
 </template>
 
@@ -144,10 +150,11 @@ import { formatTime } from '../utils/formatters'
 import StatCard from '../components/StatCard.vue'
 import PinDialog from '../components/PinDialog.vue'
 import DynamicCarImage from '../components/DynamicCarImage.vue'
+import WindowControlModal from '../components/WindowControlModal.vue'
 import {
   Zap, Snowflake, Lock, Unlock, Package, Shield, Loader,
   Radio, ChevronUp, ChevronDown, Sun, MoonStar, Wind, Flame,
-  ThermometerSnowflake, BatteryCharging
+  ThermometerSnowflake, BatteryCharging, Columns2
 } from 'lucide-vue-next'
 
 const props = defineProps({
@@ -192,6 +199,7 @@ const hasPin = computed(() => store.hasPin)
 const showPinDialog = ref(false)
 const pendingAction = ref(null)
 const pinDialogRef = ref(null)
+const showWindowModal = ref(false)
 
 const pendingLimit = ref(props.status?.battery?.charge_soc_setting ?? 80)
 
@@ -201,8 +209,7 @@ const controls = [
   { action: 'trunk/open', icon: Package, label: 'Open Trunk', color: '#00d4ff' },
   { action: 'trunk/close', icon: Package, label: 'Close Trunk', color: '#4a5468' },
   { action: 'find', icon: Radio, label: 'Find Car', color: '#00d4ff' },
-  { action: 'windows/open', icon: ChevronDown, label: 'Open Windows', color: '#7c6aff' },
-  { action: 'windows/close', icon: ChevronUp, label: 'Close Windows', color: '#7c6aff' },
+  { action: 'windows', icon: Columns2, label: 'Windows', color: '#7c6aff', modal: true },
   { action: 'sunshade/open', icon: Sun, label: 'Open Sunshade', color: '#ffab40' },
   { action: 'sunshade/close', icon: MoonStar, label: 'Close Sunshade', color: '#4a5468' },
   { action: 'ac', icon: Snowflake, label: 'A/C Toggle', color: '#00d4ff' },
@@ -249,12 +256,12 @@ function onPinCancelled() {
   }
 }
 
-async function exec(action) {
+async function exec(action, body = null) {
   const ok = await requirePin()
   if (!ok) return
   loadingAction.value = action
   try {
-    await store.execControl(props.vehicle.vin, action)
+    await store.execControl(props.vehicle.vin, action, body)
     toast(`${action} executed successfully`, 'success')
     await store.refreshCurrent()
     carImageKey.value = Date.now()
@@ -262,6 +269,19 @@ async function exec(action) {
     toast(`${action} failed: ${err.message}`, 'error')
   } finally {
     loadingAction.value = null
+  }
+}
+
+async function execWindow({ action, body }) {
+  const ok = await requirePin()
+  if (!ok) return
+  try {
+    await store.execControl(props.vehicle.vin, action, body)
+    toast('Windows command sent', 'success')
+    await store.refreshCurrent()
+    carImageKey.value = Date.now()
+  } catch (err) {
+    toast(`Windows: ${err.message}`, 'error')
   }
 }
 

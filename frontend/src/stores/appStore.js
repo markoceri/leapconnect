@@ -157,8 +157,8 @@ export const useAppStore = defineStore('app', () => {
     screen.value = 'vehicles'
   }
 
-  async function execControl(vin, action) {
-    return await api('POST', `/api/vehicles/${vin}/${action}`)
+  async function execControl(vin, action, body = null) {
+    return await api('POST', `/api/vehicles/${vin}/${action}`, body)
   }
 
   async function setChargeLimit(vin, limit) {

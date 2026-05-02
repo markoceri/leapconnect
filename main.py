@@ -26,6 +26,7 @@ from leapmotor_api import LeapmotorApiClient
 from leapmotor_api.async_client import AsyncLeapmotorApiClient
 from leapmotor_api.image import CarImagePackage
 from leapmotor_api.models import MessageList, Vehicle, VehicleStatus
+from pydantic import BaseModel
 
 from models import VehicleSnapshot
 from persistence.sqlite_adapter import SQLAlchemyVehicleHistoryRepository
@@ -946,18 +947,32 @@ async def battery_preheat(vin: str) -> dict:
     return await client.battery_preheat(vin)
 
 
-@app.post("/api/vehicles/{vin}/windows/open")
-async def open_windows(vin: str) -> dict:
-    """Open all windows remotely."""
+class WindowsRequest(BaseModel):
+    value: str = "100"  # "0" (closed) to "100" (fully open)
+
+
+@app.post("/api/vehicles/{vin}/windows")
+async def control_windows(vin: str, body: WindowsRequest | None = None) -> dict:
+    """Control windows remotely with optional position (0-100)."""
     client = _get_client()
-    return await client.open_windows(vin)
+    value = body.value if body else "100"
+    return await client.windows(vin, value=value)
+
+
+@app.post("/api/vehicles/{vin}/windows/open")
+async def open_windows(vin: str, body: WindowsRequest | None = None) -> dict:
+    """Open all windows remotely (optionally to a specific percentage)."""
+    client = _get_client()
+    value = body.value if body else None
+    return await client.open_windows(vin, value=value)
 
 
 @app.post("/api/vehicles/{vin}/windows/close")
-async def close_windows(vin: str) -> dict:
-    """Close all windows remotely."""
+async def close_windows(vin: str, body: WindowsRequest | None = None) -> dict:
+    """Close all windows remotely (optionally to a specific percentage)."""
     client = _get_client()
-    return await client.close_windows(vin)
+    value = body.value if body else None
+    return await client.close_windows(vin, value=value)
 
 
 @app.post("/api/vehicles/{vin}/ac")
