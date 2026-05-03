@@ -208,8 +208,14 @@ const summaryCards = computed(() => {
   const d = data.value
   if (!d.length) return []
   const totalKm = d.reduce((s, x) => s + x.kmDriven, 0)
-  const totalEnergy = d.reduce((s, x) => s + x.batteryEnergy, 0)
-  const avgBattery = Math.round(d.reduce((s, x) => s + x.battery, 0) / d.length)
+  // Energy deltas: negative = discharged, positive = charged
+  let energyUsed = 0
+  let energyCharged = 0
+  for (let i = 1; i < d.length; i++) {
+    const delta = d[i].batteryEnergy - d[i - 1].batteryEnergy
+    if (delta < 0) energyUsed += Math.abs(delta)
+    else energyCharged += delta
+  }
   // Count complete charge sessions (transitions from charging → not charging)
   let chargeSessions = 0
   for (let i = 1; i < d.length; i++) {
@@ -219,8 +225,8 @@ const summaryCards = computed(() => {
   if (d.length > 0 && d[d.length - 1].chargeSessions > 0) chargeSessions++
   return [
     { label: 'km driven', value: Math.round(totalKm).toLocaleString(), color: '#00d4ff' },
-    { label: 'Energy used', value: `${totalEnergy.toFixed(1)} kWh`, color: '#ffab40' },
-    { label: 'Avg battery', value: `${avgBattery}%`, color: '#00e676' },
+    { label: 'Energy used', value: `${energyUsed.toFixed(1)} kWh`, color: '#ffab40' },
+    { label: 'Energy charged', value: `${energyCharged.toFixed(1)} kWh`, color: '#00e676' },
     { label: 'Charge sessions', value: chargeSessions, color: '#7c6aff' },
   ]
 })
