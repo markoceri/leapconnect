@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import secrets
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import (
@@ -80,7 +80,7 @@ class AccountRow(Base):
     cert_path = Column(String(512), nullable=False)
     key_path = Column(String(512), nullable=False)
     p12_password = Column(String(256), nullable=True)
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(UTC))
 
 
 class LeapConnectUserRow(Base):
@@ -92,7 +92,7 @@ class LeapConnectUserRow(Base):
     display_name = Column(String(256), nullable=False)
     password_hash = Column(String(512), nullable=False)
     salt = Column(String(64), nullable=False)
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(UTC))
 
 
 # ---------------------------------------------------------------------------
@@ -157,10 +157,10 @@ class SQLAlchemyVehicleHistoryRepository(VehicleHistoryRepository):
     ) -> list[VehicleSnapshot]:
         if days == 1:
             # "Today": from midnight of the current day
-            now = datetime.utcnow()
+            now = datetime.now(UTC)
             since = now.replace(hour=0, minute=0, second=0, microsecond=0)
         else:
-            since = datetime.utcnow() - timedelta(days=days)
+            since = datetime.now(UTC) - timedelta(days=days)
         stmt = (
             select(VehicleSnapshotRow)
             .where(VehicleSnapshotRow.vin == vin, VehicleSnapshotRow.timestamp >= since)
@@ -203,7 +203,7 @@ class SQLAlchemyVehicleHistoryRepository(VehicleHistoryRepository):
         *,
         days: int = 30,
     ) -> list[dict[str, Any]]:
-        since = datetime.utcnow() - timedelta(days=days)
+        since = datetime.now(UTC) - timedelta(days=days)
         date_label = func.strftime("%Y-%m-%d", VehicleSnapshotRow.timestamp).label(
             "date"
         )
@@ -320,7 +320,7 @@ class SQLAlchemyVehicleHistoryRepository(VehicleHistoryRepository):
                         cert_path=cert_path,
                         key_path=key_path,
                         p12_password=p12_password,
-                        created_at=datetime.utcnow(),
+                        created_at=datetime.now(UTC),
                     )
                 )
             await session.commit()
@@ -384,7 +384,7 @@ class SQLAlchemyVehicleHistoryRepository(VehicleHistoryRepository):
                 display_name=display_name,
                 password_hash=pw_hash,
                 salt=salt,
-                created_at=datetime.utcnow(),
+                created_at=datetime.now(UTC),
             )
             session.add(row)
             await session.commit()
