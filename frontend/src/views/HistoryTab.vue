@@ -38,20 +38,24 @@
     <template v-if="viewMode === 'chart'">
       <div class="charts-grid">
         <div class="chart-card">
-          <div class="chart-header"><Battery :size="16" class="chart-icon" /> Battery level (%)</div>
+          <div class="chart-header"><Battery :size="16" class="chart-icon" /> Battery level & energy</div>
           <div class="chart-area"><canvas ref="batteryCanvas" /></div>
+          <div class="chart-legend">
+            <span class="legend-item"><span class="legend-line start"></span> Charge start</span>
+            <span class="legend-item"><span class="legend-line end"></span> Charge end</span>
+          </div>
         </div>
         <div class="chart-card">
           <div class="chart-header"><Map :size="16" class="chart-icon" /> Estimated range (km)</div>
           <div class="chart-area"><canvas ref="rangeCanvas" /></div>
         </div>
         <div class="chart-card">
-          <div class="chart-header"><Zap :size="16" class="chart-icon" /> Daily energy consumption</div>
-          <div class="chart-area"><canvas ref="energyCanvas" /></div>
-        </div>
-        <div class="chart-card">
           <div class="chart-header"><Route :size="16" class="chart-icon" /> Daily km driven</div>
           <div class="chart-area"><canvas ref="kmCanvas" /></div>
+        </div>
+        <div class="chart-card">
+          <div class="chart-header"><Zap :size="16" class="chart-icon" /> Charging / Discharging power (kW)</div>
+          <div class="chart-area"><canvas ref="powerCanvas" /></div>
         </div>
       </div>
 
@@ -72,7 +76,7 @@
               <th>Battery %</th>
               <th>Range km</th>
               <th>km Driven</th>
-              <th>Energy kWh</th>
+              <th>Battery kWh</th>
               <th>Temp °C</th>
               <th>Charges</th>
             </tr>
@@ -83,7 +87,7 @@
               <td><span class="td-badge" style="--c:#00e676">{{ row.battery }}</span></td>
               <td>{{ row.range }}</td>
               <td>{{ row.kmDriven }}</td>
-              <td>{{ row.energy }}</td>
+              <td>{{ row.batteryEnergy }}</td>
               <td>{{ row.temp }}</td>
               <td>{{ row.chargeSessions }}</td>
             </tr>
@@ -145,9 +149,11 @@ async function fetchHistory() {
       battery: s.battery_soc ?? 0,
       range: s.battery_expected_mileage ?? 0,
       kmDriven: 0,
-      energy: s.battery_dump_energy ?? 0,
+      batteryEnergy: (s.battery_dump_energy ?? 0) / 1000.0,
+      chargingPower: s.battery_charging_power_kw ?? 0,
+      dischargingPower: s.battery_discharge_power_kw ?? 0,
       temp: s.climate_outdoor_temp ?? 0,
-      chargeSessions: s.battery_is_charging ? 1 : 0,
+      chargeSessions: s.vehicle_is_charging ? 1 : 0,
       sampleCount: 1,
     }))
 
@@ -157,7 +163,9 @@ async function fetchHistory() {
         battery: d.avg_soc ?? 0,
         range: d.max_range ?? 0,
         kmDriven: d.km_driven ?? 0,
-        energy: d.energy_delta ?? 0,
+        batteryEnergy: d.energy_delta ?? 0,
+        chargingPower: 0,
+        dischargingPower: 0,
         temp: d.avg_temp ?? 0,
         chargeSessions: d.charge_sessions ?? 0,
         sampleCount: d.sample_count ?? 0,
@@ -200,9 +208,15 @@ const summaryCards = computed(() => {
   const d = data.value
   if (!d.length) return []
   const totalKm = d.reduce((s, x) => s + x.kmDriven, 0)
-  const totalEnergy = d.reduce((s, x) => s + x.energy, 0)
+  const totalEnergy = d.reduce((s, x) => s + x.batteryEnergy, 0)
   const avgBattery = Math.round(d.reduce((s, x) => s + x.battery, 0) / d.length)
-  const chargeSessions = d.reduce((s, x) => s + (x.chargeSessions || 0), 0)
+  // Count complete charge sessions (transitions from charging → not charging)
+  let chargeSessions = 0
+  for (let i = 1; i < d.length; i++) {
+    if (d[i - 1].chargeSessions > 0 && d[i].chargeSessions === 0) chargeSessions++
+  }
+  // If still charging at end, count as ongoing session
+  if (d.length > 0 && d[d.length - 1].chargeSessions > 0) chargeSessions++
   return [
     { label: 'km driven', value: Math.round(totalKm).toLocaleString(), color: '#00d4ff' },
     { label: 'Energy used', value: `${totalEnergy.toFixed(1)} kWh`, color: '#ffab40' },
@@ -214,8 +228,8 @@ const summaryCards = computed(() => {
 // Chart refs
 const batteryCanvas = ref(null)
 const rangeCanvas = ref(null)
-const energyCanvas = ref(null)
 const kmCanvas = ref(null)
+const powerCanvas = ref(null)
 const tempCanvas = ref(null)
 
 const charts = []
@@ -256,17 +270,66 @@ function buildCharts() {
 
   // Battery
   if (batteryCanvas.value) {
+    // Detect charging transitions: start (0→1) and end (1→0)
+    const chargeLines = []
+    for (let i = 0; i < d.length; i++) {
+      const prev = i > 0 ? d[i - 1].chargeSessions > 0 : false
+      const curr = d[i].chargeSessions > 0
+      if (curr && !prev) chargeLines.push({ index: i, type: 'start' })
+      if (!curr && prev) chargeLines.push({ index: i, type: 'end' })
+    }
+
+    const chargeLinesPlugin = {
+      id: 'chargeLinesPlugin',
+      afterDraw(chart) {
+        const { ctx, chartArea, scales } = chart
+        const xScale = scales.x
+        for (const line of chargeLines) {
+          const x = xScale.getPixelForValue(line.index)
+          ctx.save()
+          ctx.beginPath()
+          ctx.setLineDash([4, 3])
+          ctx.lineWidth = 1.5
+          ctx.strokeStyle = line.type === 'start' ? '#66bb6a' : '#ef5350'
+          ctx.moveTo(x, chartArea.top)
+          ctx.lineTo(x, chartArea.bottom)
+          ctx.stroke()
+          ctx.restore()
+        }
+      },
+    }
+
     charts.push(new Chart(batteryCanvas.value, {
       type: 'line',
       data: {
         labels,
-        datasets: [{
-          data: d.map(x => x.battery),
-          borderColor: '#00e676', backgroundColor: 'rgba(0,230,118,0.08)',
-          fill: true, tension: 0.4, pointRadius: pointR, pointHoverRadius: 5, borderWidth: 2,
-        }],
+        datasets: [
+          {
+            label: 'SOC',
+            data: d.map(x => x.battery),
+            borderColor: '#00e676', backgroundColor: 'rgba(0,230,118,0.08)',
+            fill: true, tension: 0.4, pointRadius: pointR, pointHoverRadius: 5, borderWidth: 2,
+            yAxisID: 'y',
+          },
+          {
+            label: 'Energy (kWh)',
+            data: d.map(x => x.batteryEnergy),
+            borderColor: '#ffab40', backgroundColor: 'transparent',
+            tension: 0.4, pointRadius: pointR, pointHoverRadius: 5, borderWidth: 1.5, borderDash: [4, 3],
+            yAxisID: 'y2',
+          },
+        ],
       },
-      options: { ...chartDefaults, scales: { ...chartDefaults.scales, y: { ...chartDefaults.scales.y, min: 0, max: 100, ticks: { ...chartDefaults.scales.y.ticks, callback: v => `${v}%` } } } },
+      options: {
+        ...chartDefaults,
+        plugins: { ...chartDefaults.plugins, legend: { display: true, labels: { color: '#5c6478', font: { size: 10 }, boxWidth: 20 } } },
+        scales: {
+          ...chartDefaults.scales,
+          y: { ...chartDefaults.scales.y, min: 0, max: 100, ticks: { ...chartDefaults.scales.y.ticks, callback: v => `${v}%` } },
+          y2: { position: 'right', grid: { display: false }, ticks: { color: '#4a5468', font: { size: 10 }, callback: v => `${v} kWh` } },
+        },
+      },
+      plugins: [chargeLinesPlugin],
     }))
   }
 
@@ -286,27 +349,6 @@ function buildCharts() {
     }))
   }
 
-  // Energy
-  if (energyCanvas.value) {
-    const energyType = isToday.value ? 'line' : 'bar'
-    const energyDataset = isToday.value
-      ? {
-          data: d.map(x => x.energy),
-          borderColor: '#ffab40', backgroundColor: 'rgba(255,171,64,0.08)',
-          fill: true, tension: 0.4, pointRadius: pointR, pointHoverRadius: 5, borderWidth: 2,
-        }
-      : {
-          data: d.map(x => x.energy),
-          backgroundColor: d.map(x => x.energy > 5 ? 'rgba(255,171,64,0.7)' : 'rgba(255,171,64,0.35)'),
-          borderColor: '#ffab40', borderWidth: 1, borderRadius: 4,
-        }
-    charts.push(new Chart(energyCanvas.value, {
-      type: energyType,
-      data: { labels, datasets: [energyDataset] },
-      options: { ...chartDefaults, scales: { ...chartDefaults.scales, y: { ...chartDefaults.scales.y, ticks: { ...chartDefaults.scales.y.ticks, callback: v => `${v} kWh` } } } },
-    }))
-  }
-
   // Km
   if (kmCanvas.value) {
     charts.push(new Chart(kmCanvas.value, {
@@ -319,6 +361,38 @@ function buildCharts() {
         }],
       },
       options: { ...chartDefaults, scales: { ...chartDefaults.scales, y: { ...chartDefaults.scales.y, ticks: { ...chartDefaults.scales.y.ticks, callback: v => `${v} km` } } } },
+    }))
+  }
+
+  // Charging / Discharging Power
+  if (powerCanvas.value) {
+    charts.push(new Chart(powerCanvas.value, {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [
+          {
+            label: 'Charging',
+            data: d.map(x => x.chargingPower),
+            borderColor: '#66bb6a', backgroundColor: 'rgba(102,187,106,0.08)',
+            fill: true, tension: 0.3, pointRadius: pointR, pointHoverRadius: 5, borderWidth: 2,
+          },
+          {
+            label: 'Discharging',
+            data: d.map(x => -x.dischargingPower),
+            borderColor: '#ef5350', backgroundColor: 'rgba(239,83,80,0.08)',
+            fill: true, tension: 0.3, pointRadius: pointR, pointHoverRadius: 5, borderWidth: 2,
+          },
+        ],
+      },
+      options: {
+        ...chartDefaults,
+        plugins: { ...chartDefaults.plugins, legend: { display: true, labels: { color: '#5c6478', font: { size: 10 }, boxWidth: 20 } } },
+        scales: {
+          ...chartDefaults.scales,
+          y: { ...chartDefaults.scales.y, ticks: { ...chartDefaults.scales.y.ticks, callback: v => `${v} kW` } },
+        },
+      },
     }))
   }
 
@@ -335,7 +409,7 @@ function buildCharts() {
             fill: true, tension: 0.4, pointRadius: pointR, pointHoverRadius: 5, borderWidth: 2,
           },
           {
-            label: 'Consumption', data: d.map(x => x.energy),
+            label: 'Battery energy', data: d.map(x => x.batteryEnergy),
             borderColor: '#ffab40', backgroundColor: 'transparent',
             tension: 0.4, pointRadius: pointR, pointHoverRadius: 5, borderWidth: 1.5, borderDash: [4, 3],
             yAxisID: 'y2',
@@ -466,6 +540,28 @@ onBeforeUnmount(destroyCharts)
 .chart-icon { font-size: 14px; }
 .chart-area { height: 180px; }
 .chart-area.tall { height: 200px; }
+
+.chart-legend {
+  display: flex;
+  gap: 16px;
+  justify-content: center;
+  margin-top: 8px;
+  font-size: 10px;
+  color: var(--muted);
+}
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.legend-line {
+  display: inline-block;
+  width: 18px;
+  height: 0;
+  border-top: 2px dashed;
+}
+.legend-line.start { border-color: #66bb6a; }
+.legend-line.end { border-color: #ef5350; }
 
 .history-note {
   font-size: 11px;

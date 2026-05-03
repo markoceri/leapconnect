@@ -46,7 +46,6 @@ from schemas import (
     SchedulerStatusResponse,
     SetPinResponse,
     SetupStatusResponse,
-    SnapshotSchema,
     StatusResponse,
     UnreadCountResponse,
     UserCreateResponse,
@@ -55,6 +54,7 @@ from schemas import (
     VehicleHistoryResponse,
     VehicleListResponse,
     VehicleSchema,
+    VehicleSnapshotSchema,
     VehicleStatusResponse,
     VehicleStatusSchema,
 )
@@ -1101,7 +1101,7 @@ async def get_vehicle_history(vin: str, days: int = 30) -> VehicleHistoryRespons
         days=days,
         count=len(snapshots),
         snapshots=[
-            SnapshotSchema(
+            VehicleSnapshotSchema(
                 timestamp=s.timestamp.isoformat(),
                 battery_soc=s.battery_soc,
                 battery_current=s.battery_current,
@@ -1116,8 +1116,12 @@ async def get_vehicle_history(vin: str, days: int = 30) -> VehicleHistoryRespons
                 drive_is_parked=s.drive_is_parked,
                 drive_speed=s.drive_speed,
                 drive_total_mileage=s.drive_total_mileage,
+                ignition_is_on1=s.ignition_is_on1,
+                ignition_is_on2=s.ignition_is_on2,
                 vehicle_is_charging=s.vehicle_is_charging,
                 vehicle_is_plugged=s.vehicle_is_plugged,
+                vehicle_is_regening=s.vehicle_is_regening,
+                vehicle_is_parked=s.vehicle_is_parked,
                 vehicle_is_locked=s.vehicle_is_locked,
                 vehicle_latitude=s.vehicle_latitude,
                 vehicle_longitude=s.vehicle_longitude,
