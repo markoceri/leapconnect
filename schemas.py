@@ -506,3 +506,7 @@ class MessageListResponse(BaseModel):
 
 class UnreadCountResponse(BaseModel):
     unread: int
+
+
+class PreferencesResponse(BaseModel):
+    electricity_price_kwh: float = 0.25

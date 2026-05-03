@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- User preferences system with dedicated `UserPreferences` model and `PreferencesResponse` Pydantic schema
+- `GET /api/preferences` and `PUT /api/preferences` endpoints for reading/updating user preferences
+- Configurable electricity price (€/kWh) in Settings → Preferences section, stored in DB (default: 0.25)
+- History tab "Cost (€)" KPI now uses the user-configured electricity price instead of a hardcoded value
 - The app now shows whether the vehicle is plugged in for charging, visible on the dashboard, details page, and vehicle selector
 - The battery card on the dashboard now indicates the charging type: "Slow charging (AC)" or "Fast charging (DC)" based on the connection type, with a matching icon
 - During setup, if certificate files are already present on the server (e.g. from a previous installation), the app detects them and offers a one-click option to reuse them instead of uploading again

@@ -56,6 +56,13 @@ class VehicleSnapshot:
 
 
 @dataclass
+class UserPreferences:
+    """User-configurable preferences."""
+
+    electricity_price_kwh: float = 0.25
+
+
+@dataclass
 class SchedulerSettings:
     """User-facing scheduler configuration."""
 

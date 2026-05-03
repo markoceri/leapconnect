@@ -29,7 +29,7 @@ from leapmotor_api.image import CarImagePackage
 from leapmotor_api.models import MessageList, Vehicle, VehicleStatus
 from pydantic import BaseModel
 
-from models import VehicleSnapshot
+from models import UserPreferences, VehicleSnapshot
 from persistence.sqlite_adapter import SQLAlchemyVehicleHistoryRepository
 from schemas import (
     AccountSetupResponse,
@@ -42,6 +42,7 @@ from schemas import (
     LoginResponse,
     MessageListResponse,
     MessageSchema,
+    PreferencesResponse,
     ReconnectResponse,
     SchedulerStatusResponse,
     SetPinResponse,
@@ -1147,6 +1148,47 @@ async def get_vehicle_daily_summary(vin: str, days: int = 30) -> DailySummaryRes
         days=days,
         count=len(summaries),
         daily=summaries,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Routes — User Preferences
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/preferences", response_model=PreferencesResponse)
+async def get_preferences() -> PreferencesResponse:
+    """Get user preferences (electricity price, etc.)."""
+    prefs = await _load_preferences()
+    return PreferencesResponse(electricity_price_kwh=prefs.electricity_price_kwh)
+
+
+@app.put("/api/preferences", response_model=PreferencesResponse)
+async def update_preferences(request: Request) -> PreferencesResponse:
+    """Update user preferences."""
+    body = await request.json()
+    price = body.get("electricity_price_kwh")
+    if price is not None:
+        try:
+            price = float(price)
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(
+                status_code=422, detail="'electricity_price_kwh' must be a number"
+            ) from exc
+        if price < 0:
+            raise HTTPException(
+                status_code=422, detail="'electricity_price_kwh' must be >= 0"
+            )
+        await _history_repo.save_setting("electricity_price_kwh", str(price))
+    prefs = await _load_preferences()
+    return PreferencesResponse(electricity_price_kwh=prefs.electricity_price_kwh)
+
+
+async def _load_preferences() -> UserPreferences:
+    """Load user preferences from DB, falling back to defaults."""
+    raw = await _history_repo.get_setting("electricity_price_kwh")
+    return UserPreferences(
+        electricity_price_kwh=float(raw) if raw else 0.25,
     )
 
 

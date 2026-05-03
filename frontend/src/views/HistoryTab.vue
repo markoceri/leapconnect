@@ -218,6 +218,7 @@ const viewMode = ref('chart')
 const allSnapshots = ref([])
 const allData = ref([])
 const todaySnapshots = ref([])
+const electricityPriceKwh = ref(0.25)
 
 async function fetchHistory() {
   if (!props.vin) return
@@ -276,7 +277,13 @@ function formatTimestamp(iso) {
 }
 
 watch(() => props.vin, fetchHistory)
-onMounted(fetchHistory)
+onMounted(async () => {
+  fetchHistory()
+  try {
+    const prefs = await api('GET', '/api/preferences')
+    electricityPriceKwh.value = prefs.electricity_price_kwh
+  } catch { /* use default */ }
+})
 
 // ---------------------------------------------------------------------------
 // Filtered snapshots for selected period
@@ -335,7 +342,7 @@ const kpiCards = computed(() => {
   }
   if (snaps.length > 0 && snaps[snaps.length - 1].battery_is_charging) chargeSessions++
 
-  const costPerKwh = 0.25
+  const costPerKwh = electricityPriceKwh.value
   const cost = energyCharged * costPerKwh
 
   const co2Saved = totalKm * 0.12

@@ -108,6 +108,30 @@
 
     <!-- Preferences -->
     <SectionCard title="Preferences" :icon="SlidersHorizontal">
+      <div class="pref-row">
+        <div class="pref-info">
+          <span class="pref-label">Electricity price</span>
+          <span class="pref-hint">Used to calculate charging cost in History</span>
+        </div>
+        <div class="pref-input-group">
+          <input
+            v-model.number="electricityPrice"
+            type="number"
+            step="0.01"
+            min="0"
+            class="pref-input"
+            @keyup.enter="saveElectricityPrice"
+          />
+          <span class="pref-unit">€/kWh</span>
+          <button
+            class="interval-set-btn"
+            :disabled="electricityPrice === savedElectricityPrice || electricitySaving"
+            @click="saveElectricityPrice"
+          >{{ electricitySaving ? '…' : 'Save' }}</button>
+        </div>
+      </div>
+      <div v-if="electricitySuccess" class="field-success">{{ electricitySuccess }}</div>
+      <div v-if="electricityError" class="field-error">{{ electricityError }}</div>
       <InfoRow label="Distance unit" value="km" color="#e2e6f0" />
       <InfoRow label="Pressure unit" value="bar" color="#e2e6f0" />
       <InfoRow label="Theme" value="Dark" color="#7c6aff" />
@@ -386,10 +410,46 @@ async function saveCertificates() {
   }
 }
 
+// -- Electricity price preference -------------------------------------------
+const electricityPrice = ref(0.25)
+const savedElectricityPrice = ref(0.25)
+const electricitySaving = ref(false)
+const electricityError = ref('')
+const electricitySuccess = ref('')
+
+async function loadPreferences() {
+  try {
+    const data = await api('GET', '/api/preferences')
+    electricityPrice.value = data.electricity_price_kwh
+    savedElectricityPrice.value = data.electricity_price_kwh
+  } catch { /* ignore */ }
+}
+
+async function saveElectricityPrice() {
+  if (electricityPrice.value === savedElectricityPrice.value) return
+  electricityError.value = ''
+  electricitySuccess.value = ''
+  electricitySaving.value = true
+  try {
+    const data = await api('PUT', '/api/preferences', {
+      electricity_price_kwh: electricityPrice.value,
+    })
+    savedElectricityPrice.value = data.electricity_price_kwh
+    electricityPrice.value = data.electricity_price_kwh
+    electricitySuccess.value = 'Price saved'
+    setTimeout(() => { electricitySuccess.value = '' }, 3000)
+  } catch (err) {
+    electricityError.value = err.message
+  } finally {
+    electricitySaving.value = false
+  }
+}
+
 onMounted(() => {
   loadScheduler()
   loadAccount()
   loadCertsStatus()
+  loadPreferences()
 })
 </script>
 
@@ -731,5 +791,50 @@ onMounted(() => {
   font-size: 11px;
   color: #ff5252;
   font-family: var(--mono);
+}
+
+/* Preferences */
+.pref-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid #181d2c;
+}
+.pref-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.pref-label {
+  font-size: 13px;
+  color: var(--sub);
+}
+.pref-hint {
+  font-size: 11px;
+  color: var(--muted);
+}
+.pref-input-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.pref-input {
+  width: 70px;
+  padding: 6px 10px;
+  background: var(--input);
+  border: 1px solid #1c2240;
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 13px;
+  font-family: var(--mono);
+  text-align: right;
+  outline: none;
+  transition: border-color 0.2s;
+}
+.pref-input:focus { border-color: #00d4ff55; }
+.pref-unit {
+  font-size: 11px;
+  color: var(--muted);
 }
 </style>
