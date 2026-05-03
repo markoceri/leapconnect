@@ -3,8 +3,8 @@
     <!-- Header + period selector -->
     <div class="history-header">
       <div>
-        <h2>Storico dati</h2>
-        <p>Analisi delle performance nel tempo</p>
+        <h2>Data History</h2>
+        <p>Performance analysis over time</p>
       </div>
       <div class="period-selector">
         <button
@@ -12,8 +12,17 @@
           :key="i"
           class="period-btn"
           :class="{ active: period === i }"
+          :disabled="p.days > 1 && p.days !== 0 && allData.length < 2"
           @click="period = i"
         >{{ p.label }}</button>
+      </div>
+      <div class="view-toggle">
+        <button class="view-btn" :class="{ active: viewMode === 'chart' }" @click="viewMode = 'chart'">
+          <BarChart3 :size="14" /> Charts
+        </button>
+        <button class="view-btn" :class="{ active: viewMode === 'table' }" @click="viewMode = 'table'">
+          <Table2 :size="14" /> Table
+        </button>
       </div>
     </div>
 
@@ -26,36 +35,68 @@
     </div>
 
     <!-- Charts 2-col grid -->
-    <div class="charts-grid">
-      <div class="chart-card">
-        <div class="chart-header"><Battery :size="16" class="chart-icon" /> Livello batteria (%)</div>
-        <div class="chart-area"><canvas ref="batteryCanvas" /></div>
+    <template v-if="viewMode === 'chart'">
+      <div class="charts-grid">
+        <div class="chart-card">
+          <div class="chart-header"><Battery :size="16" class="chart-icon" /> Battery level (%)</div>
+          <div class="chart-area"><canvas ref="batteryCanvas" /></div>
+        </div>
+        <div class="chart-card">
+          <div class="chart-header"><Map :size="16" class="chart-icon" /> Estimated range (km)</div>
+          <div class="chart-area"><canvas ref="rangeCanvas" /></div>
+        </div>
+        <div class="chart-card">
+          <div class="chart-header"><Zap :size="16" class="chart-icon" /> Daily energy consumption</div>
+          <div class="chart-area"><canvas ref="energyCanvas" /></div>
+        </div>
+        <div class="chart-card">
+          <div class="chart-header"><Route :size="16" class="chart-icon" /> Daily km driven</div>
+          <div class="chart-area"><canvas ref="kmCanvas" /></div>
+        </div>
       </div>
-      <div class="chart-card">
-        <div class="chart-header"><Map :size="16" class="chart-icon" /> Autonomia stimata (km)</div>
-        <div class="chart-area"><canvas ref="rangeCanvas" /></div>
+
+      <!-- Full-width temp chart -->
+      <div class="chart-card wide">
+        <div class="chart-header"><Thermometer :size="16" class="chart-icon" /> Outside temperature vs Energy consumption</div>
+        <div class="chart-area tall"><canvas ref="tempCanvas" /></div>
       </div>
-      <div class="chart-card">
-        <div class="chart-header"><Zap :size="16" class="chart-icon" /> Energia consumata per giorno</div>
-        <div class="chart-area"><canvas ref="energyCanvas" /></div>
-      </div>
-      <div class="chart-card">
-        <div class="chart-header"><Route :size="16" class="chart-icon" /> km percorsi per giorno</div>
-        <div class="chart-area"><canvas ref="kmCanvas" /></div>
+    </template>
+
+    <!-- Table view -->
+    <div v-else class="data-table-wrapper">
+      <div class="data-table-scroll">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>{{ isToday ? 'Time' : 'Date' }}</th>
+              <th>Battery %</th>
+              <th>Range km</th>
+              <th>km Driven</th>
+              <th>Energy kWh</th>
+              <th>Temp °C</th>
+              <th>Charges</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="(row, i) in tableData" :key="i">
+              <td class="td-date">{{ row.date }}</td>
+              <td><span class="td-badge" style="--c:#00e676">{{ row.battery }}</span></td>
+              <td>{{ row.range }}</td>
+              <td>{{ row.kmDriven }}</td>
+              <td>{{ row.energy }}</td>
+              <td>{{ row.temp }}</td>
+              <td>{{ row.chargeSessions }}</td>
+            </tr>
+          </tbody>
+        </table>
       </div>
     </div>
 
-    <!-- Full-width temp chart -->
-    <div class="chart-card wide">
-      <div class="chart-header"><Thermometer :size="16" class="chart-icon" /> Temperatura esterna vs Consumo energetico</div>
-      <div class="chart-area tall"><canvas ref="tempCanvas" /></div>
+    <div class="history-note" v-if="allData.length || todaySnapshots.length">
+      Real data collected from vehicle · {{ allData.length }} days available
     </div>
-
-    <div class="history-note" v-if="dataSource === 'mock'">
-      I dati mostrati sono simulati. Attiva la raccolta automatica nelle Impostazioni per popolare lo storico reale.
-    </div>
-    <div class="history-note real" v-else>
-      Dati reali raccolti dal veicolo · {{ allData.length }} giorni disponibili
+    <div class="history-note" v-else>
+      No data yet. Enable automatic collection in Settings to populate history.
     </div>
   </div>
 </template>
@@ -64,7 +105,7 @@
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { Chart, registerables } from 'chart.js'
 import { api } from '../composables/useApi'
-import { Battery, Map, Zap, Route, Thermometer } from 'lucide-vue-next'
+import { Battery, Map, Zap, Route, Thermometer, BarChart3, Table2 } from 'lucide-vue-next'
 
 Chart.register(...registerables)
 
@@ -74,29 +115,43 @@ const props = defineProps({
 })
 
 const periods = [
-  { label: '7 giorni', days: 7 },
-  { label: '30 giorni', days: 30 },
-  { label: '90 giorni', days: 90 },
+  { label: 'Today', days: 1 },
+  { label: '7 days', days: 7 },
+  { label: '30 days', days: 30 },
+  { label: '90 days', days: 90 },
+  { label: 'All', days: 0 },
 ]
-const period = ref(1)
+const period = ref(0)
+const viewMode = ref('chart')
 
 // ---------------------------------------------------------------------------
 // Data source: real API → fallback to mock
 // ---------------------------------------------------------------------------
 const allData = ref([])
-const dataSource = ref('loading') // 'real' | 'mock' | 'loading'
+const todaySnapshots = ref([])
 
 async function fetchHistory() {
-  if (!props.vin) {
-    useMockData()
-    return
-  }
+  if (!props.vin) return
   try {
-    // Fetch 90 days (max period) from the backend
-    const res = await api('GET', `/api/vehicles/${props.vin}/history/daily?days=90`)
-    const daily = res.daily || []
-    if (daily.length >= 2) {
-      // Map backend daily summary → chart data shape
+    const [dailyRes, snapshotRes] = await Promise.all([
+      api('GET', `/api/vehicles/${props.vin}/history/daily?days=3650`),
+      api('GET', `/api/vehicles/${props.vin}/history?days=1`),
+    ])
+    const daily = dailyRes.daily || []
+    const snaps = snapshotRes.snapshots || []
+
+    todaySnapshots.value = snaps.map(s => ({
+      date: formatTimestamp(s.timestamp),
+      battery: s.battery_soc ?? 0,
+      range: s.battery_expected_mileage ?? 0,
+      kmDriven: 0,
+      energy: s.battery_dump_energy ?? 0,
+      temp: s.climate_outdoor_temp ?? 0,
+      chargeSessions: s.battery_is_charging ? 1 : 0,
+      sampleCount: 1,
+    }))
+
+    if (daily.length > 0) {
       allData.value = daily.map(d => ({
         date: formatDate(d.date),
         battery: d.avg_soc ?? 0,
@@ -107,21 +162,10 @@ async function fetchHistory() {
         chargeSessions: d.charge_sessions ?? 0,
         sampleCount: d.sample_count ?? 0,
       }))
-      dataSource.value = 'real'
-    } else {
-      // Not enough real data — fall back to mock
-      useMockData()
     }
-  } catch {
-    useMockData()
+  } catch (err) {
+    console.error('[HistoryTab] fetchHistory failed:', err)
   }
-}
-
-function useMockData() {
-  const soc = props.status?.battery?.soc ?? 60
-  const odo = props.status?.driving?.total_mileage ?? 3000
-  allData.value = generateMockHistory(odo, soc)
-  dataSource.value = 'mock'
 }
 
 function formatDate(isoDate) {
@@ -130,30 +174,9 @@ function formatDate(isoDate) {
   return `${d}/${m}`
 }
 
-function generateMockHistory(startOdo, startBattery) {
-  const data = []
-  let battery = startBattery || 75
-  let odo = startOdo || 0
-  for (let i = 89; i >= 0; i--) {
-    const d = new Date()
-    d.setDate(d.getDate() - i)
-    const label = d.toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit' })
-    const driven = Math.random() * 30
-    odo += driven
-    const charged = Math.random() > 0.55
-    battery = Math.max(10, Math.min(100, battery - driven * 0.5 + (charged ? Math.random() * 45 + 15 : 0)))
-    data.push({
-      date: label,
-      battery: Math.round(battery),
-      range: Math.round(battery * 2.06),
-      kmDriven: Math.round(driven),
-      energy: parseFloat((driven * (0.12 + Math.random() * 0.10)).toFixed(1)),
-      temp: Math.round(8 + Math.random() * 14),
-      chargeSessions: charged ? 1 : 0,
-      sampleCount: 1,
-    })
-  }
-  return data
+function formatTimestamp(iso) {
+  const d = new Date(iso)
+  return d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
 }
 
 // Reload when vin changes
@@ -163,7 +186,15 @@ onMounted(fetchHistory)
 // ---------------------------------------------------------------------------
 // Visible slice based on selected period
 // ---------------------------------------------------------------------------
-const data = computed(() => allData.value.slice(-periods[period.value].days))
+const isToday = computed(() => periods[period.value].days === 1)
+
+const data = computed(() => {
+  if (isToday.value) return todaySnapshots.value
+  const days = periods[period.value].days
+  return days === 0 ? allData.value : allData.value.slice(-days)
+})
+
+const tableData = computed(() => [...data.value].reverse())
 
 const summaryCards = computed(() => {
   const d = data.value
@@ -173,10 +204,10 @@ const summaryCards = computed(() => {
   const avgBattery = Math.round(d.reduce((s, x) => s + x.battery, 0) / d.length)
   const chargeSessions = d.reduce((s, x) => s + (x.chargeSessions || 0), 0)
   return [
-    { label: 'km percorsi', value: Math.round(totalKm).toLocaleString(), color: '#00d4ff' },
-    { label: 'Energia usata', value: `${totalEnergy.toFixed(1)} kWh`, color: '#ffab40' },
-    { label: 'Batteria media', value: `${avgBattery}%`, color: '#00e676' },
-    { label: 'Sessioni ricarica', value: chargeSessions, color: '#7c6aff' },
+    { label: 'km driven', value: Math.round(totalKm).toLocaleString(), color: '#00d4ff' },
+    { label: 'Energy used', value: `${totalEnergy.toFixed(1)} kWh`, color: '#ffab40' },
+    { label: 'Avg battery', value: `${avgBattery}%`, color: '#00e676' },
+    { label: 'Charge sessions', value: chargeSessions, color: '#7c6aff' },
   ]
 })
 
@@ -192,6 +223,7 @@ const charts = []
 const chartDefaults = {
   responsive: true,
   maintainAspectRatio: false,
+  interaction: { mode: 'index', intersect: false },
   plugins: {
     legend: { display: false },
     tooltip: {
@@ -220,6 +252,7 @@ function buildCharts() {
   if (!d.length) return
 
   const labels = d.map(x => x.date)
+  const pointR = d.length <= 5 ? 4 : 0
 
   // Battery
   if (batteryCanvas.value) {
@@ -230,7 +263,7 @@ function buildCharts() {
         datasets: [{
           data: d.map(x => x.battery),
           borderColor: '#00e676', backgroundColor: 'rgba(0,230,118,0.08)',
-          fill: true, tension: 0.4, pointRadius: 0, pointHoverRadius: 4, borderWidth: 2,
+          fill: true, tension: 0.4, pointRadius: pointR, pointHoverRadius: 5, borderWidth: 2,
         }],
       },
       options: { ...chartDefaults, scales: { ...chartDefaults.scales, y: { ...chartDefaults.scales.y, min: 0, max: 100, ticks: { ...chartDefaults.scales.y.ticks, callback: v => `${v}%` } } } },
@@ -246,7 +279,7 @@ function buildCharts() {
         datasets: [{
           data: d.map(x => x.range),
           borderColor: '#00d4ff', backgroundColor: 'rgba(0,212,255,0.07)',
-          fill: true, tension: 0.4, pointRadius: 0, pointHoverRadius: 4, borderWidth: 2,
+          fill: true, tension: 0.4, pointRadius: pointR, pointHoverRadius: 5, borderWidth: 2,
         }],
       },
       options: { ...chartDefaults, scales: { ...chartDefaults.scales, y: { ...chartDefaults.scales.y, ticks: { ...chartDefaults.scales.y.ticks, callback: v => `${v} km` } } } },
@@ -255,16 +288,21 @@ function buildCharts() {
 
   // Energy
   if (energyCanvas.value) {
-    charts.push(new Chart(energyCanvas.value, {
-      type: 'bar',
-      data: {
-        labels,
-        datasets: [{
+    const energyType = isToday.value ? 'line' : 'bar'
+    const energyDataset = isToday.value
+      ? {
+          data: d.map(x => x.energy),
+          borderColor: '#ffab40', backgroundColor: 'rgba(255,171,64,0.08)',
+          fill: true, tension: 0.4, pointRadius: pointR, pointHoverRadius: 5, borderWidth: 2,
+        }
+      : {
           data: d.map(x => x.energy),
           backgroundColor: d.map(x => x.energy > 5 ? 'rgba(255,171,64,0.7)' : 'rgba(255,171,64,0.35)'),
           borderColor: '#ffab40', borderWidth: 1, borderRadius: 4,
-        }],
-      },
+        }
+    charts.push(new Chart(energyCanvas.value, {
+      type: energyType,
+      data: { labels, datasets: [energyDataset] },
       options: { ...chartDefaults, scales: { ...chartDefaults.scales, y: { ...chartDefaults.scales.y, ticks: { ...chartDefaults.scales.y.ticks, callback: v => `${v} kWh` } } } },
     }))
   }
@@ -292,14 +330,14 @@ function buildCharts() {
         labels,
         datasets: [
           {
-            label: 'Temperatura', data: d.map(x => x.temp),
+            label: 'Temperature', data: d.map(x => x.temp),
             borderColor: '#ff7043', backgroundColor: 'rgba(255,112,67,0.06)',
-            fill: true, tension: 0.4, pointRadius: 0, borderWidth: 2,
+            fill: true, tension: 0.4, pointRadius: pointR, pointHoverRadius: 5, borderWidth: 2,
           },
           {
-            label: 'Consumo', data: d.map(x => x.energy),
+            label: 'Consumption', data: d.map(x => x.energy),
             borderColor: '#ffab40', backgroundColor: 'transparent',
-            tension: 0.4, pointRadius: 0, borderWidth: 1.5, borderDash: [4, 3],
+            tension: 0.4, pointRadius: pointR, pointHoverRadius: 5, borderWidth: 1.5, borderDash: [4, 3],
             yAxisID: 'y2',
           },
         ],
@@ -317,7 +355,8 @@ function buildCharts() {
   }
 }
 
-watch(data, () => { nextTick(buildCharts) })
+watch(data, () => { if (viewMode.value === 'chart') nextTick(buildCharts) })
+watch(viewMode, (v) => { if (v === 'chart') nextTick(buildCharts) })
 onMounted(() => { nextTick(buildCharts) })
 onBeforeUnmount(destroyCharts)
 </script>
@@ -370,6 +409,10 @@ onBeforeUnmount(destroyCharts)
   background: transparent;
   color: var(--muted);
   transition: all 0.2s;
+}
+.period-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
 }
 .period-btn.active {
   background: #1c2240;
@@ -436,6 +479,90 @@ onBeforeUnmount(destroyCharts)
   color: #00e676;
   background: rgba(0, 230, 118, 0.06);
   border: 1px solid rgba(0, 230, 118, 0.15);
+}
+
+/* View toggle */
+.view-toggle {
+  display: flex;
+  gap: 4px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 4px;
+}
+.view-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 12px;
+  border-radius: 7px;
+  border: none;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  background: transparent;
+  color: var(--muted);
+  transition: all 0.2s;
+}
+.view-btn.active {
+  background: #1c2240;
+  color: #00d4ff;
+}
+
+/* Data table */
+.data-table-wrapper {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  overflow: hidden;
+}
+.data-table-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.data-table thead {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+.data-table th {
+  background: #0d1018;
+  padding: 10px 14px;
+  text-align: left;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted3);
+  white-space: nowrap;
+  border-bottom: 1px solid var(--border);
+}
+.data-table td {
+  padding: 9px 14px;
+  color: var(--sub);
+  border-bottom: 1px solid #181d2c;
+  white-space: nowrap;
+}
+.data-table tbody tr:hover {
+  background: #ffffff05;
+}
+.td-date {
+  font-family: var(--mono);
+  color: var(--muted);
+}
+.td-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--c) 15%, transparent);
+  color: var(--c);
+  font-weight: 600;
+  font-size: 11px;
 }
 
 

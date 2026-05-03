@@ -12,6 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The app now shows whether the vehicle is plugged in for charging, visible on the dashboard, details page, and vehicle selector
 - The battery card on the dashboard now indicates the charging type: "Slow charging (AC)" or "Fast charging (DC)" based on the connection type, with a matching icon
 - During setup, if certificate files are already present on the server (e.g. from a previous installation), the app detects them and offers a one-click option to reuse them instead of uploading again
+- History tab: new "Today" filter shows individual snapshots (per-collection) instead of daily aggregates
+- History tab: "All" filter to display the entire available history
+- History tab: table view alongside charts, with toggle
+- History tab: hover tooltip on charts now snaps to the nearest point with a visible indicator
+- History tab: period buttons (7/30/90 days) are disabled when fewer than 2 days of data are available
+- VehicleSnapshot model expanded with full telemetry: battery current/voltage, tire pressures, ignition state, locked/parked status
 
 ### Changed
 
@@ -19,6 +25,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Changing the collection interval no longer applies immediately; you pick the desired time first, then confirm with a "Set" button
 - The scheduler status now shows the current interval alongside the running state (e.g. "Running · every 15 min")
 - `/api/login` endpoint now reads certificate paths from the database instead of environment variables, consistent with the setup flow and auto-connect logic
+- History tab defaults to "Today" period on load
+- History tab labels translated to English
+- SnapshotSchema API response now uses namespaced field names (e.g. `battery_expected_mileage`, `climate_outdoor_temp`) matching the internal model
 
 ### Removed
 

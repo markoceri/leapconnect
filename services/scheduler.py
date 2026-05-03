@@ -157,17 +157,36 @@ class VehicleDataScheduler:
                     vin=vehicle.vin,
                     timestamp=status.collect_time or datetime.utcnow(),
                     battery_soc=status.battery.soc,
-                    expected_mileage=status.battery.expected_mileage,
-                    total_mileage=status.driving.total_mileage,
-                    energy_kwh=status.battery.dump_energy_kwh,
-                    outdoor_temp=status.climate.outdoor_temp,
-                    is_charging=status.is_charging,
-                    latitude=status.location.latitude,
-                    longitude=status.location.longitude,
-                    charge_state=status.battery.charge_state.value
+                    battery_current=status.battery.battery_current,
+                    battery_voltage=status.battery.battery_voltage,
+                    battery_is_charging=status.is_charging,
+                    battery_dump_energy=status.battery.dump_energy,
+                    battery_expected_mileage=status.battery.expected_mileage,
+                    battery_charge_state=status.battery.charge_state.value
                     if status.battery.charge_state
                     else None,
-                    speed=status.driving.speed,
+                    drive_is_parked=status.driving.is_parked,
+                    drive_speed=status.driving.speed,
+                    drive_total_mileage=status.driving.total_mileage,
+                    vehicle_is_charging=status.is_charging,
+                    vehicle_is_plugged=status.is_plugged,
+                    vehicle_is_parked=status.is_parked,
+                    vehicle_is_locked=status.is_locked,
+                    vehicle_latitude=status.location.latitude,
+                    vehicle_longitude=status.location.longitude,
+                    climate_outdoor_temp=status.climate.outdoor_temp,
+                    tire_front_left_pressure=status.tires.front_left_kpa
+                    if status.tires
+                    else None,
+                    tire_front_right_pressure=status.tires.front_right_kpa
+                    if status.tires
+                    else None,
+                    tire_rear_left_pressure=status.tires.rear_left_kpa
+                    if status.tires
+                    else None,
+                    tire_rear_right_pressure=status.tires.rear_right_kpa
+                    if status.tires
+                    else None,
                 )
                 await self._repo.save_snapshot(snapshot)
                 _LOGGER.info(

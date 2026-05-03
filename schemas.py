@@ -439,15 +439,28 @@ class FullVehicleDataResponse(BaseModel):
 class SnapshotSchema(BaseModel):
     timestamp: str
     battery_soc: int | None = None
-    expected_mileage: int | None = None
-    total_mileage: int | None = None
-    energy_kwh: float | None = None
-    outdoor_temp: int | None = None
-    is_charging: bool | None = None
-    is_plugged: bool | None = None
-    latitude: float | None = None
-    longitude: float | None = None
-    speed: int | None = None
+    battery_current: float | None = None
+    battery_voltage: float | None = None
+    battery_charging_power_kw: float | None = None
+    battery_discharge_power_kw: float | None = None
+    battery_is_charging: bool | None = None
+    battery_is_discharging: bool | None = None
+    battery_dump_energy: float | None = None
+    battery_expected_mileage: int | None = None
+    battery_charge_state: int | None = None
+    drive_is_parked: bool | None = None
+    drive_speed: int | None = None
+    drive_total_mileage: int | None = None
+    vehicle_is_charging: bool | None = None
+    vehicle_is_plugged: bool | None = None
+    vehicle_is_locked: bool | None = None
+    vehicle_latitude: float | None = None
+    vehicle_longitude: float | None = None
+    climate_outdoor_temp: int | None = None
+    tire_front_left_pressure: float | None = None
+    tire_front_right_pressure: float | None = None
+    tire_rear_left_pressure: float | None = None
+    tire_rear_right_pressure: float | None = None
 
 
 class VehicleHistoryResponse(BaseModel):

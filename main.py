@@ -830,18 +830,43 @@ async def get_vehicle_status(vin: str) -> VehicleStatusResponse:
             vin=vin,
             timestamp=status.collect_time or datetime.utcnow(),
             battery_soc=status.battery.soc,
-            expected_mileage=status.battery.expected_mileage,
-            total_mileage=status.driving.total_mileage,
-            energy_kwh=status.battery.dump_energy_kwh,
-            outdoor_temp=status.climate.outdoor_temp,
-            is_charging=status.is_charging,
-            is_plugged=status.is_plugged,
-            latitude=status.location.latitude,
-            longitude=status.location.longitude,
-            charge_state=status.battery.charge_state.value
+            battery_current=status.battery.battery_current,
+            battery_voltage=status.battery.battery_voltage,
+            battery_is_charging=status.is_charging,
+            battery_dump_energy=status.battery.dump_energy,
+            battery_expected_mileage=status.battery.expected_mileage,
+            battery_charge_state=status.battery.charge_state.value
             if status.battery.charge_state
             else None,
-            speed=status.driving.speed,
+            drive_is_parked=status.driving.is_parked,
+            drive_speed=status.driving.speed,
+            drive_total_mileage=status.driving.total_mileage,
+            ignition_is_on1=status.ignition.bcm_key_position_on1
+            if status.ignition
+            else None,
+            ignition_is_on2=status.ignition.bcm_key_position_on3
+            if status.ignition
+            else None,
+            vehicle_is_charging=status.is_charging,
+            vehicle_is_plugged=status.is_plugged,
+            vehicle_is_regening=status.is_regening,
+            vehicle_is_parked=status.is_parked,
+            vehicle_is_locked=status.is_locked,
+            vehicle_latitude=status.location.latitude,
+            vehicle_longitude=status.location.longitude,
+            climate_outdoor_temp=status.climate.outdoor_temp,
+            tire_front_left_pressure=status.tires.front_left_kpa
+            if status.tires
+            else None,
+            tire_front_right_pressure=status.tires.front_right_kpa
+            if status.tires
+            else None,
+            tire_rear_left_pressure=status.tires.rear_left_kpa
+            if status.tires
+            else None,
+            tire_rear_right_pressure=status.tires.rear_right_kpa
+            if status.tires
+            else None,
         )
         asyncio.create_task(_save_snapshot_safe(snapshot))
 
@@ -1079,15 +1104,28 @@ async def get_vehicle_history(vin: str, days: int = 30) -> VehicleHistoryRespons
             SnapshotSchema(
                 timestamp=s.timestamp.isoformat(),
                 battery_soc=s.battery_soc,
-                expected_mileage=s.expected_mileage,
-                total_mileage=s.total_mileage,
-                energy_kwh=s.energy_kwh,
-                outdoor_temp=s.outdoor_temp,
-                is_charging=s.is_charging,
-                is_plugged=s.is_plugged,
-                latitude=s.latitude,
-                longitude=s.longitude,
-                speed=s.speed,
+                battery_current=s.battery_current,
+                battery_voltage=s.battery_voltage,
+                battery_charging_power_kw=s.battery_charging_power_kw,
+                battery_discharge_power_kw=s.battery_discharge_power_kw,
+                battery_is_charging=s.battery_is_charging,
+                battery_is_discharging=s.battery_is_discharging,
+                battery_dump_energy=s.battery_dump_energy,
+                battery_expected_mileage=s.battery_expected_mileage,
+                battery_charge_state=s.battery_charge_state,
+                drive_is_parked=s.drive_is_parked,
+                drive_speed=s.drive_speed,
+                drive_total_mileage=s.drive_total_mileage,
+                vehicle_is_charging=s.vehicle_is_charging,
+                vehicle_is_plugged=s.vehicle_is_plugged,
+                vehicle_is_locked=s.vehicle_is_locked,
+                vehicle_latitude=s.vehicle_latitude,
+                vehicle_longitude=s.vehicle_longitude,
+                climate_outdoor_temp=s.climate_outdoor_temp,
+                tire_front_left_pressure=s.tire_front_left_pressure,
+                tire_front_right_pressure=s.tire_front_right_pressure,
+                tire_rear_left_pressure=s.tire_rear_left_pressure,
+                tire_rear_right_pressure=s.tire_rear_right_pressure,
             )
             for s in snapshots
         ],

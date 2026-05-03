@@ -40,6 +40,8 @@ class VehicleSnapshotRow(Base):
     vin = Column(String(20), nullable=False, index=True)
     timestamp = Column(DateTime, nullable=False, index=True)
     battery_soc = Column(Integer, nullable=True)
+    battery_current = Column(Float, nullable=True)
+    battery_voltage = Column(Float, nullable=True)
     expected_mileage = Column(Integer, nullable=True)
     total_mileage = Column(Integer, nullable=True)
     energy_kwh = Column(Float, nullable=True)
@@ -50,6 +52,12 @@ class VehicleSnapshotRow(Base):
     longitude = Column(Float, nullable=True)
     charge_state = Column(Integer, nullable=True)
     speed = Column(Integer, nullable=True)
+    is_parked = Column(Boolean, nullable=True)
+    is_locked = Column(Boolean, nullable=True)
+    tire_fl_pressure = Column(Float, nullable=True)
+    tire_fr_pressure = Column(Float, nullable=True)
+    tire_rl_pressure = Column(Float, nullable=True)
+    tire_rr_pressure = Column(Float, nullable=True)
 
 
 class AppSettingRow(Base):
@@ -116,16 +124,24 @@ class SQLAlchemyVehicleHistoryRepository(VehicleHistoryRepository):
             vin=snapshot.vin,
             timestamp=snapshot.timestamp,
             battery_soc=snapshot.battery_soc,
-            expected_mileage=snapshot.expected_mileage,
-            total_mileage=snapshot.total_mileage,
-            energy_kwh=snapshot.energy_kwh,
-            outdoor_temp=snapshot.outdoor_temp,
-            is_charging=snapshot.is_charging,
-            is_plugged=snapshot.is_plugged,
-            latitude=snapshot.latitude,
-            longitude=snapshot.longitude,
-            charge_state=snapshot.charge_state,
-            speed=snapshot.speed,
+            battery_current=snapshot.battery_current,
+            battery_voltage=snapshot.battery_voltage,
+            expected_mileage=snapshot.battery_expected_mileage,
+            total_mileage=snapshot.drive_total_mileage,
+            energy_kwh=snapshot.battery_dump_energy,
+            outdoor_temp=snapshot.climate_outdoor_temp,
+            is_charging=snapshot.battery_is_charging,
+            is_plugged=snapshot.vehicle_is_plugged,
+            latitude=snapshot.vehicle_latitude,
+            longitude=snapshot.vehicle_longitude,
+            charge_state=snapshot.battery_charge_state,
+            speed=snapshot.drive_speed,
+            is_parked=snapshot.drive_is_parked,
+            is_locked=snapshot.vehicle_is_locked,
+            tire_fl_pressure=snapshot.tire_front_left_pressure,
+            tire_fr_pressure=snapshot.tire_front_right_pressure,
+            tire_rl_pressure=snapshot.tire_rear_left_pressure,
+            tire_rr_pressure=snapshot.tire_rear_right_pressure,
         )
         async with self._session_factory() as session:
             session.add(row)
@@ -139,7 +155,12 @@ class SQLAlchemyVehicleHistoryRepository(VehicleHistoryRepository):
         *,
         days: int = 30,
     ) -> list[VehicleSnapshot]:
-        since = datetime.utcnow() - timedelta(days=days)
+        if days == 1:
+            # "Today": from midnight of the current day
+            now = datetime.utcnow()
+            since = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        else:
+            since = datetime.utcnow() - timedelta(days=days)
         stmt = (
             select(VehicleSnapshotRow)
             .where(VehicleSnapshotRow.vin == vin, VehicleSnapshotRow.timestamp >= since)
@@ -154,16 +175,24 @@ class SQLAlchemyVehicleHistoryRepository(VehicleHistoryRepository):
                 vin=r.vin,
                 timestamp=r.timestamp,
                 battery_soc=r.battery_soc,
-                expected_mileage=r.expected_mileage,
-                total_mileage=r.total_mileage,
-                energy_kwh=r.energy_kwh,
-                outdoor_temp=r.outdoor_temp,
-                is_charging=r.is_charging,
-                is_plugged=r.is_plugged,
-                latitude=r.latitude,
-                longitude=r.longitude,
-                charge_state=r.charge_state,
-                speed=r.speed,
+                battery_current=r.battery_current,
+                battery_voltage=r.battery_voltage,
+                battery_expected_mileage=r.expected_mileage,
+                drive_total_mileage=r.total_mileage,
+                battery_dump_energy=r.energy_kwh,
+                climate_outdoor_temp=r.outdoor_temp,
+                battery_is_charging=r.is_charging,
+                vehicle_is_plugged=r.is_plugged,
+                vehicle_latitude=r.latitude,
+                vehicle_longitude=r.longitude,
+                battery_charge_state=r.charge_state,
+                drive_speed=r.speed,
+                drive_is_parked=r.is_parked,
+                vehicle_is_locked=r.is_locked,
+                tire_front_left_pressure=r.tire_fl_pressure,
+                tire_front_right_pressure=r.tire_fr_pressure,
+                tire_rear_left_pressure=r.tire_rl_pressure,
+                tire_rear_right_pressure=r.tire_rr_pressure,
             )
             for r in rows
         ]
