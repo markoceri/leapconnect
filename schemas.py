@@ -670,6 +670,8 @@ class PreferencesResponse(BaseModel):
     theme: str = "dark"
     downsampling_enabled: bool = True
     downsampling_max_points: int = 2000
+    has_solar_panels: bool = False
+    home_pricing_mode: str = "flat"
 
 
 class MqttStatusResponse(BaseModel):
@@ -753,6 +755,93 @@ class ChargingHistoryResponse(BaseModel):
             page_num=page,
             page_size=size,
         )
+
+
+# ---------------------------------------------------------------------------
+# Charging Price Tiers & Session Costs
+# ---------------------------------------------------------------------------
+
+
+class TimeBandScheduleEntry(BaseModel):
+    days: list[int]  # 0=Mon, 6=Sun
+    start_hour: int
+    start_min: int = 0
+    end_hour: int
+    end_min: int = 0
+
+
+class ChargingTimeBandResponse(BaseModel):
+    id: int
+    tier_id: str = "home_grid"
+    name: str
+    price_kwh: float
+    schedule: list[TimeBandScheduleEntry]
+    color: str | None = None
+    position: int = 0
+
+
+class ChargingTimeBandCreate(BaseModel):
+    name: str
+    price_kwh: float
+    schedule: list[TimeBandScheduleEntry]
+    color: str | None = None
+    position: int | None = None
+
+
+class ChargingTimeBandUpdate(BaseModel):
+    name: str | None = None
+    price_kwh: float | None = None
+    schedule: list[TimeBandScheduleEntry] | None = None
+    color: str | None = None
+    position: int | None = None
+
+
+class ChargingPriceTierResponse(BaseModel):
+    id: str
+    label: str
+    price_kwh: float
+    enabled: bool
+
+
+class ChargingPriceTierUpdate(BaseModel):
+    label: str | None = None
+    price_kwh: float | None = None
+    enabled: bool | None = None
+
+
+class ChargingTiersFullResponse(BaseModel):
+    tiers: list[ChargingPriceTierResponse]
+    time_bands: list[ChargingTimeBandResponse]
+    home_pricing_mode: str = "flat"
+
+
+class ChargingSessionCostResponse(BaseModel):
+    id: int
+    vin: str
+    start_ts: str
+    end_ts: str | None = None
+    tier_id: str
+    tier_label: str | None = None
+    time_band_id: int | None = None
+    time_band_name: str | None = None
+    energy_kwh: float | None = None
+    cost: float | None = None
+    note: str | None = None
+
+
+class ChargingSessionCostCreate(BaseModel):
+    start_ts: str
+    end_ts: str | None = None
+    tier_id: str
+    energy_kwh: float | None = None
+    note: str | None = None
+
+
+class ChargingSessionCostUpdate(BaseModel):
+    tier_id: str | None = None
+    end_ts: str | None = None
+    energy_kwh: float | None = None
+    note: str | None = None
 
 
 # ---------------------------------------------------------------------------

@@ -100,30 +100,6 @@
       <SectionCard title="Preferences" :icon="SlidersHorizontal">
         <div class="pref-row">
           <div class="pref-info">
-            <span class="pref-label">Electricity price</span>
-            <span class="pref-hint">Used to calculate charging cost in History</span>
-          </div>
-          <div class="pref-input-group">
-            <input
-              v-model.number="electricityPrice"
-              type="number"
-              step="0.01"
-              min="0"
-              class="pref-input"
-              @keyup.enter="saveElectricityPrice"
-            />
-            <span class="pref-unit">€/kWh</span>
-            <button
-              class="interval-set-btn"
-              :disabled="electricityPrice === savedElectricityPrice || electricitySaving"
-              @click="saveElectricityPrice"
-            >{{ electricitySaving ? '…' : 'Save' }}</button>
-          </div>
-        </div>
-        <div v-if="electricitySuccess" class="field-success">{{ electricitySuccess }}</div>
-        <div v-if="electricityError" class="field-error">{{ electricityError }}</div>
-        <div class="pref-row">
-          <div class="pref-info">
             <span class="pref-label">Theme</span>
             <span class="pref-hint">Switch between dark and light mode</span>
           </div>
@@ -143,6 +119,140 @@
         <InfoRow label="Distance unit" value="km" color="#e2e6f0" />
         <InfoRow label="Pressure unit" value="bar" color="#e2e6f0" />
         <InfoRow label="Language" value="English" color="#e2e6f0" />
+      </SectionCard>
+
+      <SectionCard title="Energy & Charging Costs" :icon="Zap">
+        <!-- Solar panels toggle -->
+        <div class="pref-row">
+          <div class="pref-info">
+            <Sun :size="15" class="pref-icon" />
+            <span class="pref-label">Solar panels at home</span>
+            <span class="pref-hint">Track energy charged from your solar installation separately</span>
+          </div>
+          <ToggleSwitch :modelValue="hasSolarPanels" @update:modelValue="toggleSolarPanels" />
+        </div>
+
+        <!-- Home pricing mode selector -->
+        <div class="pref-row">
+          <div class="pref-info">
+            <Clock :size="15" class="pref-icon" />
+            <span class="pref-label">Home pricing mode</span>
+          </div>
+          <div class="pricing-mode-toggle">
+            <button
+              class="theme-btn"
+              :class="{ active: homePricingMode === 'flat' }"
+              @click="setHomePricingMode('flat')"
+            >Flat rate</button>
+            <button
+              class="theme-btn"
+              :class="{ active: homePricingMode === 'time_of_use' }"
+              @click="setHomePricingMode('time_of_use')"
+            >Time-of-use</button>
+          </div>
+        </div>
+
+        <div class="divider" />
+
+        <!-- Price Tiers -->
+        <p class="rate-limit-hint" style="margin-bottom:8px"><strong>Charging price tiers</strong></p>
+
+        <div v-for="tier in visibleTiers" :key="tier.id" class="pref-row">
+          <div class="pref-info">
+            <component :is="tierIcon(tier.id)" :size="15" class="pref-icon" />
+            <span class="pref-label">{{ tier.label }}</span>
+          </div>
+          <div class="pref-input-group">
+            <input
+              v-model.number="tier.price_kwh"
+              type="number"
+              step="0.01"
+              min="0"
+              class="pref-input"
+              :disabled="tier.id === 'home_grid' && homePricingMode === 'time_of_use'"
+            />
+            <span class="pref-unit">€/kWh</span>
+          </div>
+        </div>
+
+        <button
+          class="interval-set-btn"
+          style="margin-top:8px"
+          :disabled="chargingTiersSaving"
+          @click="saveChargingTiers"
+        >{{ chargingTiersSaving ? '…' : 'Save prices' }}</button>
+        <div v-if="tiersSuccess" class="field-success">{{ tiersSuccess }}</div>
+        <div v-if="tiersError" class="field-error">{{ tiersError }}</div>
+
+        <!-- Time-of-use bands (visible only in TOU mode) -->
+        <template v-if="homePricingMode === 'time_of_use'">
+          <div class="divider" />
+          <p class="rate-limit-hint" style="margin-bottom:8px"><strong>Time-of-use bands</strong> — Home (grid) pricing by time slot</p>
+
+          <div v-for="(band, idx) in timeBands" :key="band.id || idx" class="time-band-row">
+            <div class="band-header">
+              <Clock :size="14" class="pref-icon" :style="{ color: band.color || '#888' }" />
+              <input
+                v-model="band.name"
+                type="text"
+                class="band-name-input"
+                placeholder="Band name"
+              />
+              <input
+                v-model.number="band.price_kwh"
+                type="number"
+                step="0.01"
+                min="0"
+                class="pref-input band-price-input"
+              />
+              <span class="pref-unit">€/kWh</span>
+              <button class="icon-btn danger" @click="removeBand(idx)" title="Remove band">
+                <Trash2 :size="14" />
+              </button>
+            </div>
+            <div class="band-schedule">
+              <div v-for="(slot, si) in band.schedule" :key="si" class="schedule-slot">
+                <div class="days-row">
+                  <button
+                    v-for="(dayLabel, dayIdx) in ['Mon','Tue','Wed','Thu','Fri','Sat','Sun']"
+                    :key="dayIdx"
+                    class="day-btn"
+                    :class="{ active: slot.days.includes(dayIdx) }"
+                    @click="toggleDay(band, si, dayIdx)"
+                  >{{ dayLabel.charAt(0) }}</button>
+                </div>
+                <div class="time-range">
+                  <input v-model.number="slot.start_hour" type="number" min="0" max="23" class="time-input" />
+                  <span>:</span>
+                  <input v-model.number="slot.start_min" type="number" min="0" max="59" step="15" class="time-input" />
+                  <span>–</span>
+                  <input v-model.number="slot.end_hour" type="number" min="0" max="24" class="time-input" />
+                  <span>:</span>
+                  <input v-model.number="slot.end_min" type="number" min="0" max="59" step="15" class="time-input" />
+                  <button v-if="band.schedule.length > 1" class="icon-btn" @click="band.schedule.splice(si, 1)" title="Remove slot">
+                    <X :size="12" />
+                  </button>
+                </div>
+              </div>
+              <button class="add-slot-btn" @click="band.schedule.push({ days: [0,1,2,3,4], start_hour: 0, start_min: 0, end_hour: 0, end_min: 0 })">
+                <Plus :size="12" /> Add time slot
+              </button>
+            </div>
+          </div>
+
+          <button class="add-band-btn" @click="addBand">
+            <Plus :size="14" /> Add band
+          </button>
+
+          <button
+            class="interval-set-btn"
+            style="margin-top:8px"
+            :disabled="chargingTiersSaving"
+            @click="saveTimeBands"
+          >{{ chargingTiersSaving ? '…' : 'Save bands' }}</button>
+          <div v-if="bandsSuccess" class="field-success">{{ bandsSuccess }}</div>
+          <div v-if="bandsError" class="field-error">{{ bandsError }}</div>
+        </template>
       </SectionCard>
     </template>
 
@@ -1124,7 +1234,7 @@ import ToggleSwitch from '../components/ToggleSwitch.vue'
 import LogViewer from '../components/LogViewer.vue'
 import { api } from '../composables/useApi'
 import { useAppStore } from '../stores/appStore'
-import { User, Car, Bell, SlidersHorizontal, BarChart3, Code, KeyRound, ShieldCheck, Wifi, Wrench, Settings, Github, Info, Star, AlertTriangle, ExternalLink, Moon, Sun, RefreshCw, Terminal, Navigation, Activity, Eye, EyeOff, Send, ChevronDown, ChevronRight, Search, MapPin, Locate, Zap, CarFront, Lock, X, Trash2, Link2, Copy, Check } from 'lucide-vue-next'
+import { User, Car, Bell, SlidersHorizontal, BarChart3, Code, KeyRound, ShieldCheck, Wifi, Wrench, Settings, Github, Info, Star, AlertTriangle, ExternalLink, Moon, Sun, RefreshCw, Terminal, Navigation, Activity, Eye, EyeOff, Send, ChevronDown, ChevronRight, Search, MapPin, Locate, Zap, CarFront, Lock, X, Trash2, Link2, Copy, Check, Home, Plug, Clock, Plus } from 'lucide-vue-next'
 
 const store = useAppStore()
 
@@ -1599,39 +1709,149 @@ async function saveCertificates() {
   }
 }
 
-// -- Electricity price preference -------------------------------------------
+// -- Charging Price Tiers ---------------------------------------------------
 const electricityPrice = ref(0.25)
 const savedElectricityPrice = ref(0.25)
 const electricitySaving = ref(false)
 const electricityError = ref('')
 const electricitySuccess = ref('')
 
+const hasSolarPanels = ref(false)
+const homePricingMode = ref('flat')
+const chargingTiers = ref([])
+const timeBands = ref([])
+const chargingTiersSaving = ref(false)
+const tiersSuccess = ref('')
+const tiersError = ref('')
+const bandsSuccess = ref('')
+const bandsError = ref('')
+
+const visibleTiers = computed(() => {
+  if (hasSolarPanels.value) return chargingTiers.value
+  return chargingTiers.value.filter(t => t.id !== 'home_solar')
+})
+
+function tierIcon(tierId) {
+  const map = { home_grid: Home, home_solar: Sun, public_ac: Plug, public_dc: Zap }
+  return map[tierId] || Zap
+}
+
 async function loadPreferences() {
   try {
     const data = await api('GET', '/api/preferences')
     electricityPrice.value = data.electricity_price_kwh
     savedElectricityPrice.value = data.electricity_price_kwh
+    hasSolarPanels.value = data.has_solar_panels || false
+    homePricingMode.value = data.home_pricing_mode || 'flat'
   } catch { /* ignore */ }
 }
 
-async function saveElectricityPrice() {
-  if (electricityPrice.value === savedElectricityPrice.value) return
-  electricityError.value = ''
-  electricitySuccess.value = ''
-  electricitySaving.value = true
+async function loadChargingTiers() {
   try {
-    const data = await api('PUT', '/api/preferences', {
-      electricity_price_kwh: electricityPrice.value,
-    })
-    savedElectricityPrice.value = data.electricity_price_kwh
-    electricityPrice.value = data.electricity_price_kwh
-    electricitySuccess.value = 'Price saved'
-    setTimeout(() => { electricitySuccess.value = '' }, 3000)
+    const data = await api('GET', '/api/charging-tiers')
+    chargingTiers.value = data.tiers || []
+    timeBands.value = (data.time_bands || []).map(b => ({
+      ...b,
+      schedule: b.schedule || []
+    }))
+    homePricingMode.value = data.home_pricing_mode || 'flat'
+  } catch { /* ignore */ }
+}
+
+async function toggleSolarPanels(newVal) {
+  chargingTiersSaving.value = true
+  try {
+    if (newVal === undefined) newVal = !hasSolarPanels.value
+    await api('PUT', '/api/preferences', { has_solar_panels: newVal })
+    hasSolarPanels.value = newVal
+    await loadChargingTiers()
+  } catch { /* ignore */ }
+  finally { chargingTiersSaving.value = false }
+}
+
+async function setHomePricingMode(mode) {
+  chargingTiersSaving.value = true
+  try {
+    await api('PUT', '/api/preferences', { home_pricing_mode: mode })
+    homePricingMode.value = mode
+  } catch { /* ignore */ }
+  finally { chargingTiersSaving.value = false }
+}
+
+async function saveChargingTiers() {
+  tiersError.value = ''
+  tiersSuccess.value = ''
+  chargingTiersSaving.value = true
+  try {
+    for (const tier of chargingTiers.value) {
+      await api('PUT', `/api/charging-tiers/${tier.id}`, { price_kwh: tier.price_kwh })
+    }
+    tiersSuccess.value = 'Prices saved'
+    setTimeout(() => { tiersSuccess.value = '' }, 3000)
   } catch (err) {
-    electricityError.value = err.message
+    tiersError.value = err.message
   } finally {
-    electricitySaving.value = false
+    chargingTiersSaving.value = false
   }
+}
+
+async function saveTimeBands() {
+  bandsError.value = ''
+  bandsSuccess.value = ''
+  chargingTiersSaving.value = true
+  try {
+    // Get current server bands to diff
+    const serverBands = await api('GET', '/api/charging-tiers/time-bands')
+    const serverIds = new Set(serverBands.map(b => b.id))
+    const localIds = new Set(timeBands.value.filter(b => b.id).map(b => b.id))
+
+    // Delete removed bands
+    for (const sb of serverBands) {
+      if (!localIds.has(sb.id)) {
+        await api('DELETE', `/api/charging-tiers/time-bands/${sb.id}`)
+      }
+    }
+    // Create/update bands
+    for (let i = 0; i < timeBands.value.length; i++) {
+      const band = timeBands.value[i]
+      const payload = { name: band.name, price_kwh: band.price_kwh, schedule: band.schedule, color: band.color, position: i + 1 }
+      if (band.id && serverIds.has(band.id)) {
+        await api('PUT', `/api/charging-tiers/time-bands/${band.id}`, payload)
+      } else {
+        const created = await api('POST', '/api/charging-tiers/time-bands', payload)
+        band.id = created.id
+      }
+    }
+    bandsSuccess.value = 'Time bands saved'
+    setTimeout(() => { bandsSuccess.value = '' }, 3000)
+  } catch (err) {
+    bandsError.value = err.message
+  } finally {
+    chargingTiersSaving.value = false
+  }
+}
+
+function addBand() {
+  timeBands.value.push({
+    id: null,
+    tier_id: 'home_grid',
+    name: '',
+    price_kwh: 0.0,
+    schedule: [{ days: [0, 1, 2, 3, 4], start_hour: 0, start_min: 0, end_hour: 0, end_min: 0 }],
+    color: '#888888',
+    position: timeBands.value.length + 1,
+  })
+}
+
+function removeBand(idx) {
+  timeBands.value.splice(idx, 1)
+}
+
+function toggleDay(band, slotIdx, dayIdx) {
+  const slot = band.schedule[slotIdx]
+  const i = slot.days.indexOf(dayIdx)
+  if (i >= 0) slot.days.splice(i, 1)
+  else slot.days.push(dayIdx)
 }
 
 // -- Vehicle PIN state ------------------------------------------------------
@@ -2280,6 +2500,7 @@ onMounted(() => {
   loadAccount()
   loadCertsStatus()
   loadPreferences()
+  loadChargingTiers()
   loadDownsamplingSettings()
   loadMqtt()
   loadAbrp()
@@ -3355,5 +3576,130 @@ function stopTelegramUsersPolling() {
 .btn-sm {
   font-size: 11px !important;
   padding: 3px 8px !important;
+}
+
+/* -- Charging Price Tiers -- */
+.pref-icon {
+  color: var(--muted);
+  flex-shrink: 0;
+}
+.pref-row .pref-info {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+.pricing-mode-toggle {
+  display: flex;
+  gap: 4px;
+}
+.time-band-row {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--divider);
+}
+.band-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.band-name-input {
+  flex: 1;
+  padding: 5px 8px;
+  background: var(--input);
+  border: 1px solid var(--btn-border);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 12px;
+  outline: none;
+}
+.band-name-input:focus { border-color: #00d4ff55; }
+.band-price-input { width: 65px; }
+.band-schedule {
+  margin-left: 22px;
+}
+.schedule-slot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+  flex-wrap: wrap;
+}
+.days-row {
+  display: flex;
+  gap: 2px;
+}
+.day-btn {
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  background: var(--input);
+  border: 1px solid var(--btn-border);
+  color: var(--muted);
+  cursor: pointer;
+  transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.day-btn.active {
+  background: #00d4ff22;
+  border-color: #00d4ff;
+  color: #00d4ff;
+}
+.time-range {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.time-input {
+  width: 36px;
+  padding: 3px 4px;
+  background: var(--input);
+  border: 1px solid var(--btn-border);
+  border-radius: 4px;
+  color: var(--text);
+  font-size: 11px;
+  font-family: var(--mono);
+  text-align: center;
+  outline: none;
+}
+.time-input:focus { border-color: #00d4ff55; }
+.icon-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  background: transparent;
+  border: 1px solid var(--btn-border);
+  color: var(--muted);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.icon-btn:hover { border-color: var(--text); color: var(--text); }
+.icon-btn.danger:hover { border-color: #ef4444; color: #ef4444; }
+.add-slot-btn, .add-band-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #00d4ff;
+  background: transparent;
+  border: 1px dashed #00d4ff44;
+  border-radius: 6px;
+  cursor: pointer;
+  margin-top: 6px;
+  transition: all 0.15s;
+}
+.add-slot-btn:hover, .add-band-btn:hover {
+  background: #00d4ff11;
+  border-color: #00d4ff;
 }
 </style>

@@ -48,6 +48,15 @@ from schemas import (
     CertificateStatusResponse,
     CertificateUploadResponse,
     ChargingHistoryResponse,
+    ChargingPriceTierResponse,
+    ChargingPriceTierUpdate,
+    ChargingSessionCostCreate,
+    ChargingSessionCostResponse,
+    ChargingSessionCostUpdate,
+    ChargingTiersFullResponse,
+    ChargingTimeBandCreate,
+    ChargingTimeBandResponse,
+    ChargingTimeBandUpdate,
     ConnectionStatusResponse,
     ConsumptionLastWeekResponse,
     ConsumptionWeeklyRankResponse,
@@ -1826,6 +1835,8 @@ async def get_preferences() -> PreferencesResponse:
         theme=prefs.theme,
         downsampling_enabled=prefs.downsampling_enabled,
         downsampling_max_points=prefs.downsampling_max_points,
+        has_solar_panels=prefs.has_solar_panels,
+        home_pricing_mode=prefs.home_pricing_mode,
     )
 
 
@@ -1876,12 +1887,54 @@ async def update_preferences(request: Request) -> PreferencesResponse:
                 detail="'downsampling_max_points' must be between 100 and 50000",
             )
         await _history_repo.save_setting("downsampling_max_points", str(ds_max_points))
+    # -- solar panels toggle --
+    has_solar = body.get("has_solar_panels")
+    if has_solar is not None:
+        if not isinstance(has_solar, bool):
+            raise HTTPException(
+                status_code=422, detail="'has_solar_panels' must be a boolean"
+            )
+        await _history_repo.save_setting(
+            "has_solar_panels", "true" if has_solar else "false"
+        )
+        # Enable/disable home_solar tier
+        from models import ChargingPriceTier
+
+        tiers = await _history_repo.get_price_tiers()
+        solar_tier = next((t for t in tiers if t.id == "home_solar"), None)
+        if has_solar:
+            if solar_tier:
+                solar_tier.enabled = True
+                await _history_repo.upsert_price_tier(solar_tier)
+            else:
+                await _history_repo.upsert_price_tier(
+                    ChargingPriceTier(
+                        id="home_solar",
+                        label="Home (solar)",
+                        price_kwh=0.0,
+                        enabled=True,
+                    )
+                )
+        elif solar_tier:
+            solar_tier.enabled = False
+            await _history_repo.upsert_price_tier(solar_tier)
+    # -- home pricing mode --
+    pricing_mode = body.get("home_pricing_mode")
+    if pricing_mode is not None:
+        if pricing_mode not in ("flat", "time_of_use"):
+            raise HTTPException(
+                status_code=422,
+                detail="'home_pricing_mode' must be 'flat' or 'time_of_use'",
+            )
+        await _history_repo.save_setting("home_pricing_mode", pricing_mode)
     prefs = await _load_preferences()
     return PreferencesResponse(
         electricity_price_kwh=prefs.electricity_price_kwh,
         theme=prefs.theme,
         downsampling_enabled=prefs.downsampling_enabled,
         downsampling_max_points=prefs.downsampling_max_points,
+        has_solar_panels=prefs.has_solar_panels,
+        home_pricing_mode=prefs.home_pricing_mode,
     )
 
 
@@ -1891,12 +1944,413 @@ async def _load_preferences() -> UserPreferences:
     theme_raw = await _history_repo.get_setting("theme")
     ds_enabled_raw = await _history_repo.get_setting("downsampling_enabled")
     ds_max_points_raw = await _history_repo.get_setting("downsampling_max_points")
+    solar_raw = await _history_repo.get_setting("has_solar_panels")
+    pricing_mode_raw = await _history_repo.get_setting("home_pricing_mode")
     return UserPreferences(
         electricity_price_kwh=float(raw) if raw else 0.25,
         theme=theme_raw if theme_raw in ("dark", "light") else "dark",
         downsampling_enabled=ds_enabled_raw != "false" if ds_enabled_raw else True,
         downsampling_max_points=int(ds_max_points_raw) if ds_max_points_raw else 2000,
+        has_solar_panels=solar_raw == "true" if solar_raw else False,
+        home_pricing_mode=pricing_mode_raw
+        if pricing_mode_raw in ("flat", "time_of_use")
+        else "flat",
     )
+
+
+# ---------------------------------------------------------------------------
+# Routes — Charging Price Tiers & Session Costs
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/charging-tiers", response_model=ChargingTiersFullResponse)
+async def get_charging_tiers() -> ChargingTiersFullResponse:
+    """Get all charging price tiers and time bands."""
+    prefs = await _load_preferences()
+    tiers = await _history_repo.get_price_tiers()
+    # Hide home_solar if user has no solar panels
+    if not prefs.has_solar_panels:
+        tiers = [t for t in tiers if t.id != "home_solar"]
+    bands = await _history_repo.get_time_bands("home_grid")
+    return ChargingTiersFullResponse(
+        tiers=[
+            ChargingPriceTierResponse(
+                id=t.id, label=t.label, price_kwh=t.price_kwh, enabled=t.enabled
+            )
+            for t in tiers
+        ],
+        time_bands=[
+            ChargingTimeBandResponse(
+                id=b.id,
+                tier_id=b.tier_id,
+                name=b.name,
+                price_kwh=b.price_kwh,
+                schedule=b.schedule,
+                color=b.color,
+                position=b.position,
+            )
+            for b in bands
+        ],
+        home_pricing_mode=prefs.home_pricing_mode,
+    )
+
+
+@app.put("/api/charging-tiers/{tier_id}", response_model=ChargingPriceTierResponse)
+async def update_charging_tier(
+    tier_id: str, body: ChargingPriceTierUpdate
+) -> ChargingPriceTierResponse:
+    """Update a charging price tier."""
+    tiers = await _history_repo.get_price_tiers()
+    tier = next((t for t in tiers if t.id == tier_id), None)
+    if not tier:
+        raise HTTPException(status_code=404, detail=f"Tier '{tier_id}' not found")
+    if body.label is not None:
+        tier.label = body.label
+    if body.price_kwh is not None:
+        if body.price_kwh < 0:
+            raise HTTPException(status_code=422, detail="price_kwh must be >= 0")
+        tier.price_kwh = body.price_kwh
+    if body.enabled is not None:
+        tier.enabled = body.enabled
+    await _history_repo.upsert_price_tier(tier)
+    return ChargingPriceTierResponse(
+        id=tier.id, label=tier.label, price_kwh=tier.price_kwh, enabled=tier.enabled
+    )
+
+
+@app.get(
+    "/api/charging-tiers/time-bands", response_model=list[ChargingTimeBandResponse]
+)
+async def get_time_bands() -> list[ChargingTimeBandResponse]:
+    """Get all time-of-use bands."""
+    bands = await _history_repo.get_time_bands("home_grid")
+    return [
+        ChargingTimeBandResponse(
+            id=b.id,
+            tier_id=b.tier_id,
+            name=b.name,
+            price_kwh=b.price_kwh,
+            schedule=b.schedule,
+            color=b.color,
+            position=b.position,
+        )
+        for b in bands
+    ]
+
+
+@app.post(
+    "/api/charging-tiers/time-bands",
+    response_model=ChargingTimeBandResponse,
+    status_code=201,
+)
+async def create_time_band(body: ChargingTimeBandCreate) -> ChargingTimeBandResponse:
+    """Create a new time-of-use band."""
+    from models import ChargingTimeBand
+
+    # Determine position (append at end)
+    existing = await _history_repo.get_time_bands("home_grid")
+    position = (
+        body.position
+        if body.position is not None
+        else (max((b.position for b in existing), default=0) + 1)
+    )
+    band = ChargingTimeBand(
+        tier_id="home_grid",
+        name=body.name,
+        price_kwh=body.price_kwh,
+        schedule=[s.model_dump() for s in body.schedule],
+        color=body.color,
+        position=position,
+    )
+    band = await _history_repo.upsert_time_band(band)
+    return ChargingTimeBandResponse(
+        id=band.id,
+        tier_id=band.tier_id,
+        name=band.name,
+        price_kwh=band.price_kwh,
+        schedule=band.schedule,
+        color=band.color,
+        position=band.position,
+    )
+
+
+@app.put(
+    "/api/charging-tiers/time-bands/{band_id}", response_model=ChargingTimeBandResponse
+)
+async def update_time_band(
+    band_id: int, body: ChargingTimeBandUpdate
+) -> ChargingTimeBandResponse:
+    """Update a time-of-use band."""
+    bands = await _history_repo.get_time_bands("home_grid")
+    band = next((b for b in bands if b.id == band_id), None)
+    if not band:
+        raise HTTPException(status_code=404, detail=f"Time band {band_id} not found")
+    if body.name is not None:
+        band.name = body.name
+    if body.price_kwh is not None:
+        if body.price_kwh < 0:
+            raise HTTPException(status_code=422, detail="price_kwh must be >= 0")
+        band.price_kwh = body.price_kwh
+    if body.schedule is not None:
+        band.schedule = [s.model_dump() for s in body.schedule]
+    if body.color is not None:
+        band.color = body.color
+    if body.position is not None:
+        band.position = body.position
+    await _history_repo.upsert_time_band(band)
+    return ChargingTimeBandResponse(
+        id=band.id,
+        tier_id=band.tier_id,
+        name=band.name,
+        price_kwh=band.price_kwh,
+        schedule=band.schedule,
+        color=band.color,
+        position=band.position,
+    )
+
+
+@app.delete("/api/charging-tiers/time-bands/{band_id}")
+async def delete_time_band_endpoint(band_id: int):
+    """Delete a time-of-use band."""
+    deleted = await _history_repo.delete_time_band(band_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail=f"Time band {band_id} not found")
+    return {"status": "ok"}
+
+
+@app.get(
+    "/api/vehicles/{vin}/charging-costs",
+    response_model=list[ChargingSessionCostResponse],
+)
+async def get_charging_costs(
+    vin: str, start: str | None = None, end: str | None = None
+):
+    """Get charging session costs for a vehicle."""
+    from datetime import datetime as dt
+
+    start_dt = dt.fromisoformat(start) if start else None
+    end_dt = dt.fromisoformat(end) if end else None
+    costs = await _history_repo.get_session_costs(vin, start=start_dt, end=end_dt)
+    # Enrich with tier/band labels
+    tiers = {t.id: t for t in await _history_repo.get_price_tiers()}
+    bands = {b.id: b for b in await _history_repo.get_time_bands("home_grid")}
+    return [
+        ChargingSessionCostResponse(
+            id=c.id,
+            vin=c.vin,
+            start_ts=c.start_ts.isoformat() if c.start_ts else "",
+            end_ts=c.end_ts.isoformat() if c.end_ts else None,
+            tier_id=c.tier_id,
+            tier_label=tiers[c.tier_id].label if c.tier_id in tiers else None,
+            time_band_id=c.time_band_id,
+            time_band_name=bands[c.time_band_id].name
+            if c.time_band_id and c.time_band_id in bands
+            else None,
+            energy_kwh=c.energy_kwh,
+            cost=c.cost,
+            note=c.note,
+        )
+        for c in costs
+    ]
+
+
+@app.post(
+    "/api/vehicles/{vin}/charging-costs",
+    response_model=ChargingSessionCostResponse,
+    status_code=201,
+)
+async def create_charging_cost(vin: str, body: ChargingSessionCostCreate):
+    """Assign a cost tier to a charging session."""
+    from datetime import datetime as dt
+
+    from models import ChargingSessionCost
+
+    start_ts = dt.fromisoformat(body.start_ts)
+    end_ts = dt.fromisoformat(body.end_ts) if body.end_ts else None
+    # Validate tier exists
+    tiers = {t.id: t for t in await _history_repo.get_price_tiers()}
+    if body.tier_id not in tiers:
+        raise HTTPException(status_code=422, detail=f"Unknown tier: {body.tier_id}")
+    # Calculate cost
+    cost = None
+    if body.energy_kwh is not None:
+        cost = await _calculate_session_cost(
+            body.tier_id, body.energy_kwh, start_ts, end_ts
+        )
+    sc = ChargingSessionCost(
+        vin=vin,
+        start_ts=start_ts,
+        end_ts=end_ts,
+        tier_id=body.tier_id,
+        energy_kwh=body.energy_kwh,
+        cost=cost,
+        note=body.note,
+    )
+    sc = await _history_repo.upsert_session_cost(sc)
+    tier = tiers.get(sc.tier_id)
+    return ChargingSessionCostResponse(
+        id=sc.id,
+        vin=sc.vin,
+        start_ts=sc.start_ts.isoformat() if sc.start_ts else "",
+        end_ts=sc.end_ts.isoformat() if sc.end_ts else None,
+        tier_id=sc.tier_id,
+        tier_label=tier.label if tier else None,
+        time_band_id=sc.time_band_id,
+        energy_kwh=sc.energy_kwh,
+        cost=sc.cost,
+        note=sc.note,
+    )
+
+
+@app.put(
+    "/api/vehicles/{vin}/charging-costs/{cost_id}",
+    response_model=ChargingSessionCostResponse,
+)
+async def update_charging_cost(vin: str, cost_id: int, body: ChargingSessionCostUpdate):
+    """Update a charging session cost (change tier, energy, etc.)."""
+    from datetime import datetime as dt
+
+    costs = await _history_repo.get_session_costs(vin)
+    sc = next((c for c in costs if c.id == cost_id), None)
+    if not sc:
+        raise HTTPException(status_code=404, detail=f"Session cost {cost_id} not found")
+    if body.tier_id is not None:
+        tiers = {t.id: t for t in await _history_repo.get_price_tiers()}
+        if body.tier_id not in tiers:
+            raise HTTPException(status_code=422, detail=f"Unknown tier: {body.tier_id}")
+        sc.tier_id = body.tier_id
+    if body.end_ts is not None:
+        sc.end_ts = dt.fromisoformat(body.end_ts)
+    if body.energy_kwh is not None:
+        sc.energy_kwh = body.energy_kwh
+    if body.note is not None:
+        sc.note = body.note
+    # Recalculate cost
+    if sc.energy_kwh is not None:
+        sc.cost = await _calculate_session_cost(
+            sc.tier_id, sc.energy_kwh, sc.start_ts, sc.end_ts
+        )
+    await _history_repo.upsert_session_cost(sc)
+    tiers = {t.id: t for t in await _history_repo.get_price_tiers()}
+    bands = {b.id: b for b in await _history_repo.get_time_bands("home_grid")}
+    tier = tiers.get(sc.tier_id)
+    return ChargingSessionCostResponse(
+        id=sc.id,
+        vin=sc.vin,
+        start_ts=sc.start_ts.isoformat() if sc.start_ts else "",
+        end_ts=sc.end_ts.isoformat() if sc.end_ts else None,
+        tier_id=sc.tier_id,
+        tier_label=tier.label if tier else None,
+        time_band_id=sc.time_band_id,
+        time_band_name=bands[sc.time_band_id].name
+        if sc.time_band_id and sc.time_band_id in bands
+        else None,
+        energy_kwh=sc.energy_kwh,
+        cost=sc.cost,
+        note=sc.note,
+    )
+
+
+@app.delete("/api/vehicles/{vin}/charging-costs/{cost_id}")
+async def delete_charging_cost(vin: str, cost_id: int):
+    """Delete a charging session cost."""
+    deleted = await _history_repo.delete_session_cost(cost_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail=f"Session cost {cost_id} not found")
+    return {"status": "ok"}
+
+
+async def _calculate_session_cost(
+    tier_id: str, energy_kwh: float, start_ts, end_ts
+) -> float:
+    """Calculate cost for a session, using TOU bands if applicable."""
+    prefs = await _load_preferences()
+    tiers = {t.id: t for t in await _history_repo.get_price_tiers()}
+    tier = tiers.get(tier_id)
+    if not tier:
+        return 0.0
+
+    # If home_grid + time_of_use mode, split by time bands
+    if (
+        tier_id == "home_grid"
+        and prefs.home_pricing_mode == "time_of_use"
+        and start_ts
+        and end_ts
+    ):
+        bands = await _history_repo.get_time_bands("home_grid")
+        if bands:
+            return _calculate_tou_cost(
+                energy_kwh, start_ts, end_ts, bands, tier.price_kwh
+            )
+
+    # Flat rate
+    return round(energy_kwh * tier.price_kwh, 4)
+
+
+def _calculate_tou_cost(
+    energy_kwh: float, start_ts, end_ts, bands, flat_price: float
+) -> float:
+    """Split energy proportionally across time bands based on session duration."""
+    from datetime import timedelta as td
+
+    total_seconds = (end_ts - start_ts).total_seconds()
+    if total_seconds <= 0:
+        return 0.0
+
+    # Walk through the session in 15-min increments, determine band for each slot
+    band_seconds: dict[int, float] = {}  # band_id -> seconds in that band
+    fallback_seconds = 0.0
+    slot = td(minutes=15)
+    current = start_ts
+    while current < end_ts:
+        slot_end = min(current + slot, end_ts)
+        slot_duration = (slot_end - current).total_seconds()
+        matched_band = _match_time_band(current, bands)
+        if matched_band:
+            band_seconds[matched_band.id] = (
+                band_seconds.get(matched_band.id, 0) + slot_duration
+            )
+        else:
+            fallback_seconds += slot_duration
+        current = slot_end
+
+    # Calculate cost proportionally
+    total_cost = 0.0
+    for band_id, secs in band_seconds.items():
+        band = next((b for b in bands if b.id == band_id), None)
+        if band:
+            proportion = secs / total_seconds
+            total_cost += proportion * energy_kwh * band.price_kwh
+
+    # Fallback: uncovered hours use the tier's flat price
+    if fallback_seconds > 0:
+        proportion = fallback_seconds / total_seconds
+        total_cost += proportion * energy_kwh * flat_price
+
+    return round(total_cost, 4)
+
+
+def _match_time_band(timestamp, bands) -> object | None:
+    """Find which time band a timestamp falls into."""
+    weekday = timestamp.weekday()  # 0=Mon, 6=Sun
+    hour = timestamp.hour
+    minute = timestamp.minute
+    time_minutes = hour * 60 + minute
+
+    for band in bands:
+        for slot in band.schedule:
+            if weekday not in slot.get("days", []):
+                continue
+            start_min = slot.get("start_hour", 0) * 60 + slot.get("start_min", 0)
+            end_min = slot.get("end_hour", 0) * 60 + slot.get("end_min", 0)
+            # Handle overnight bands (e.g. 23:00 - 07:00)
+            if end_min <= start_min:
+                if time_minutes >= start_min or time_minutes < end_min:
+                    return band
+            else:
+                if start_min <= time_minutes < end_min:
+                    return band
+    return None
 
 
 # ---------------------------------------------------------------------------

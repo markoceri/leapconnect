@@ -619,6 +619,9 @@ const todaySnapshots = ref([])
 const electricityPriceKwh = ref(0.25)
 const downsamplingEnabled = ref(true)
 const downsamplingMaxPoints = ref(2000)
+const sessionCosts = ref([])
+const chargingTiers = ref({})
+const hasSolarPanels = ref(false)
 
 function applyData(daily, snaps, allSnaps) {
   allSnapshots.value = allSnaps
@@ -754,7 +757,20 @@ onMounted(async () => {
     electricityPriceKwh.value = prefs.electricity_price_kwh
     downsamplingEnabled.value = prefs.downsampling_enabled ?? true
     downsamplingMaxPoints.value = prefs.downsampling_max_points ?? 2000
+    hasSolarPanels.value = prefs.has_solar_panels ?? false
   } catch { /* use default */ }
+  // Load charging tiers and session costs
+  try {
+    const tiersData = await api('GET', '/api/charging-tiers')
+    const tierMap = {}
+    for (const t of (tiersData.tiers || [])) { tierMap[t.id] = t }
+    chargingTiers.value = tierMap
+  } catch { /* ignore */ }
+  if (props.vin) {
+    try {
+      sessionCosts.value = await api('GET', `/api/vehicles/${props.vin}/charging-costs`)
+    } catch { /* ignore */ }
+  }
 })
 
 // ---------------------------------------------------------------------------
@@ -856,7 +872,21 @@ const kpiCards = computed(() => {
   if (snaps.length > 0 && snaps[snaps.length - 1].battery_is_charging) chargeSessions++
 
   const costPerKwh = electricityPriceKwh.value
-  const cost = energyCharged * costPerKwh
+  // Use per-session costs if available, otherwise flat rate
+  const sessionCostTotal = sessionCosts.value.reduce((sum, sc) => sum + (sc.cost || 0), 0)
+  const cost = sessionCostTotal > 0 ? sessionCostTotal : energyCharged * costPerKwh
+
+  // Energy breakdown by tier from session costs
+  const homeCosts = sessionCosts.value.filter(sc => sc.tier_id === 'home_grid' || sc.tier_id === 'home_solar')
+  const solarCosts = sessionCosts.value.filter(sc => sc.tier_id === 'home_solar')
+  const publicCosts = sessionCosts.value.filter(sc => sc.tier_id === 'public_ac' || sc.tier_id === 'public_dc')
+  const homeGridCosts = sessionCosts.value.filter(sc => sc.tier_id === 'home_grid')
+
+  const chargedHomeGrid = homeGridCosts.reduce((s, sc) => s + (sc.energy_kwh || 0), 0)
+  const chargedSolar = solarCosts.reduce((s, sc) => s + (sc.energy_kwh || 0), 0)
+  const chargedPublic = publicCosts.reduce((s, sc) => s + (sc.energy_kwh || 0), 0)
+  const costHome = homeCosts.reduce((s, sc) => s + (sc.cost || 0), 0)
+  const costPublic = publicCosts.reduce((s, sc) => s + (sc.cost || 0), 0)
 
   const co2Saved = totalKm * 0.12
 
@@ -870,20 +900,29 @@ const kpiCards = computed(() => {
   const batteryCapacityKwh = snaps[0]?.battery_dump_energy ? (snaps[0].battery_dump_energy / 1000) / ((snaps[0].battery_soc ?? 100) / 100) : null
   const realAutonomy = consumption > 0 && batteryCapacityKwh ? Math.round((batteryCapacityKwh / consumption) * 100) : null
 
-  return [
+  const cards = [
     { label: 'km driven', value: Math.round(totalKm).toLocaleString(), color: '#00d4ff' },
     { label: 'Energy used', value: `${energyUsed.toFixed(1)} kWh`, color: '#ffab40' },
     { label: 'Total charged', value: `${(energyCharged + regenEnergy).toFixed(1)} kWh`, color: '#00e676' },
-    { label: 'Charged (grid)', value: `${energyCharged.toFixed(1)} kWh`, color: '#66bb6a' },
+    { label: 'Charged home grid', value: chargedHomeGrid > 0 ? `${chargedHomeGrid.toFixed(1)} kWh` : `${energyCharged.toFixed(1)} kWh`, color: '#66bb6a' },
+  ]
+  if (hasSolarPanels.value) {
+    cards.push({ label: 'Charged solar', value: chargedSolar > 0 ? `${chargedSolar.toFixed(1)} kWh` : '\u2014', color: '#fdd835' })
+  }
+  cards.push(
+    { label: 'Charged public', value: chargedPublic > 0 ? `${chargedPublic.toFixed(1)} kWh` : '\u2014', color: '#42a5f5' },
     { label: 'Regen energy', value: `${regenEnergy.toFixed(1)} kWh`, color: '#26c6da' },
     { label: 'Charge sessions', value: chargeSessions, color: '#7c6aff' },
     { label: 'kWh/100km', value: consumption > 0 ? consumption.toFixed(1) : '\u2014', color: '#ff7043' },
-    { label: 'Cost (\u20ac)', value: cost > 0 ? `\u20ac${cost.toFixed(2)}` : '\u2014', color: '#ffd54f' },
+    { label: 'Total cost', value: cost > 0 ? `\u20ac${cost.toFixed(2)}` : '\u2014', color: '#ffd54f' },
+    { label: 'Home cost', value: costHome > 0 ? `\u20ac${costHome.toFixed(2)}` : '\u2014', color: '#a5d6a7' },
+    { label: 'Public cost', value: costPublic > 0 ? `\u20ac${costPublic.toFixed(2)}` : '\u2014', color: '#90caf9' },
     { label: 'CO\u2082 saved', value: co2Saved > 0 ? `${co2Saved.toFixed(1)} kg` : '\u2014', color: '#4caf50' },
     { label: 'Regen efficiency', value: regenEfficiency > 0 ? `${regenEfficiency.toFixed(0)}%` : '\u2014', color: '#26c6da' },
     { label: 'Range @100%', value: avgRangeAtFull ? `${avgRangeAtFull} km` : '\u2014', color: '#ab47bc' },
     { label: 'Real autonomy', value: realAutonomy ? `${realAutonomy} km` : '\u2014', color: '#5c6bc0' },
-  ]
+  )
+  return cards
 })
 
 // ---------------------------------------------------------------------------
@@ -929,11 +968,15 @@ const chargeSessionsData = computed(() => {
       const endEnergy = (snaps[i].battery_dump_energy ?? 0) / 1000
       const energyAdded = endEnergy - startEnergy
       if (energyAdded > 0) {
+        const startTs = snaps[sessionStart].timestamp
+        const matchedCost = sessionCosts.value.find(sc => sc.start_ts && Math.abs(new Date(sc.start_ts) - new Date(startTs)) < 120000)
         sessions.push({
-          label: formatTimestamp(snaps[sessionStart].timestamp),
+          label: formatTimestamp(startTs),
           energy: Math.round(energyAdded * 10) / 10,
           startSoc: snaps[sessionStart].battery_soc ?? 0,
           endSoc: snaps[i].battery_soc ?? 0,
+          tierLabel: matchedCost?.tier_label || null,
+          cost: matchedCost?.cost || null,
         })
       }
     }
@@ -943,11 +986,15 @@ const chargeSessionsData = computed(() => {
     const endEnergy = (snaps[snaps.length - 1].battery_dump_energy ?? 0) / 1000
     const energyAdded = endEnergy - startEnergy
     if (energyAdded > 0) {
+      const startTs = snaps[sessionStart].timestamp
+      const matchedCost = sessionCosts.value.find(sc => sc.start_ts && Math.abs(new Date(sc.start_ts) - new Date(startTs)) < 120000)
       sessions.push({
-        label: formatTimestamp(snaps[sessionStart].timestamp) + ' (ongoing)',
+        label: formatTimestamp(startTs) + ' (ongoing)',
         energy: Math.round(energyAdded * 10) / 10,
         startSoc: snaps[sessionStart].battery_soc ?? 0,
         endSoc: snaps[snaps.length - 1].battery_soc ?? 0,
+        tierLabel: matchedCost?.tier_label || null,
+        cost: matchedCost?.cost || null,
       })
     }
   }

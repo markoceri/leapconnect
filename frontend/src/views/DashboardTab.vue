@@ -72,6 +72,10 @@
 
       <div v-if="s.is_charging" class="charging-widget">
         <div class="lock-label">Charging</div>
+        <div v-if="activeChargingTier" class="charging-tier-badge">
+          <component :is="tierIconMap[activeChargingTier.tier_id] || Zap" :size="12" />
+          <span>{{ activeChargingTier.tier_label || activeChargingTier.tier_id }}</span>
+        </div>
         <div class="charging-stats">
           <div class="charging-stat">
             <div class="charging-val" style="color:#00e676">{{ chargeTimeStr }}</div>
@@ -366,6 +370,7 @@
 import { ref, computed, watch, toValue } from 'vue'
 import { useAppStore } from '../stores/appStore'
 import { useToast } from '../composables/useToast'
+import { api } from '../composables/useApi'
 import { formatTime } from '../utils/formatters'
 import StatCard from '../components/StatCard.vue'
 import PinDialog from '../components/PinDialog.vue'
@@ -389,7 +394,7 @@ import {
   ShieldCheck, ShieldOff, Power, PowerOff, Wifi, Car,
   CircleParking, Key, Eye, EyeOff, PlugZap,
   Heater, AirVent, Armchair, Navigation,
-  Gauge, Music, Download, CalendarClock, MapPin
+  Gauge, Music, Download, CalendarClock, MapPin, Home, Clock
 } from 'lucide-vue-next'
 
 const props = defineProps({
@@ -401,6 +406,12 @@ const store = useAppStore()
 const { toast } = useToast()
 const loadingAction = ref(null)
 const carImageKey = ref(Date.now())
+
+// Charging tier tracking
+const activeChargingTier = ref(null)
+const chargingTiersLoaded = ref(false)
+const availableTiers = ref([])
+const tierIconMap = { home_grid: Home, home_solar: Sun, public_ac: Plug, public_dc: Zap }
 
 const s = computed(() => props.status || {})
 
@@ -436,6 +447,44 @@ watch(
   },
   { immediate: true }
 )
+
+// Watch for charging start to show tier selection toast
+let wasCharging = false
+watch(
+  () => s.value.is_charging,
+  async (isCharging) => {
+    if (isCharging && !wasCharging) {
+      // Charging just started — show tier selection toast
+      if (availableTiers.value.length > 0) {
+        const tierNames = availableTiers.value.map(t => t.label).join(', ')
+        toast(`Charging started — assign cost tier in History`, 'info')
+      }
+      // Load active session cost
+      if (props.vehicle?.vin) {
+        try {
+          const costs = await api('GET', `/api/vehicles/${props.vehicle.vin}/charging-costs`)
+          const active = costs.find(c => !c.end_ts)
+          if (active) {
+            activeChargingTier.value = active
+          }
+        } catch { /* ignore */ }
+      }
+    } else if (!isCharging && wasCharging) {
+      activeChargingTier.value = null
+    }
+    wasCharging = !!isCharging
+  },
+  { immediate: true }
+)
+
+// Load charging tiers on mount
+;(async () => {
+  try {
+    const data = await api('GET', '/api/charging-tiers')
+    availableTiers.value = data.tiers || []
+    chargingTiersLoaded.value = true
+  } catch { /* ignore */ }
+})()
 
 const battColor = computed(() => {
   const soc = s.value.battery?.soc
@@ -935,6 +984,18 @@ async function doSetChargeLimit() {
   border-radius: 12px;
   padding: 14px 18px;
   flex: 1;
+}
+.charging-tier-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--muted);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 2px 8px;
+  margin-bottom: 8px;
 }
 .charging-stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
 @media (min-width: 640px) {

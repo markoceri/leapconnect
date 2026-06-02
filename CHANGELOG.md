@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Multi-tier charging cost system** — configurable price tiers for home grid, home solar, public AC, and public DC charging:
+  - New Settings card "Energy & Charging Costs" in General section
+  - Solar panels toggle (enables/disables home solar tier)
+  - Home pricing mode: flat rate or time-of-use bands
+  - Configurable time-of-use bands with day/time schedule and per-band pricing
+  - Per-tier price editing with save functionality
+- **Automatic tier detection on charge events** — the scheduler detects AC/DC charging and assigns the appropriate cost tier when a session starts/stops
+- **History KPI breakdown by tier**:
+  - "Charged home grid" — energy from home grid
+  - "Charged solar" — energy from solar (visible only if solar panels enabled)
+  - "Charged public" — combined public AC + DC energy
+  - "Home cost" / "Public cost" — cost split by source
+  - "Total cost" — aggregated from per-session cost records when available
+- **Dashboard active tier indicator** — shows the current charging tier badge in the charging widget during active sessions
+- **Dashboard charge-start toast** — notification when charging begins with tier info
+- **Database migration 0007**: added `charging_price_tiers`, `charging_time_bands`, `charging_session_costs` tables with default Italian ARERA time-of-use schedule
+- **New API endpoints**:
+  - `GET /api/charging-tiers` — full tier and band configuration
+  - `PUT /api/charging-tiers/{tier_id}` — update a tier's price/label/enabled state
+  - `GET/POST/PUT/DELETE /api/charging-tiers/time-bands[/{band_id}]` — CRUD for time-of-use bands
+  - `GET/POST/PUT/DELETE /api/vehicles/{vin}/charging-costs[/{cost_id}]` — CRUD for session cost records
+
+### Changed
+- **Settings layout**: energy/charging preferences moved from "Preferences" card to dedicated "Energy & Charging Costs" card
+- **Preferences API**: extended with `has_solar_panels` and `home_pricing_mode` fields
+
 ## [0.8.2] - 2026-06-02
 
 ### Added

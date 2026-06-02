@@ -439,6 +439,17 @@ class VehicleDataScheduler:
                             exc,
                         )
 
+                # Auto-create/finalize charging session costs
+                for event in events:
+                    try:
+                        await self._handle_charging_cost_event(event, status)
+                    except Exception as exc:
+                        _LOGGER.debug(
+                            "Scheduler: charging cost event error for %s: %s",
+                            vehicle.vin,
+                            exc,
+                        )
+
                 # Dispatch notifications
                 if self._notification_dispatcher:
                     try:
@@ -527,4 +538,73 @@ class VehicleDataScheduler:
             except Exception:
                 _LOGGER.exception(
                     "Scheduler: transition poll failed for %s", vehicle.vin
+                )
+
+    async def _handle_charging_cost_event(self, event, status) -> None:
+        """Auto-create/finalize session cost on charge_start/charge_stop."""
+
+        from models import ChargingSessionCost
+
+        if event.event_type == "charge_start":
+            # Determine default tier
+            tier_id = "home_grid"  # default
+            # If DC/fast charge detected
+            if hasattr(status, "battery") and status.battery:
+                charge_state = getattr(status.battery, "charge_state", None)
+                if hasattr(charge_state, "value"):
+                    charge_state = charge_state.value
+                # charge_state 2 = DC fast charge typically
+                if charge_state == 2:
+                    tier_id = "public_dc"
+            sc = ChargingSessionCost(
+                vin=event.vin,
+                start_ts=event.timestamp,
+                tier_id=tier_id,
+            )
+            await self._repo.upsert_session_cost(sc)
+            _LOGGER.info(
+                "Charging cost: session started for %s, tier=%s", event.vin, tier_id
+            )
+
+        elif event.event_type == "charge_stop":
+            # Find the most recent open session for this VIN
+            costs = await self._repo.get_session_costs(event.vin)
+            open_session = next((c for c in costs if c.end_ts is None), None)
+            if open_session:
+                open_session.end_ts = event.timestamp
+                # Try to compute energy from snapshots
+                try:
+                    history = await self._repo.get_history(event.vin, days=1)
+                    # Find snapshots in session window
+                    session_snaps = [
+                        s
+                        for s in history
+                        if s.timestamp >= open_session.start_ts
+                        and s.timestamp <= event.timestamp
+                    ]
+                    if len(session_snaps) >= 2:
+                        start_energy = (
+                            session_snaps[0].battery_dump_energy or 0
+                        ) / 1000
+                        end_energy = (session_snaps[-1].battery_dump_energy or 0) / 1000
+                        energy = end_energy - start_energy
+                        if energy > 0:
+                            open_session.energy_kwh = round(energy, 2)
+                            # Get tier price
+                            tiers = await self._repo.get_price_tiers()
+                            tier = next(
+                                (t for t in tiers if t.id == open_session.tier_id),
+                                None,
+                            )
+                            if tier:
+                                open_session.cost = round(energy * tier.price_kwh, 4)
+                except Exception as exc:
+                    _LOGGER.debug("Charging cost: energy calc error: %s", exc)
+
+                await self._repo.upsert_session_cost(open_session)
+                _LOGGER.info(
+                    "Charging cost: session ended for %s, energy=%.2f kWh, cost=€%.4f",
+                    event.vin,
+                    open_session.energy_kwh or 0,
+                    open_session.cost or 0,
                 )
