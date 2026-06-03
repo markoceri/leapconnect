@@ -71,10 +71,12 @@
       </div>
 
       <div v-if="s.is_charging" class="charging-widget">
-        <div class="lock-label">Charging</div>
-        <div v-if="activeChargingTier" class="charging-tier-badge">
-          <component :is="tierIconMap[activeChargingTier.tier_id] || Zap" :size="12" />
-          <span>{{ activeChargingTier.tier_label || activeChargingTier.tier_id }}</span>
+        <div class="charging-title-row">
+          <span class="lock-label">Charging</span>
+          <span v-if="activeChargingTier" class="charging-tier-badge" :class="'tier-' + activeChargingTier.tier_id">
+            <component :is="tierIconMap[activeChargingTier.tier_id] || Zap" :size="11" />
+            {{ activeChargingTier.tier_label || activeChargingTier.tier_id }}
+          </span>
         </div>
         <div class="charging-stats">
           <div class="charging-stat">
@@ -985,18 +987,16 @@ async function doSetChargeLimit() {
   padding: 14px 18px;
   flex: 1;
 }
+.charging-title-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
 .charging-tier-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 11px;
-  color: var(--muted);
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 2px 8px;
-  margin-bottom: 8px;
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 10px; padding: 2px 6px; border-radius: 4px; font-weight: 500;
+  flex-shrink: 0;
 }
+.charging-tier-badge.tier-home_grid { background: rgba(102,187,106,0.15); color: #66bb6a; }
+.charging-tier-badge.tier-home_solar { background: rgba(253,216,53,0.15); color: #fdd835; }
+.charging-tier-badge.tier-public_ac { background: rgba(66,165,245,0.15); color: #42a5f5; }
+.charging-tier-badge.tier-public_dc { background: rgba(124,106,255,0.15); color: #7c6aff; }
 .charging-stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
 @media (min-width: 640px) {
   .charging-stats { display: flex; gap: 16px; }
