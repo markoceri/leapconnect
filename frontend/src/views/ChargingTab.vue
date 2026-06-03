@@ -495,7 +495,7 @@ function renderCharts() {
         plugins: { legend: { display: false } },
         scales: {
           x: { ticks: { color: '#888', font: { size: 10 } }, grid: { display: false } },
-          y: { ticks: { color: '#888', callback: v => `€${v}` }, grid: { color: 'rgba(255,255,255,0.05)' } },
+          y: { ticks: { color: '#888', callback: v => `€${v.toFixed(2)}` }, grid: { color: 'rgba(255,255,255,0.05)' } },
         },
       },
     }))
