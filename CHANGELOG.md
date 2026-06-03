@@ -14,13 +14,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Home pricing mode: flat rate or time-of-use bands
   - Configurable time-of-use bands with day/time schedule and per-band pricing
   - Per-tier price editing with save functionality
+- **New dedicated Charging tab** — full-page view with:
+  - Session detection from vehicle snapshots (battery_is_charging transitions)
+  - KPI cards: total energy, cost, home grid/solar/public breakdown
+  - Energy per session bar chart (chronological)
+  - Daily cost line chart
+  - Energy by tier pie chart
+  - Time-of-use bands energy distribution visualization
+  - Monthly summary table
+  - Editable session list with tier assignment (create/update cost records)
 - **Automatic tier detection on charge events** — the scheduler detects AC/DC charging and assigns the appropriate cost tier when a session starts/stops
-- **History KPI breakdown by tier**:
-  - "Charged home grid" — energy from home grid
-  - "Charged solar" — energy from solar (visible only if solar panels enabled)
-  - "Charged public" — combined public AC + DC energy
-  - "Home cost" / "Public cost" — cost split by source
-  - "Total cost" — aggregated from per-session cost records when available
 - **Dashboard active tier indicator** — shows the current charging tier badge in the charging widget during active sessions
 - **Dashboard charge-start toast** — notification when charging begins with tier info
 - **Database migration 0007**: added `charging_price_tiers`, `charging_time_bands`, `charging_session_costs` tables with default Italian ARERA time-of-use schedule
@@ -33,6 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - **Settings layout**: energy/charging preferences moved from "Preferences" card to dedicated "Energy & Charging Costs" card
 - **Preferences API**: extended with `has_solar_panels` and `home_pricing_mode` fields
+- **History tab**: removed tier-specific KPIs (moved to dedicated Charging tab)
 
 ## [0.8.2] - 2026-06-02
 
