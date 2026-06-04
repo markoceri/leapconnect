@@ -2147,6 +2147,7 @@ async def get_charging_costs(
             if c.time_band_id and c.time_band_id in bands
             else None,
             energy_kwh=c.energy_kwh,
+            peak_power_kw=c.peak_power_kw,
             cost=c.cost,
             note=c.note,
         )
@@ -2183,6 +2184,7 @@ async def create_charging_cost(vin: str, body: ChargingSessionCostCreate):
         end_ts=end_ts,
         tier_id=body.tier_id,
         energy_kwh=body.energy_kwh,
+        peak_power_kw=body.peak_power_kw,
         cost=cost,
         note=body.note,
     )
@@ -2197,6 +2199,7 @@ async def create_charging_cost(vin: str, body: ChargingSessionCostCreate):
         tier_label=tier.label if tier else None,
         time_band_id=sc.time_band_id,
         energy_kwh=sc.energy_kwh,
+        peak_power_kw=sc.peak_power_kw,
         cost=sc.cost,
         note=sc.note,
     )
@@ -2223,6 +2226,8 @@ async def update_charging_cost(vin: str, cost_id: int, body: ChargingSessionCost
         sc.end_ts = dt.fromisoformat(body.end_ts)
     if body.energy_kwh is not None:
         sc.energy_kwh = body.energy_kwh
+    if body.peak_power_kw is not None:
+        sc.peak_power_kw = body.peak_power_kw
     if body.note is not None:
         sc.note = body.note
     # Recalculate cost
@@ -2246,6 +2251,7 @@ async def update_charging_cost(vin: str, cost_id: int, body: ChargingSessionCost
         if sc.time_band_id and sc.time_band_id in bands
         else None,
         energy_kwh=sc.energy_kwh,
+        peak_power_kw=sc.peak_power_kw,
         cost=sc.cost,
         note=sc.note,
     )

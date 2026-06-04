@@ -244,5 +244,6 @@ class ChargingSessionCost:
     tier_id: str = ""
     time_band_id: int | None = None
     energy_kwh: float | None = None
+    peak_power_kw: float | None = None
     cost: float | None = None
     note: str | None = None

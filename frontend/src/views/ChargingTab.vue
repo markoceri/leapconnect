@@ -98,6 +98,7 @@
           </div>
           <div class="session-energy">
             <span class="session-val">{{ s.energy_kwh != null ? s.energy_kwh.toFixed(1) : '—' }} kWh</span>
+            <span v-if="s.peak_power_kw != null" class="session-peak">{{ s.peak_power_kw.toFixed(1) }} kW peak</span>
           </div>
           <div class="session-tier">
             <span v-if="s.tier_label" class="tier-badge" :class="'tier-' + s.tier_id">{{ s.tier_label }}</span>
@@ -215,7 +216,7 @@ const filteredSessions = computed(() => {
       sc.start_ts && Math.abs(new Date(sc.start_ts) - new Date(ds.start_ts)) < 120000
     )
     if (match) {
-      return { ...match, energy_kwh: match.energy_kwh ?? ds.energy_kwh, _detected: true }
+      return { ...match, energy_kwh: match.energy_kwh ?? ds.energy_kwh, peak_power_kw: match.peak_power_kw ?? ds.peak_power_kw, _detected: true }
     }
     // No cost record — return detected session as-is
     return { ...ds, id: null, tier_id: null, tier_label: null, cost: null, _detected: true }
@@ -335,6 +336,7 @@ async function saveSession() {
     const body = {
       tier_id: editForm.value.tier_id,
       energy_kwh: editForm.value.energy_kwh || undefined,
+      peak_power_kw: s.peak_power_kw ?? undefined,
       note: editForm.value.note || undefined,
     }
     if (s.id) {
@@ -360,11 +362,17 @@ function detectSessionsFromSnapshots(snapshots) {
   const sessions = []
   let inSession = false
   let startIdx = -1
+  let peakKw = 0
   for (let i = 0; i < snapshots.length; i++) {
     const snap = snapshots[i]
     if (snap.battery_is_charging && !inSession) {
       inSession = true
       startIdx = i
+      peakKw = snap.battery_charging_power_kw != null ? snap.battery_charging_power_kw : 0
+    } else if (snap.battery_is_charging && inSession) {
+      // Track peak while session continues
+      const power = snap.battery_charging_power_kw
+      if (power != null && power > peakKw) peakKw = power
     } else if (!snap.battery_is_charging && inSession) {
       inSession = false
       const startSnap = snapshots[startIdx]
@@ -378,6 +386,7 @@ function detectSessionsFromSnapshots(snapshots) {
         energy_kwh: energy != null ? Math.round(energy * 100) / 100 : null,
         start_soc: startSnap.battery_soc,
         end_soc: endSnap.battery_soc,
+        peak_power_kw: peakKw > 0 ? Math.round(peakKw * 10) / 10 : null,
       })
     }
   }
@@ -394,6 +403,7 @@ function detectSessionsFromSnapshots(snapshots) {
       energy_kwh: energy != null ? Math.round(energy * 100) / 100 : null,
       start_soc: startSnap.battery_soc,
       end_soc: endSnap.battery_soc,
+      peak_power_kw: peakKw > 0 ? Math.round(peakKw * 10) / 10 : null,
     })
   }
   return sessions
@@ -457,7 +467,18 @@ function renderCharts() {
       },
       options: {
         responsive: true, maintainAspectRatio: false,
-        plugins: { legend: { display: false } },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              afterLabel: (ctx) => {
+                const s = sessions[ctx.dataIndex]
+                if (s.peak_power_kw != null) return `Peak: ${s.peak_power_kw.toFixed(1)} kW`
+                return ''
+              },
+            },
+          },
+        },
         scales: {
           x: { ticks: { color: '#888', font: { size: 10 } }, grid: { display: false } },
           y: { ticks: { color: '#888' }, grid: { color: 'rgba(255,255,255,0.05)' } },
@@ -591,6 +612,7 @@ watch(selectedMonth, loadData)
 .session-time { font-size: 11px; color: var(--muted); }
 .session-energy { min-width: 80px; }
 .session-val { font-size: 13px; font-weight: 600; color: #00e676; }
+.session-peak { display: block; font-size: 10px; font-weight: 400; color: #ff9100; margin-top: 1px; }
 .session-tier { min-width: 80px; }
 .tier-badge { font-size: 10px; padding: 2px 6px; border-radius: 4px; font-weight: 500; }
 .tier-home_grid { background: rgba(102,187,106,0.15); color: #66bb6a; }

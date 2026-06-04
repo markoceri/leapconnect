@@ -825,6 +825,7 @@ class ChargingSessionCostResponse(BaseModel):
     time_band_id: int | None = None
     time_band_name: str | None = None
     energy_kwh: float | None = None
+    peak_power_kw: float | None = None
     cost: float | None = None
     note: str | None = None
 
@@ -834,6 +835,7 @@ class ChargingSessionCostCreate(BaseModel):
     end_ts: str | None = None
     tier_id: str
     energy_kwh: float | None = None
+    peak_power_kw: float | None = None
     note: str | None = None
 
 
@@ -841,6 +843,7 @@ class ChargingSessionCostUpdate(BaseModel):
     tier_id: str | None = None
     end_ts: str | None = None
     energy_kwh: float | None = None
+    peak_power_kw: float | None = None
     note: str | None = None
 
 

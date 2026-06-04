@@ -230,6 +230,7 @@ class ChargingSessionCostRow(Base):
     tier_id = Column(String(32), nullable=False)
     time_band_id = Column(Integer, nullable=True)
     energy_kwh = Column(Float, nullable=True)
+    peak_power_kw = Column(Float, nullable=True)
     cost = Column(Float, nullable=True)
     note = Column(String(256), nullable=True)
 
@@ -1286,6 +1287,7 @@ class SQLAlchemyVehicleHistoryRepository(VehicleHistoryRepository):
                 tier_id=r.tier_id,
                 time_band_id=r.time_band_id,
                 energy_kwh=r.energy_kwh,
+                peak_power_kw=r.peak_power_kw,
                 cost=r.cost,
                 note=r.note,
             )
@@ -1304,6 +1306,7 @@ class SQLAlchemyVehicleHistoryRepository(VehicleHistoryRepository):
                     row.tier_id = sc.tier_id
                     row.time_band_id = sc.time_band_id
                     row.energy_kwh = sc.energy_kwh
+                    row.peak_power_kw = sc.peak_power_kw
                     row.cost = sc.cost
                     row.note = sc.note
                     await session.commit()
@@ -1316,6 +1319,7 @@ class SQLAlchemyVehicleHistoryRepository(VehicleHistoryRepository):
                 tier_id=sc.tier_id,
                 time_band_id=sc.time_band_id,
                 energy_kwh=sc.energy_kwh,
+                peak_power_kw=sc.peak_power_kw,
                 cost=sc.cost,
                 note=sc.note,
             )
