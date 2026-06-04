@@ -307,6 +307,12 @@ class VehicleDataScheduler:
                     battery_voltage=status.battery.battery_voltage
                     if status.battery
                     else None,
+                    battery_charging_power_kw=status.battery.charging_power_kw
+                    if status.battery
+                    else None,
+                    battery_discharge_power_kw=status.battery.discharging_power_kw
+                    if status.battery
+                    else None,
                     battery_is_charging=status.is_charging,
                     battery_dump_energy=status.battery.dump_energy
                     if status.battery
@@ -328,6 +334,7 @@ class VehicleDataScheduler:
                     vehicle_is_plugged=status.is_plugged,
                     vehicle_is_parked=status.is_parked,
                     vehicle_is_locked=status.is_locked,
+                    vehicle_is_regening=status.is_regening,
                     vehicle_latitude=status.location.latitude
                     if status.location
                     else None,
@@ -477,6 +484,12 @@ class VehicleDataScheduler:
                     if status.battery
                     else None,
                     battery_voltage=status.battery.battery_voltage
+                    if status.battery
+                    else None,
+                    battery_charging_power_kw=status.battery.charging_power_kw
+                    if status.battery
+                    else None,
+                    battery_discharge_power_kw=status.battery.discharging_power_kw
                     if status.battery
                     else None,
                     battery_is_charging=status.is_charging,

@@ -463,7 +463,9 @@ class SQLAlchemyVehicleHistoryRepository(VehicleHistoryRepository):
                 if r.charging_power_kw
                 else (
                     round(abs(r.battery_current) * r.battery_voltage / 1000, 2)
-                    if r.battery_current and r.battery_voltage and r.is_charging
+                    if r.battery_current
+                    and r.battery_voltage
+                    and (r.is_charging or r.is_regening)
                     else None
                 ),
                 battery_discharge_power_kw=r.discharge_power_kw
@@ -474,6 +476,7 @@ class SQLAlchemyVehicleHistoryRepository(VehicleHistoryRepository):
                     and r.battery_voltage
                     and r.battery_current > 0
                     and not r.is_charging
+                    and not r.is_regening
                     else None
                 ),
                 battery_expected_mileage=r.expected_mileage,
