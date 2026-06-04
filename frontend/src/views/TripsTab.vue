@@ -220,7 +220,7 @@ const tripDays = computed(() => {
     accumulated_mileage: day.accumulated_mileage,
     accumulated_enery_consume: day.accumulated_enery_consume,
     current_mileage: day.current_mileage,
-    trips: day.drivingRecord || [],
+    trips: [...(day.drivingRecord || [])].reverse(),
   })).filter(d => d.trips.length > 0)
 })
 
