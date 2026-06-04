@@ -678,20 +678,49 @@ class NotificationDispatcher:
         notifications_to_send: list[tuple[str, dict]] = []
 
         # 1. Direct transition events
-        is_plugged = getattr(status, "is_plugged", None)
+        # --- Robust regen-braking filter for charge_start/charge_stop ---
+        # Do NOT rely solely on VehicleStatus.is_plugged because its fallback
+        # path (when ac_input_slow_charge is None) incorrectly returns True for
+        # regenerative braking while the vehicle is momentarily stopped (speed=0).
+        # Instead check the actual gun-insert sensors and the explicit is_regening
+        # flag to distinguish real plug-in charging from regenerative braking.
+        is_regening = getattr(status, "is_regening", None)
+        battery = getattr(status, "battery", None)
+        gun_inserted: bool | None = None  # None = data unavailable
+        if battery:
+            fast_gun = getattr(battery, "is_charge_fast_gun_insert", None)
+            slow_gun = getattr(battery, "is_charge_slow_gun_insert", None)
+            if fast_gun is not None or slow_gun is not None:
+                gun_inserted = (fast_gun is True) or (slow_gun is True)
+
         for event in events:
             if event.event_type in TRANSITION_EVENTS:
-                # Only notify charge_start/charge_stop when plugged in (wall charger),
-                # not during regenerative braking
-                if (
-                    event.event_type in ("charge_start", "charge_stop")
-                    and not is_plugged
-                ):
-                    _LOGGER.debug(
-                        "Suppressing %s notification — vehicle not plugged in (regen)",
-                        event.event_type,
-                    )
-                    continue
+                if event.event_type in ("charge_start", "charge_stop"):
+                    # Suppress if regenerative braking (explicit regen flag)
+                    if is_regening:
+                        _LOGGER.debug(
+                            "Suppressing %s — is_regening=True (regen braking)",
+                            event.event_type,
+                        )
+                        continue
+                    # Suppress if gun sensor data is available and no gun is inserted
+                    if gun_inserted is not None and not gun_inserted:
+                        _LOGGER.debug(
+                            "Suppressing %s — no gun inserted (regen or driving)",
+                            event.event_type,
+                        )
+                        continue
+                    # When gun sensor data is unavailable, fall back to the
+                    # is_plugged property as a best-effort heuristic
+                    if gun_inserted is None:
+                        is_plugged = getattr(status, "is_plugged", None)
+                        if not is_plugged:
+                            _LOGGER.debug(
+                                "Suppressing %s — is_plugged=False"
+                                " (gun data unavailable)",
+                                event.event_type,
+                            )
+                            continue
                 notifications_to_send.append((event.event_type, {}))
 
         # 2. Custom detection logic based on current status
