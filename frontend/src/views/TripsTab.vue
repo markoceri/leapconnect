@@ -349,7 +349,7 @@ function renderSpeedMap() {
   for (let i = 0; i < coords.length; i++) {
     const speed = points[i].speed ?? 0
     const time = points[i].timestamp
-      ? new Date(points[i].timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      ? new Date(points[i].timestamp + 'Z').toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       : ''
     L.circleMarker(coords[i], {
       radius: 4,
@@ -405,7 +405,7 @@ function renderSpeedChart() {
   // Build labels: time if available, else index
   const labels = points.map((p, i) => {
     if (p.timestamp) {
-      return new Date(p.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      return new Date(p.timestamp + 'Z').toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     }
     return i
   })
