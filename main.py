@@ -3496,6 +3496,586 @@ async def get_consumption_last_week(vin: str) -> ConsumptionLastWeekResponse:
 
 
 # ---------------------------------------------------------------------------
+# Routes — Trips & Driving Records
+# ---------------------------------------------------------------------------
+
+
+def _parse_range_date(value: str | None) -> str | None:
+    """Normalize supported date inputs to YYYY-MM-DD.
+
+    Accepted formats:
+    - YYYY-MM-DD
+    - ISO datetime
+    - Unix timestamp seconds or milliseconds (string)
+    """
+    if not value:
+        return None
+    raw = value.strip()
+    if not raw:
+        return None
+
+    if raw.isdigit():
+        ts = int(raw)
+        if ts > 10_000_000_000:
+            ts = ts / 1000
+        return datetime.utcfromtimestamp(ts).date().isoformat()
+
+    try:
+        return datetime.fromisoformat(raw.replace("Z", "+00:00")).date().isoformat()
+    except ValueError:
+        # Last fallback for strings like "YYYY-MM-DD HH:MM:SS"
+        try:
+            return datetime.strptime(raw[:19], "%Y-%m-%d %H:%M:%S").date().isoformat()
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Invalid date format: {value}",
+            ) from exc
+
+
+def _is_snapshot_moving(snapshot: VehicleSnapshot) -> bool:
+    speed = snapshot.drive_speed or 0
+    return speed > 0 or snapshot.drive_is_parked is False
+
+
+# ---- Merge helpers ---------------------------------------------------------
+
+# Maximum gap (seconds) between two moving segments to still consider them
+# the same trip (e.g. traffic light, stop sign).  If the pause is longer
+# than this, the segments become separate trips.
+_MERGE_GAP_S = 300  # 5 minutes
+
+
+def _segment_end(seg: list[VehicleSnapshot]) -> VehicleSnapshot:
+    return seg[-1]
+
+
+def _segment_start(seg: list[VehicleSnapshot]) -> VehicleSnapshot:
+    return seg[0]
+
+
+def _build_trip_row(segment: list[VehicleSnapshot]) -> dict | None:
+    """Turn a *merged* segment into a trip row for the response payload."""
+    if len(segment) < 2:
+        return None
+
+    start = _segment_start(segment)
+    end = _segment_end(segment)
+    duration_h = max(0.0, (end.timestamp - start.timestamp).total_seconds() / 3600.0)
+    if duration_h <= 0:
+        return None
+
+    start_km = start.drive_total_mileage
+    end_km = end.drive_total_mileage
+    travel_km = 0.0
+    if start_km is not None and end_km is not None:
+        travel_km = max(0.0, float(end_km) - float(start_km))
+
+    if travel_km < 0.2:
+        return None
+
+    start_wh = start.battery_dump_energy
+    end_wh = end.battery_dump_energy
+    energy_wh = 0.0
+    if start_wh is not None and end_wh is not None:
+        energy_wh = abs(float(end_wh) - float(start_wh))
+
+    return {
+        "beginTime": start.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
+        "endTime": end.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
+        "travelMile": int(round(travel_km * 1000)),
+        "eneryConsume": int(round(energy_wh)),
+        "recoveryEnery": int(round(_segment_regen_energy_wh(segment))),
+        "maxSpeed": max((s.drive_speed or 0) for s in segment),
+        "startSoc": start.battery_soc,
+        "endSoc": end.battery_soc,
+        "outdoorTemp": start.climate_outdoor_temp,
+        "gpskey": (
+            f"{int(start.timestamp.timestamp())}_{int(end.timestamp.timestamp())}"
+        ),
+        "_travel_km": travel_km,
+        "_energy_kwh": energy_wh / 1000.0,
+        "_duration_h": duration_h,
+    }
+
+
+def _any_parked_in_gap(
+    snapshots: list[VehicleSnapshot],
+    seg_a: list[VehicleSnapshot],
+    seg_b: list[VehicleSnapshot],
+) -> bool:
+    """Check whether the vehicle was explicitly *parked* in the gap
+    between two segments."""
+    # Look at snapshot rows whose timestamps fall between seg_a end and seg_b start.
+    gap_start = _segment_end(seg_a).timestamp
+    gap_end = _segment_start(seg_b).timestamp
+    for s in snapshots:
+        if gap_start < s.timestamp < gap_end and s.drive_is_parked is True:
+            return True
+    return False
+
+
+def _merge_segments(
+    raw_segments: list[list[VehicleSnapshot]],
+    snapshots: list[VehicleSnapshot],
+) -> list[list[VehicleSnapshot]]:
+    """Merge adjacent segments whose gap is small and there was no explicit park.
+
+    Two raw segments are merged when:
+    1. The time gap between them is <= ``_MERGE_GAP_S``.
+    2. No snapshot in the gap has ``drive_is_parked == True``.
+    """
+    if not raw_segments:
+        return []
+
+    merged: list[list[VehicleSnapshot]] = [raw_segments[0].copy()]
+
+    for seg in raw_segments[1:]:
+        last = merged[-1]
+        gap_s = (
+            _segment_start(seg).timestamp - _segment_end(last).timestamp
+        ).total_seconds()
+        parked_in_gap = _any_parked_in_gap(snapshots, last, seg)
+
+        if gap_s <= _MERGE_GAP_S and not parked_in_gap:
+            # Extend the last merged segment instead of creating a new one.
+            # Drop the first snapshot of 'seg' to avoid duplicating the boundary.
+            if len(seg) > 1:
+                merged[-1].extend(seg[1:])
+            else:
+                merged[-1].extend(seg)
+        else:
+            merged.append(seg.copy())
+
+    return merged
+
+
+def _build_local_trip_payload(snapshots: list[VehicleSnapshot]) -> dict:
+    """Build a cloud-like trip payload from local history snapshots.
+
+    1. Extract raw “moving” segments (contiguous speed>0 windows).
+    2. Merge segments whose inter-segment gap is <= 5 min and not parked.
+    3. Drop segments below minimum distance (0.2 km).
+    """
+    if len(snapshots) < 2:
+        return {
+            "source": "local_history",
+            "total_enery": 0,
+            "total_milage": 0,
+            "total_ustime": 0,
+            "data": [],
+        }
+
+    # --- Step 1: collect raw moving segments ---
+    raw_segments: list[list[VehicleSnapshot]] = []
+    cur: list[VehicleSnapshot] = []
+
+    for idx, snap in enumerate(snapshots):
+        moving = _is_snapshot_moving(snap)
+        if moving:
+            if not cur:
+                prev = snapshots[idx - 1] if idx > 0 else snap
+                cur = [prev]
+            cur.append(snap)
+        elif cur:
+            cur.append(snap)
+            raw_segments.append(cur)
+            cur = []
+
+    if cur:
+        raw_segments.append(cur)
+
+    # --- Step 2: merge close segments ---
+    segments = _merge_segments(raw_segments, snapshots)
+
+    # --- Step 3: build trip rows ---
+    trip_rows = [r for seg in segments if (r := _build_trip_row(seg))]
+
+    # --- Step 4: group by day ---
+    by_day: dict[str, dict] = {}
+    total_energy_kwh = 0.0
+    total_distance_km = 0.0
+    total_hours = 0.0
+
+    for trip in trip_rows:
+        day = trip["beginTime"][:10]
+        bucket = by_day.setdefault(
+            day,
+            {
+                "day": day,
+                "accumulated_enery_consume": 0,
+                "accumulated_mileage": 0.0,
+                "current_mileage": 0.0,
+                "drivingRecord": [],
+            },
+        )
+        bucket["drivingRecord"].append(
+            {
+                "beginTime": trip["beginTime"],
+                "endTime": trip["endTime"],
+                "travelMile": trip["travelMile"],
+                "eneryConsume": trip["eneryConsume"],
+                "recoveryEnery": trip["recoveryEnery"],
+                "maxSpeed": trip["maxSpeed"],
+                "startSoc": trip["startSoc"],
+                "endSoc": trip["endSoc"],
+                "outdoorTemp": trip["outdoorTemp"],
+                "gpskey": trip["gpskey"],
+            }
+        )
+        bucket["accumulated_enery_consume"] += trip["eneryConsume"]
+        bucket["accumulated_mileage"] += trip["_travel_km"]
+        bucket["current_mileage"] = round(bucket["accumulated_mileage"], 2)
+
+        total_energy_kwh += trip["_energy_kwh"]
+        total_distance_km += trip["_travel_km"]
+        total_hours += trip["_duration_h"]
+
+    for b in by_day.values():
+        b["accumulated_mileage"] = round(b["accumulated_mileage"], 2)
+
+    ordered_days = sorted(by_day.values(), key=lambda d: d["day"], reverse=True)
+    return {
+        "source": "local_history",
+        "total_enery": round(total_energy_kwh, 3),
+        "total_milage": round(total_distance_km, 2),
+        "total_ustime": round(total_hours, 2),
+        "data": ordered_days,
+    }
+
+
+def _calculate_local_regen_energy_kwh(snapshots: list[VehicleSnapshot]) -> float:
+    total = 0.0
+    for i in range(1, len(snapshots)):
+        prev = snapshots[i - 1]
+        curr = snapshots[i]
+        if not curr.vehicle_is_regening:
+            continue
+        power_kw = curr.battery_charging_power_kw
+        if power_kw is None or power_kw <= 0:
+            continue
+        dt_h = (curr.timestamp - prev.timestamp).total_seconds() / 3600
+        if dt_h <= 0 or dt_h > 0.5:
+            continue
+        total += power_kw * dt_h
+    return round(total, 3)
+
+
+def _segment_regen_energy_wh(segment: list[VehicleSnapshot]) -> float:
+    """Calculate regenerative braking energy (in Wh) for a single trip segment."""
+    total = 0.0
+    for i in range(1, len(segment)):
+        prev = segment[i - 1]
+        curr = segment[i]
+        if not curr.vehicle_is_regening:
+            continue
+        power_kw = curr.battery_charging_power_kw
+        if power_kw is None or power_kw <= 0:
+            continue
+        dt_h = (curr.timestamp - prev.timestamp).total_seconds() / 3600
+        if dt_h <= 0 or dt_h > 0.5:
+            continue
+        total += power_kw * dt_h * 1000  # kWh → Wh
+    return round(total, 1)
+
+
+def _detect_local_charge_sessions(snapshots: list[VehicleSnapshot]) -> list[dict]:
+    sessions: list[dict] = []
+    in_session = False
+    start_idx = -1
+
+    for i, snap in enumerate(snapshots):
+        is_charging = bool(snap.battery_is_charging)
+        if is_charging and not in_session:
+            in_session = True
+            start_idx = i
+        elif not is_charging and in_session:
+            in_session = False
+            start_snap = snapshots[start_idx]
+            end_snap = snapshots[i - 1] if i > 0 else snap
+
+            start_energy = (
+                start_snap.battery_dump_energy / 1000
+                if start_snap.battery_dump_energy is not None
+                else None
+            )
+            end_energy = (
+                end_snap.battery_dump_energy / 1000
+                if end_snap.battery_dump_energy is not None
+                else None
+            )
+            energy = (
+                abs(end_energy - start_energy)
+                if start_energy is not None and end_energy is not None
+                else None
+            )
+            sessions.append(
+                {
+                    "start_ts": start_snap.timestamp,
+                    "end_ts": end_snap.timestamp,
+                    "energy_kwh": round(energy, 3) if energy is not None else None,
+                }
+            )
+
+    if in_session and start_idx >= 0:
+        start_snap = snapshots[start_idx]
+        end_snap = snapshots[-1]
+        start_energy = (
+            start_snap.battery_dump_energy / 1000
+            if start_snap.battery_dump_energy is not None
+            else None
+        )
+        end_energy = (
+            end_snap.battery_dump_energy / 1000
+            if end_snap.battery_dump_energy is not None
+            else None
+        )
+        energy = (
+            abs(end_energy - start_energy)
+            if start_energy is not None and end_energy is not None
+            else None
+        )
+        sessions.append(
+            {
+                "start_ts": start_snap.timestamp,
+                "end_ts": None,
+                "energy_kwh": round(energy, 3) if energy is not None else None,
+            }
+        )
+
+    return sessions
+
+
+@app.get("/api/vehicles/{vin}/trips")
+async def get_trips(
+    vin: str,
+    begin_time: str | None = None,
+    end_time: str | None = None,
+):
+    """Get driving records from locally collected history snapshots."""
+    from datetime import date as date_cls
+    from datetime import timedelta
+
+    if not _history_repo:
+        raise HTTPException(status_code=503, detail="History not available")
+
+    _find_vehicle(vin)
+    today = date_cls.today()
+    bt = _parse_range_date(begin_time) or (today - timedelta(days=30)).isoformat()
+    et = _parse_range_date(end_time) or today.isoformat()
+    snapshots = await _history_repo.get_history(
+        vin,
+        from_date=bt,
+        to_date=et,
+        max_points=10_000,
+    )
+    return _build_local_trip_payload(snapshots)
+
+
+@app.get("/api/vehicles/{vin}/trips/totals")
+async def get_trips_totals(
+    vin: str,
+    begin_time: str | None = None,
+    end_time: str | None = None,
+):
+    """Get total driving statistics computed from local history snapshots."""
+    from datetime import date as date_cls
+    from datetime import timedelta
+
+    if not _history_repo:
+        raise HTTPException(status_code=503, detail="History not available")
+
+    _find_vehicle(vin)
+    today = date_cls.today()
+    bt = _parse_range_date(begin_time) or (today - timedelta(days=30)).isoformat()
+    et = _parse_range_date(end_time) or today.isoformat()
+    snapshots = await _history_repo.get_history(
+        vin,
+        from_date=bt,
+        to_date=et,
+        max_points=10_000,
+    )
+    payload = _build_local_trip_payload(snapshots)
+
+    # Flatten trip rows for totals.
+    trip_rows = [
+        trip for day in payload.get("data", []) for trip in day.get("drivingRecord", [])
+    ]
+    max_speed = max((s.drive_speed or 0) for s in snapshots) if snapshots else 0
+    total_hours = 0.0
+    for trip in trip_rows:
+        try:
+            bt_dt = datetime.strptime(trip["beginTime"], "%Y-%m-%d %H:%M:%S")
+            et_dt = datetime.strptime(trip["endTime"], "%Y-%m-%d %H:%M:%S")
+            total_hours += max(0.0, (et_dt - bt_dt).total_seconds() / 3600)
+        except (ValueError, KeyError):
+            continue
+
+    return {
+        "source": "local_history",
+        "maxspeed": int(max_speed),
+        "totalenery": round(float(payload.get("total_enery", 0.0)), 3),
+        "totalmileage": round(float(payload.get("total_milage", 0.0)), 2),
+        "totalrecoveryenery": _calculate_local_regen_energy_kwh(snapshots),
+        "ustime": round(total_hours, 2),
+    }
+
+
+@app.get("/api/vehicles/{vin}/trips/gps/{gpskey}")
+async def get_trip_gps(vin: str, gpskey: str):
+    """Get trip GPS trace from local history snapshots."""
+    if not _history_repo:
+        raise HTTPException(status_code=503, detail="History not available")
+
+    _find_vehicle(vin)
+    try:
+        start_raw, end_raw = gpskey.split("_", 1)
+        start_dt = datetime.utcfromtimestamp(int(start_raw))
+        end_dt = datetime.utcfromtimestamp(int(end_raw))
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422, detail=f"Invalid gpskey: {gpskey}"
+        ) from exc
+
+    snapshots = await _history_repo.get_history(
+        vin,
+        from_date=start_dt.date().isoformat(),
+        to_date=end_dt.date().isoformat(),
+        max_points=10_000,
+    )
+    points = [
+        {
+            "timestamp": s.timestamp.isoformat(),
+            "lat": s.vehicle_latitude,
+            "lng": s.vehicle_longitude,
+            "speed": s.drive_speed,
+        }
+        for s in snapshots
+        if (
+            s.vehicle_latitude is not None
+            and s.vehicle_longitude is not None
+            and start_dt <= s.timestamp <= end_dt
+        )
+    ]
+    return points
+
+
+@app.get("/api/vehicles/{vin}/charge-stats/cloud")
+async def get_charge_stats_cloud(
+    vin: str,
+    begin_time: str | None = None,
+    end_time: str | None = None,
+):
+    """Get daily charging statistics derived from local history."""
+    from datetime import date as date_cls
+    from datetime import timedelta
+
+    if not _history_repo:
+        raise HTTPException(status_code=503, detail="History not available")
+
+    _find_vehicle(vin)
+    today = date_cls.today()
+    bt = _parse_range_date(begin_time) or (today - timedelta(days=30)).isoformat()
+    et = _parse_range_date(end_time) or today.isoformat()
+
+    snapshots = await _history_repo.get_history(
+        vin,
+        from_date=bt,
+        to_date=et,
+        max_points=10_000,
+    )
+    sessions = _detect_local_charge_sessions(snapshots)
+
+    days: dict[str, dict] = {}
+    for session in sessions:
+        day = session["start_ts"].date().isoformat()
+        bucket = days.setdefault(
+            day,
+            {
+                "date": day,
+                "sessions": 0,
+                "energy_kwh": 0.0,
+            },
+        )
+        bucket["sessions"] += 1
+        bucket["energy_kwh"] += float(session["energy_kwh"] or 0.0)
+
+    ordered = sorted(days.values(), key=lambda d: d["date"])
+    total_energy = round(sum(d["energy_kwh"] for d in ordered), 3)
+    return {
+        "source": "local_history",
+        "vin": vin,
+        "beginTime": bt,
+        "endTime": et,
+        "days": [
+            {
+                "date": d["date"],
+                "sessions": d["sessions"],
+                "energy_kwh": round(d["energy_kwh"], 3),
+            }
+            for d in ordered
+        ],
+        "total_sessions": sum(d["sessions"] for d in ordered),
+        "total_energy_kwh": total_energy,
+    }
+
+
+@app.get("/api/vehicles/{vin}/charge-stats/year")
+async def get_charge_stats_year(vin: str, year: str | None = None):
+    """Get annual charging statistics derived from local history."""
+    from datetime import date as date_cls
+
+    if not _history_repo:
+        raise HTTPException(status_code=503, detail="History not available")
+
+    _find_vehicle(vin)
+    y = year or str(date_cls.today().year)
+    if not y.isdigit() or len(y) != 4:
+        raise HTTPException(status_code=422, detail="year must be YYYY")
+
+    from_date = f"{y}-01-01"
+    to_date = f"{y}-12-31"
+    snapshots = await _history_repo.get_history(
+        vin,
+        from_date=from_date,
+        to_date=to_date,
+        max_points=20_000,
+    )
+    sessions = _detect_local_charge_sessions(snapshots)
+
+    months: dict[str, dict] = {}
+    for session in sessions:
+        month = session["start_ts"].strftime("%Y-%m")
+        bucket = months.setdefault(
+            month,
+            {
+                "month": month,
+                "sessions": 0,
+                "energy_kwh": 0.0,
+            },
+        )
+        bucket["sessions"] += 1
+        bucket["energy_kwh"] += float(session["energy_kwh"] or 0.0)
+
+    ordered = sorted(months.values(), key=lambda m: m["month"])
+    return {
+        "source": "local_history",
+        "vin": vin,
+        "year": y,
+        "months": [
+            {
+                "month": m["month"],
+                "sessions": m["sessions"],
+                "energy_kwh": round(m["energy_kwh"], 3),
+            }
+            for m in ordered
+        ],
+        "total_sessions": sum(m["sessions"] for m in ordered),
+        "total_energy_kwh": round(sum(m["energy_kwh"] for m in ordered), 3),
+    }
+
+
+# ---------------------------------------------------------------------------
 # Routes — Messages
 # ---------------------------------------------------------------------------
 

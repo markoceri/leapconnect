@@ -186,6 +186,10 @@
             v-else-if="store.activeTab === 'charging'"
             :vin="store.selectedVin"
           />
+          <TripsTab
+            v-else-if="store.activeTab === 'trips'"
+            :vin="store.selectedVin"
+          />
           <template v-else-if="store.currentData">
             <DashboardTab
               v-if="store.activeTab === 'dashboard'"
@@ -246,11 +250,12 @@ import DashboardTab from './views/DashboardTab.vue'
 import DetailsTab from './views/DetailsTab.vue'
 import HistoryTab from './views/HistoryTab.vue'
 import ChargingTab from './views/ChargingTab.vue'
+import TripsTab from './views/TripsTab.vue'
 import MessagesTab from './views/MessagesTab.vue'
 import SettingsTab from './views/SettingsTab.vue'
 import ToastContainer from './components/ToastContainer.vue'
 import MessageDropdown from './components/MessageDropdown.vue'
-import { LayoutDashboard, List, TrendingUp, Mail, Settings, RefreshCw, LogOut, Cloud, CloudOff, Sun, Moon, PanelTop, PanelTopClose, Bell, BatteryCharging } from 'lucide-vue-next'
+import { LayoutDashboard, List, TrendingUp, Mail, Settings, RefreshCw, LogOut, Cloud, CloudOff, Sun, Moon, PanelTop, PanelTopClose, Bell, BatteryCharging, MapPin } from 'lucide-vue-next'
 
 const store = useAppStore()
 const { toast } = useToast()
@@ -285,6 +290,7 @@ const tabs = [
   { id: 'messages', label: 'Messages', icon: Mail },
   { id: 'history', label: 'History', icon: TrendingUp },
   { id: 'charging', label: 'Charging', icon: BatteryCharging },
+  { id: 'trips', label: 'Trips', icon: MapPin },
   { id: 'settings', label: 'Settings', icon: Settings },
 ]
 
