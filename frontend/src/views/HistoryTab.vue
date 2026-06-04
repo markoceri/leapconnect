@@ -744,7 +744,8 @@ function formatDate(isoDate) {
 }
 
 function formatTimestamp(iso) {
-  const d = new Date(iso)
+  // timestamps from backend are naive UTC (no TZ suffix) — force UTC parsing
+  const d = new Date(iso + 'Z')
   return d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
 }
 
@@ -910,7 +911,7 @@ const heatmapData = computed(() => {
   const grid = Array.from({ length: 7 }, () => Array(24).fill(0))
   for (const s of filteredSnapshots.value) {
     if (s.drive_is_parked === false) {
-      const d = new Date(s.timestamp)
+      const d = new Date(s.timestamp + 'Z')
       const dow = (d.getDay() + 6) % 7
       const hour = d.getHours()
       grid[dow][hour]++
@@ -994,7 +995,7 @@ const vampireDrainData = computed(() => {
         const startSoc = snaps[parkedStart].battery_soc ?? 0
         const endSoc = snaps[i - 1].battery_soc ?? 0
         const loss = startSoc - endSoc
-        const hours = (new Date(snaps[i - 1].timestamp) - new Date(snaps[parkedStart].timestamp)) / 3600000
+        const hours = (new Date(snaps[i - 1].timestamp + 'Z') - new Date(snaps[parkedStart].timestamp + 'Z')) / 3600000
         if (hours >= 1 && loss > 0) {
           drains.push({
             label: formatTimestamp(snaps[parkedStart].timestamp),
@@ -1071,7 +1072,7 @@ function renderTripMap(points) {
   // Speed markers on each point
   for (let i = 0; i < coords.length; i++) {
     const speed = points[i].drive_speed ?? 0
-    const time = points[i].timestamp ? new Date(points[i].timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''
+    const time = points[i].timestamp ? new Date(points[i].timestamp + 'Z').toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''
     L.circleMarker(coords[i], {
       radius: 4,
       color: speed > 80 ? '#ef5350' : speed > 40 ? '#ffab40' : '#66bb6a',
@@ -1224,7 +1225,7 @@ function buildCharts() {
     const powerSnaps = snaps.filter(s => s.battery_charging_power_kw != null || s.battery_discharge_power_kw != null)
     if (powerSnaps.length > 0) {
       const powerLabels = powerSnaps.map(s => {
-        const dt = new Date(s.timestamp)
+        const dt = new Date(s.timestamp + 'Z')
         return isToday.value ? dt.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : dt.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
       })
       const powerPointR = powerSnaps.length <= 5 ? 4 : 0
