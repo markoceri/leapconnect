@@ -31,6 +31,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `PUT /api/charging-tiers/{tier_id}` — update a tier's price/label/enabled state
   - `GET/POST/PUT/DELETE /api/charging-tiers/time-bands[/{band_id}]` — CRUD for time-of-use bands
   - `GET/POST/PUT/DELETE /api/vehicles/{vin}/charging-costs[/{cost_id}]` — CRUD for session cost records
+- **Trip management** — new dedicated Trips tab with driving records and statistics:
+  - Chronological trip list grouped by day with distance, energy use, regen energy, and consumption summary
+  - Trip detail modal with GPS trace map, speed chart, and per-trip stats such as duration, max speed, SOC, and outside temperature
+  - Monthly totals and navigation for reviewing trips by period
 
 ### Changed
 - **Settings layout**: energy/charging preferences moved from "Preferences" card to dedicated "Energy & Charging Costs" card
