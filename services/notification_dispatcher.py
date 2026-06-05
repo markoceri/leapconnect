@@ -455,6 +455,8 @@ class NotificationDispatcher:
         self._soc_zero_observations: dict[str, dict[str, float | int]] = {}
         self._soc_zero_persist_seconds: float = 120.0
         self._soc_zero_persist_samples: int = 6
+        # vin -> previous charging state (for charge_interrupted transition detection)
+        self._was_charging: dict[str, bool] = {}
         # Per-event cooldowns: (vin, event_type) -> last_notification_time
         self._cooldowns: dict[tuple[str, str], float] = {}
         self._cooldown_seconds: float = 300.0  # 5 min default
@@ -1161,6 +1163,7 @@ class NotificationDispatcher:
         is_parked = status.is_parked if hasattr(status, "is_parked") else None
         is_locked = status.is_locked if hasattr(status, "is_locked") else None
         is_charging = status.is_charging if hasattr(status, "is_charging") else None
+        is_regening = status.is_regening if hasattr(status, "is_regening") else None
         ignition_on = (
             status.ignition.bcm_key_position_on3
             if hasattr(status, "ignition") and status.ignition
@@ -1228,21 +1231,73 @@ class NotificationDispatcher:
             self._last_soc[vin] = soc_for_alerts
 
         # --- Charge interrupted ---
-        if is_charging is False and soc_for_alerts is not None:
-            prev_soc = self._last_soc.get(vin)
-            # Only if we were previously tracking charging
-            # This will be caught by charge_stop + soc below target
-            for channel_id in self._notifiers:
-                cfg = self._get_event_config(channel_id, "charge_interrupted")
-                soc_target = (cfg or {}).get("soc_target", 80)
-                if soc_for_alerts < soc_target and self._is_event_enabled(
-                    channel_id, "charge_interrupted"
-                ):
-                    # Check if charge_stop just happened (will be in the events list)
-                    results.append(
-                        ("charge_interrupted", {"soc_target": str(soc_target)})
-                    )
-                    break
+        # Only fire when a real charging session ended (not regen braking).
+        # Use the same gun-sensor + regen guard as charge_start/charge_stop,
+        # plus require an actual charging → not-charging transition.
+        prev_charging = self._was_charging.get(vin, False)
+        charge_stopped = (
+            is_charging is False
+            and prev_charging is True
+            and soc_for_alerts is not None
+        )
+        if charge_stopped:
+            # Regen guard
+            if is_regening:
+                _LOGGER.debug("Suppressing charge_interrupted — is_regening=True")
+            else:
+                # Gun sensor guard
+                batt = getattr(status, "battery", None)
+                gun_ok: bool | None = None
+                if batt:
+                    fast = getattr(batt, "is_charge_fast_gun_insert", None)
+                    slow = getattr(batt, "is_charge_slow_gun_insert", None)
+                    if fast is not None or slow is not None:
+                        gun_ok = (fast is True) or (slow is True)
+                if gun_ok is False:
+                    _LOGGER.debug("Suppressing charge_interrupted — no gun inserted")
+                elif gun_ok is None:
+                    # Fallback: check is_plugged
+                    is_plugged = getattr(status, "is_plugged", None)
+                    if not is_plugged:
+                        _LOGGER.debug(
+                            "Suppressing charge_interrupted — is_plugged=False"
+                        )
+                    else:
+                        # Gun data unavailable but is_plugged=True — allow
+                        for channel_id in self._notifiers:
+                            cfg = self._get_event_config(
+                                channel_id, "charge_interrupted"
+                            )
+                            soc_target = (cfg or {}).get("soc_target", 80)
+                            enabled = self._is_event_enabled(
+                                channel_id, "charge_interrupted"
+                            )
+                            if soc_for_alerts < soc_target and enabled:
+                                results.append(
+                                    (
+                                        "charge_interrupted",
+                                        {"soc_target": str(soc_target)},
+                                    )
+                                )
+                                break
+                else:
+                    # Gun inserted — real charger
+                    for channel_id in self._notifiers:
+                        cfg = self._get_event_config(channel_id, "charge_interrupted")
+                        soc_target = (cfg or {}).get("soc_target", 80)
+                        enabled = self._is_event_enabled(
+                            channel_id, "charge_interrupted"
+                        )
+                        if soc_for_alerts < soc_target and enabled:
+                            results.append(
+                                (
+                                    "charge_interrupted",
+                                    {"soc_target": str(soc_target)},
+                                )
+                            )
+                            break
+        # Track current charging state for next cycle
+        self._was_charging[vin] = bool(is_charging)
 
         # --- Range low ---
         if range_km is not None:
