@@ -208,6 +208,47 @@ class TelegramBotHandler:
             if odo:
                 lines.append(f"🛣️ Odometer: {odo:,.0f} km")
 
+        # Doors & Trunk
+        if hasattr(cached, "doors") and cached.doors:
+            d = cached.doors
+            door_names = {
+                "lbcm_driver_door_status": "Driver",
+                "rbcm_driver_door_status": "Passenger",
+                "lbcm_left_rear_door_status": "Rear L",
+                "rbcm_right_rear_door_status": "Rear R",
+            }
+            open_doors = [
+                label
+                for attr, label in door_names.items()
+                if getattr(d, attr, None) is True
+            ]
+            if open_doors:
+                lines.append(f"🚪 Doors open: <b>{', '.join(open_doors)}</b>")
+            else:
+                lines.append("🚪 Doors: <b>All closed</b>")
+
+            trunk_open = getattr(d, "bbcm_back_door_status", None) is True
+            lines.append(f"📦 Trunk: <b>{'Open' if trunk_open else 'Closed'}</b>")
+
+        # Windows
+        if hasattr(cached, "windows") and cached.windows:
+            w = cached.windows
+            win_positions = {
+                "left_front_window_percent": "Driver",
+                "right_front_window_percent": "Passenger",
+                "left_rear_window_percent": "Rear L",
+                "right_rear_window_percent": "Rear R",
+            }
+            open_windows = [
+                f"{label} {getattr(w, attr)}%"
+                for attr, label in win_positions.items()
+                if getattr(w, attr, None) and getattr(w, attr) > 0
+            ]
+            if open_windows:
+                lines.append(f"🪟 Windows: <b>{', '.join(open_windows)}</b>")
+            else:
+                lines.append("🪟 Windows: <b>All closed</b>")
+
         # Tires
         if hasattr(cached, "tires") and cached.tires:
             t = cached.tires

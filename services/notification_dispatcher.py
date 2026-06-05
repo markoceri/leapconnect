@@ -280,6 +280,14 @@ EVENT_CATALOG: list[dict] = [
 # Lookup map
 EVENT_CATALOG_MAP: dict[str, dict] = {e["event_type"]: e for e in EVENT_CATALOG}
 
+# Dynamic image policy: disabled by default except for key charging plug events.
+IMAGE_ENABLED_BY_DEFAULT_EVENTS: set[str] = {
+    "charge_start",
+    "charge_stop",
+    "plugged_in",
+    "unplugged",
+}
+
 # Events that come directly from TransitionDetector
 TRANSITION_EVENTS = {
     "charge_start",
@@ -443,6 +451,10 @@ class NotificationDispatcher:
         self._last_soc: dict[str, int] = {}
         # vin -> set of geofence IDs the vehicle is currently inside
         self._inside_geofences: dict[str, set[int]] = {}
+        # vin -> tracking state for temporary SOC=0 glitches
+        self._soc_zero_observations: dict[str, dict[str, float | int]] = {}
+        self._soc_zero_persist_seconds: float = 120.0
+        self._soc_zero_persist_samples: int = 6
         # Per-event cooldowns: (vin, event_type) -> last_notification_time
         self._cooldowns: dict[tuple[str, str], float] = {}
         self._cooldown_seconds: float = 300.0  # 5 min default
@@ -776,10 +788,19 @@ class NotificationDispatcher:
                 # Merge event config into context
                 event_config = self._get_event_config(channel_id, event_type) or {}
                 msg_context = {**context, **extra_context, **event_config}
+                send_dynamic_image = self._should_send_dynamic_image(
+                    channel_id=channel_id,
+                    event_type=event_type,
+                    event_config=event_config,
+                )
 
                 # Build notification
                 notification = await self._build_notification(
-                    event_type, vin, vehicle_name, msg_context
+                    event_type,
+                    vin,
+                    vehicle_name,
+                    msg_context,
+                    send_dynamic_image=send_dynamic_image,
                 )
                 if not notification:
                     continue
@@ -858,8 +879,18 @@ class NotificationDispatcher:
 
         # Use real VIN for image composition, fallback to "TEST"
         use_vin = vin or "TEST"
+        event_config = self._get_event_config(channel_id, event_type) or {}
+        send_dynamic_image = self._should_send_dynamic_image(
+            channel_id=channel_id,
+            event_type=event_type,
+            event_config=event_config,
+        )
         notification = await self._build_notification(
-            event_type, use_vin, "Test Vehicle", context
+            event_type,
+            use_vin,
+            "Test Vehicle",
+            context,
+            send_dynamic_image=send_dynamic_image,
         )
         if not notification:
             return False, "Failed to build notification"
@@ -1017,8 +1048,31 @@ class NotificationDispatcher:
         finally:
             self._tracking.pop(vin, None)
 
+    def _should_send_dynamic_image(
+        self,
+        channel_id: int,
+        event_type: str,
+        event_config: dict | None,
+    ) -> bool:
+        """Resolve whether a dynamic image should be attached for this event."""
+        catalog_entry = EVENT_CATALOG_MAP.get(event_type, {})
+        if not catalog_entry.get("has_image"):
+            return False
+
+        configured = (event_config or {}).get("send_dynamic_image")
+        if isinstance(configured, bool):
+            return configured
+
+        _ = channel_id  # reserved for future channel-specific defaults
+        return event_type in IMAGE_ENABLED_BY_DEFAULT_EVENTS
+
     async def _build_notification(
-        self, event_type: str, vin: str, vehicle_name: str, context: dict
+        self,
+        event_type: str,
+        vin: str,
+        vehicle_name: str,
+        context: dict,
+        send_dynamic_image: bool = False,
     ) -> Notification | None:
         """Compose a Notification object from template + context."""
         template = MESSAGE_TEMPLATES.get(event_type)
@@ -1036,7 +1090,11 @@ class NotificationDispatcher:
         # Get image if this event type supports it
         image: bytes | None = None
         catalog_entry = EVENT_CATALOG_MAP.get(event_type, {})
-        if catalog_entry.get("has_image") and self._image_composer:
+        if (
+            send_dynamic_image
+            and catalog_entry.get("has_image")
+            and self._image_composer
+        ):
             try:
                 image = await self._image_composer(vin)
             except Exception as exc:
@@ -1077,6 +1135,29 @@ class NotificationDispatcher:
             lat = status.location.latitude
             lon = status.location.longitude
         soc = status.battery.soc if status.battery else None
+        soc_for_alerts = soc
+        if soc == 0:
+            obs = self._soc_zero_observations.get(vin)
+            now_mono = time.monotonic()
+            if obs is None:
+                obs = {"first_seen": now_mono, "count": 1}
+                self._soc_zero_observations[vin] = obs
+            else:
+                obs["count"] = int(obs.get("count", 0)) + 1
+
+            elapsed = now_mono - float(obs["first_seen"])
+            count = int(obs["count"])
+            is_persistent_zero = (
+                elapsed >= self._soc_zero_persist_seconds
+                or count >= self._soc_zero_persist_samples
+            )
+
+            # Ignore one-off/brief 0% SOC glitches; accept only persistent zeros.
+            if not is_persistent_zero:
+                soc_for_alerts = None
+        else:
+            self._soc_zero_observations.pop(vin, None)
+
         is_parked = status.is_parked if hasattr(status, "is_parked") else None
         is_locked = status.is_locked if hasattr(status, "is_locked") else None
         is_charging = status.is_charging if hasattr(status, "is_charging") else None
@@ -1123,14 +1204,14 @@ class NotificationDispatcher:
             self._unlock_times.pop(vin, None)
 
         # --- SOC thresholds ---
-        if soc is not None:
+        if soc_for_alerts is not None:
             prev_soc = self._last_soc.get(vin)
             if prev_soc is not None:
                 # High threshold (crossing upward)
                 for channel_id in self._notifiers:
                     cfg = self._get_event_config(channel_id, "soc_threshold_high")
                     threshold = (cfg or {}).get("threshold", 80)
-                    if prev_soc < threshold <= soc:
+                    if prev_soc < threshold <= soc_for_alerts:
                         results.append(
                             ("soc_threshold_high", {"threshold": str(threshold)})
                         )
@@ -1139,22 +1220,22 @@ class NotificationDispatcher:
                 for channel_id in self._notifiers:
                     cfg = self._get_event_config(channel_id, "soc_threshold_low")
                     threshold = (cfg or {}).get("threshold", 20)
-                    if prev_soc >= threshold > soc:
+                    if prev_soc >= threshold > soc_for_alerts:
                         results.append(
                             ("soc_threshold_low", {"threshold": str(threshold)})
                         )
                         break
-            self._last_soc[vin] = soc
+            self._last_soc[vin] = soc_for_alerts
 
         # --- Charge interrupted ---
-        if is_charging is False and soc is not None:
+        if is_charging is False and soc_for_alerts is not None:
             prev_soc = self._last_soc.get(vin)
             # Only if we were previously tracking charging
             # This will be caught by charge_stop + soc below target
             for channel_id in self._notifiers:
                 cfg = self._get_event_config(channel_id, "charge_interrupted")
                 soc_target = (cfg or {}).get("soc_target", 80)
-                if soc < soc_target and self._is_event_enabled(
+                if soc_for_alerts < soc_target and self._is_event_enabled(
                     channel_id, "charge_interrupted"
                 ):
                     # Check if charge_stop just happened (will be in the events list)

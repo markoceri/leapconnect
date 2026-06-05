@@ -415,6 +415,37 @@ class TelegramNotifier(BaseNotifier):
                 )
                 return
 
+        # For /status, attach the dynamic car image by default (if available).
+        if cmd == "status":
+            vin = self._bot_handler.get_vin()
+            image_composer = getattr(
+                getattr(self, "_dispatcher", None), "_image_composer", None
+            )
+            if vin and image_composer:
+                try:
+                    image = await image_composer(vin)
+                    if image:
+                        caption = (
+                            response[:1020] + "..."
+                            if len(response) > 1024
+                            else response
+                        )
+                        files = {
+                            "photo": ("vehicle.png", BytesIO(image), "image/png"),
+                        }
+                        data = {
+                            "chat_id": chat_id,
+                            "caption": caption,
+                            "parse_mode": "HTML",
+                        }
+                        photo_resp = await client.post(
+                            f"{self._base_url}/sendPhoto", data=data, files=files
+                        )
+                        if photo_resp.status_code == 200:
+                            return
+                except Exception as exc:
+                    _LOGGER.debug("Failed to send /status photo: %s", exc)
+
         # For /notifications, include inline keyboard
         payload = {
             "chat_id": chat_id,

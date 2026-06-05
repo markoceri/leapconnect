@@ -37,8 +37,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Settings layout**: energy/charging preferences moved from "Preferences" card to dedicated "Energy & Charging Costs" card
 - **Preferences API**: extended with `has_solar_panels` and `home_pricing_mode` fields
 - **History tab**: removed tier-specific KPIs (moved to dedicated Charging tab)
+- **Dynamic car image in notifications — selective defaults**: the dynamic vehicle image is now disabled by default for most notification events. It remains enabled by default only for the four key charging plug events: `charge_start`, `charge_stop`, `plugged_in`, `unplugged`. A per-event "Dynamic image" toggle in Settings → Notifications lets the user override each event individually.
+- **Telegram bot `/status` command now sends dynamic car image**: the `/status` command attaches the current vehicle state image as a photo with the text status as caption. Falls back gracefully to text-only if image composition fails.
+- **Telegram bot `/status` command now shows doors, trunk, and windows**: the status overview always reports door state ("All closed" or which are open), trunk state ("Open"/"Closed"), and window state ("All closed" or open percentages like "Driver 50%").
 
 ### Fixed
+- **False "SOC below threshold" notification on transient 0% glitches**: the notification dispatcher now ignores brief SOC=0 spikes (e.g. when unlocking after a long park). A 0% value must persist for at least 120 seconds or 6 consecutive samples before it is treated as a genuine low-battery condition and allowed to trigger `soc_threshold_low` alerts.
 - **Regen energy always showing 0 in trips/details** — `battery_charging_power_kw`, `battery_discharge_power_kw`, and `vehicle_is_regening` were missing from the scheduler's history and transition poll snapshots, leaving `charging_power_kw` column always NULL in the database. The retrieval fallback in `sqlite_adapter` only computed charging power when `is_charging` was True (vehicle-level, always False during regen). Fixed by storing the battery power fields from `BatteryStatus.charging_power_kw` / `discharging_power_kw` in both poll methods, adding `vehicle_is_regening` to the history poll snapshot, and extending the retrieval fallback to also compute charging power when `is_regening` is True
 
 ## [0.8.2] - 2026-06-02

@@ -811,8 +811,17 @@
                   <ToggleSwitch :modelValue="evt.enabled" @update:modelValue="toggleEvent(evt, $event)" />
                 </div>
               </div>
-              <!-- Configurable options shown directly under each event -->
-              <div v-if="evt.configurable && evt.enabled" class="notif-event-config">
+              <!-- Event options shown directly under each event -->
+              <div v-if="evt.enabled && (evt.configurable || evt.has_image)" class="notif-event-config">
+                <div v-if="evt.has_image" class="interval-row" style="margin-top:4px">
+                  <span class="interval-label">Dynamic image</span>
+                  <div class="interval-control">
+                    <ToggleSwitch
+                      :modelValue="getEventImageEnabled(evt)"
+                      @update:modelValue="setEventImageEnabled(evt, $event)"
+                    />
+                  </div>
+                </div>
                 <div v-for="(schema, paramKey) in evt.config_schema" :key="paramKey" class="interval-row" style="margin-top:4px">
                   <span class="interval-label">{{ schema.label || paramKey }}</span>
                   <div class="interval-control">
@@ -2019,6 +2028,13 @@ const eventCategories = [
   { key: 'maintenance', label: 'Maintenance' },
 ]
 
+const defaultDynamicImageEvents = new Set([
+  'charge_start',
+  'charge_stop',
+  'plugged_in',
+  'unplugged',
+])
+
 const filteredEventsByCategory = computed(() => {
   const q = eventSearch.value.toLowerCase().trim()
   const map = {}
@@ -2154,9 +2170,21 @@ function getEventConfigValue(evt, paramKey, defaultVal) {
   return evt.config?.[paramKey] ?? defaultVal
 }
 
+function getEventImageEnabled(evt) {
+  if (!evt?.has_image) return false
+  const configured = evt.config?.send_dynamic_image
+  if (typeof configured === 'boolean') return configured
+  return defaultDynamicImageEvents.has(evt.event_type)
+}
+
 function setEventConfigValue(evt, paramKey, value) {
   if (!evt.config) evt.config = {}
   evt.config[paramKey] = Number(value)
+}
+
+function setEventImageEnabled(evt, enabled) {
+  if (!evt.config) evt.config = {}
+  evt.config.send_dynamic_image = !!enabled
 }
 
 async function loadNotifications() {
@@ -2368,7 +2396,13 @@ async function saveEventPreferences() {
     const preferences = notifEvents.value.map(e => ({
       event_type: e.event_type,
       enabled: e.enabled,
-      config: e.config || null,
+      config: (() => {
+        const cfg = { ...(e.config || {}) }
+        if (e.has_image) {
+          cfg.send_dynamic_image = getEventImageEnabled(e)
+        }
+        return Object.keys(cfg).length ? cfg : null
+      })(),
     }))
     await api('PUT', '/api/notifications/events', { channel_id: telegramChannel.value.id, preferences })
     eventsSuccess.value = 'Preferences saved'
