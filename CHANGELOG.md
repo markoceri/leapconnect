@@ -8,12 +8,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- **Multi-tier charging cost system** — configurable price tiers for home grid, home solar, public AC, and public DC charging:
-  - New Settings card "Energy & Charging Costs" in General section
-  - Solar panels toggle (enables/disables home solar tier)
-  - Home pricing mode: flat rate or time-of-use bands
-  - Configurable time-of-use bands with day/time schedule and per-band pricing
-  - Per-tier price editing with save functionality
 - **New dedicated Charging tab** — full-page view with:
   - Session detection from vehicle snapshots (battery_is_charging transitions)
   - KPI cards: total energy, cost, home grid/solar/public breakdown
@@ -23,6 +17,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Time-of-use bands energy distribution visualization
   - Monthly summary table
   - Editable session list with tier assignment (create/update cost records)
+- **Multi-tier charging cost system** — configurable price tiers for home grid, home solar, public AC, and public DC charging:
+  - New Settings card "Energy & Charging Costs" in General section
+  - Solar panels toggle (enables/disables home solar tier)
+  - Home pricing mode: flat rate or time-of-use bands (e.g. Italian ARERA bands F1/F2/F3)
+  - Configurable time-of-use bands with day/time schedule and per-band pricing
 - **Automatic tier detection on charge events** — the scheduler detects AC/DC charging and assigns the appropriate cost tier when a session starts/stops
 - **Dashboard active tier indicator** — shows the current charging tier badge in the charging widget during active sessions
 - **Dashboard charge-start toast** — notification when charging begins with tier info
