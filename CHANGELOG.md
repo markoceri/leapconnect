@@ -42,6 +42,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Comparison insights**: efficiency analysis (kWh/100km, regen), performance metrics (distance, duration, avg speed), conditions (outside temperature), and a combined ranking with score explanation
   - **Backend similarity engine**: haversine-based route matching, circular 24h time-of-day scoring, distance tolerance gating (±40%), and fuzzy gpskey fallback for downsampled trip boundaries
   - **New API endpoint**: `GET /api/vehicles/{vin}/trips/similar` with configurable date range and result limit
+- **Vehicle Maintenance & Health** — full-service tracker with model-aware schedules, service logging, and proactive reminders:
+  - **Maintenance tab** in the main navigation (Wrench icon) with:
+    - Dashboard summary: overdue/upcoming counters, next action card, model badge
+    - Service Plan table: all maintenance items with category, interval, priority, last done, and due columns
+    - Inline editing: interval, trigger mode (km/time/both), priority, last-done km, enabled/disabled toggle
+    - Recent Service Records history with date, mileage, provider, cost
+    - Log Service modal with date picker, mileage field, cost, provider, and notes
+    - "Use current" button to fetch live odometer reading from the vehicle API
+    - Delete confirmation modal (reuses existing ConfirmDialog component)
+  - **Model-aware maintenance rules** — schedules automatically loaded per vehicle model:
+    - T03: 21 factory-specified service items extracted from the user manual (brakes, tires, drivetrain, climate, battery, body, electrical)
+    - B10: 13 items (medium-confidence, inferred from manual text)
+    - C10 BEV: 13 items
+    - C10 REEV (hybrid): 17 items including engine-specific services (oil, air filter, spark plugs, fuel filter)
+    - **C10 variant auto-detection**: heuristic based on allocation_code, fuel-heating ability, car_type string; manual fallback with persisted per-VIN override
+  - **Service logging** — record completed interventions with date, mileage, cost, provider, and notes:
+    - Auto-updates the plan item's `last_done` fields on log
+    - Deleting a record recalculates `last_done` from the latest remaining record (or clears it)
+  - **Overdue/upcoming computation** — per-item status based on km thresholds and time elapsed, with configurable trigger mode (km-only, time-only, either, or both)
+  - **Notification events** extended:
+    - `maintenance_upcoming` — service due soon (configurable warning days)
+    - `maintenance_overdue` — service past due date/mileage
+    - `maintenance_critical` — urgent overdue items
+    - Message templates with service label, remaining/overdue days, vehicle name
+  - **Database migration 0009**: added `maintenance_plan_items` and `maintenance_records` tables with indexes and unique constraint
+  - **New API endpoints**:
+    - `GET /api/vehicles/{vin}/maintenance/model` — resolve vehicle model and variant
+    - `POST /api/vehicles/{vin}/maintenance/model` — override C10 variant (bev/reev)
+    - `GET /api/vehicles/{vin}/maintenance/rules` — get maintenance rules for resolved model
+    - `GET /api/vehicles/{vin}/maintenance/plan` — get (auto-generated on first access) service plan
+    - `PUT /api/vehicles/{vin}/maintenance/plan/{service_type}` — edit a plan item
+    - `GET /api/vehicles/{vin}/maintenance/records` — list service records
+    - `POST /api/vehicles/{vin}/maintenance/records` — log a completed service
+    - `DELETE /api/vehicles/{vin}/maintenance/records/{record_id}` — delete a record (with plan recalculation)
+    - `GET /api/vehicles/{vin}/maintenance/overview` — full dashboard with counts, plan, records, next action, current km
+    - `GET /api/vehicles/{vin}/maintenance/current-mileage` — fetch live odometer from vehicle API
 
 ### Changed
 - **Settings layout**: energy/charging preferences moved from "Preferences" card to dedicated "Energy & Charging Costs" card

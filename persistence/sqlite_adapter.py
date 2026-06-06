@@ -236,6 +236,47 @@ class ChargingSessionCostRow(Base):
 
 
 # ---------------------------------------------------------------------------
+# Maintenance
+# ---------------------------------------------------------------------------
+
+
+class MaintenancePlanItemRow(Base):
+    """An editable maintenance plan item for a single vehicle."""
+
+    __tablename__ = "maintenance_plan_items"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    vin = Column(String(20), nullable=False, index=True)
+    service_type = Column(String(64), nullable=False)
+    label = Column(String(128), nullable=False)
+    category = Column(String(32), nullable=False, default="other")
+    interval_km = Column(Integer, nullable=True)
+    interval_months = Column(Integer, nullable=True)
+    trigger_mode = Column(String(8), nullable=False, default="or")
+    priority = Column(String(16), nullable=False, default="routine")
+    last_done_km = Column(Integer, nullable=True)
+    last_done_date = Column(DateTime, nullable=True)
+    enabled = Column(Boolean, nullable=False, default=True)
+    notes = Column(String(256), nullable=True)
+
+
+class MaintenanceRecordRow(Base):
+    """A completed maintenance intervention (service log)."""
+
+    __tablename__ = "maintenance_records"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    vin = Column(String(20), nullable=False, index=True)
+    service_type = Column(String(64), nullable=False)
+    label = Column(String(128), nullable=False)
+    timestamp = Column(DateTime, nullable=False, index=True)
+    mileage_km = Column(Integer, nullable=True)
+    cost = Column(Float, nullable=True)
+    provider = Column(String(128), nullable=True)
+    notes = Column(String(256), nullable=True)
+
+
+# ---------------------------------------------------------------------------
 # Adapter
 # ---------------------------------------------------------------------------
 
@@ -306,13 +347,42 @@ class SQLAlchemyVehicleHistoryRepository(VehicleHistoryRepository):
         head_rev = script.get_current_head()
 
         if current_rev != head_rev:
+            # Detect tables that may have been pre-created by Base.metadata.create_all
+            # but whose migrations haven't been stamped yet.
+            _known_create_all_tables = {
+                "maintenance_plan_items",
+                "maintenance_records",
+            }
+            existing_tables = set(inspector.get_table_names())
+            pre_created = _known_create_all_tables & existing_tables
 
-            def do_upgrade(revision, context):
-                return script._upgrade_revs(head_rev, revision)
+            if pre_created:
+                # Tables already exist from create_all — stamp to head to
+                # avoid "table already exists" errors from Alembic.
+                _LOGGER = __import__("logging").getLogger(__name__)
+                _LOGGER.info(
+                    "Tables %s already present — stamping Alembic to head (%s)",
+                    pre_created,
+                    head_rev,
+                )
+                sync_conn.execute(
+                    text("DELETE FROM alembic_version"),
+                )
+                sync_conn.execute(
+                    text("INSERT INTO alembic_version (version_num) VALUES (:rev)"),
+                    {"rev": head_rev},
+                )
 
-            with Operations.context(context):
-                context._migrations_fn = do_upgrade
-                context.run_migrations()
+            # Re-check after possible stamp
+            current_rev = context.get_current_revision()
+            if current_rev != head_rev:
+
+                def do_upgrade(revision, context):
+                    return script._upgrade_revs(head_rev, revision)
+
+                with Operations.context(context):
+                    context._migrations_fn = do_upgrade
+                    context.run_migrations()
 
     async def close(self) -> None:
         await self._engine.dispose()
@@ -1340,3 +1410,172 @@ class SQLAlchemyVehicleHistoryRepository(VehicleHistoryRepository):
             await session.delete(row)
             await session.commit()
             return True
+
+    # -- maintenance ----------------------------------------------------------
+
+    async def get_maintenance_plan(self, vin: str) -> list:
+        """Return all plan items for a vehicle, ordered by priority then category."""
+        from models import MaintenancePlanItem
+
+        priority_order = {"urgent": 0, "important": 1, "routine": 2}
+        async with self._session_factory() as session:
+            stmt = (
+                select(MaintenancePlanItemRow)
+                .where(
+                    MaintenancePlanItemRow.vin == vin,
+                    MaintenancePlanItemRow.enabled == True,  # noqa: E712
+                )
+                .order_by(MaintenancePlanItemRow.category, MaintenancePlanItemRow.id)
+            )
+            result = await session.execute(stmt)
+            rows = result.scalars().all()
+            items = [
+                MaintenancePlanItem(
+                    id=r.id,
+                    vin=r.vin,
+                    service_type=r.service_type,
+                    label=r.label,
+                    category=r.category,
+                    interval_km=r.interval_km,
+                    interval_months=r.interval_months,
+                    trigger_mode=r.trigger_mode,
+                    priority=r.priority,
+                    last_done_km=r.last_done_km,
+                    last_done_date=r.last_done_date,
+                    enabled=r.enabled,
+                    notes=r.notes,
+                )
+                for r in rows
+            ]
+            # Sort: urgent first, then important, then routine
+            items.sort(key=lambda i: priority_order.get(i.priority, 99))
+            return items
+
+    async def upsert_maintenance_plan_item(self, vin: str, item) -> None:
+        """Insert or update a single plan item (keyed by vin + service_type)."""
+        async with self._session_factory() as session:
+            stmt = select(MaintenancePlanItemRow).where(
+                MaintenancePlanItemRow.vin == vin,
+                MaintenancePlanItemRow.service_type == item.service_type,
+            )
+            result = await session.execute(stmt)
+            existing = result.scalar_one_or_none()
+
+            if existing:
+                # Update fields that are provided
+                if item.label:
+                    existing.label = item.label
+                if item.category:
+                    existing.category = item.category
+                if item.interval_km is not None:
+                    existing.interval_km = item.interval_km
+                if item.interval_months is not None:
+                    existing.interval_months = item.interval_months
+                if item.trigger_mode:
+                    existing.trigger_mode = item.trigger_mode
+                if item.priority:
+                    existing.priority = item.priority
+                if item.last_done_km is not None:
+                    existing.last_done_km = item.last_done_km
+                if item.last_done_date is not None:
+                    existing.last_done_date = item.last_done_date
+                if item.enabled is not None:
+                    existing.enabled = item.enabled
+                if item.notes is not None:
+                    existing.notes = item.notes
+            else:
+                row = MaintenancePlanItemRow(
+                    vin=vin,
+                    service_type=item.service_type,
+                    label=item.label or item.service_type,
+                    category=item.category or "other",
+                    interval_km=item.interval_km,
+                    interval_months=item.interval_months,
+                    trigger_mode=item.trigger_mode or "or",
+                    priority=item.priority or "routine",
+                    last_done_km=item.last_done_km,
+                    last_done_date=item.last_done_date,
+                    enabled=item.enabled if item.enabled is not None else True,
+                    notes=item.notes,
+                )
+                session.add(row)
+
+            await session.commit()
+
+    async def get_maintenance_records(
+        self, vin: str, *, service_type: str | None = None, limit: int = 20
+    ) -> list:
+        """Return completed maintenance records, newest first."""
+        from models import MaintenanceRecord
+
+        async with self._session_factory() as session:
+            conditions = [MaintenanceRecordRow.vin == vin]
+            if service_type:
+                conditions.append(MaintenanceRecordRow.service_type == service_type)
+            stmt = (
+                select(MaintenanceRecordRow)
+                .where(*conditions)
+                .order_by(MaintenanceRecordRow.timestamp.desc())
+                .limit(limit)
+            )
+            result = await session.execute(stmt)
+            rows = result.scalars().all()
+            return [
+                MaintenanceRecord(
+                    id=r.id,
+                    vin=r.vin,
+                    service_type=r.service_type,
+                    label=r.label,
+                    timestamp=r.timestamp,
+                    mileage_km=r.mileage_km,
+                    cost=r.cost,
+                    provider=r.provider,
+                    notes=r.notes,
+                )
+                for r in rows
+            ]
+
+    async def save_maintenance_record(self, record) -> None:
+        """Persist a completed maintenance record."""
+        async with self._session_factory() as session:
+            row = MaintenanceRecordRow(
+                vin=record.vin,
+                service_type=record.service_type,
+                label=record.label,
+                timestamp=record.timestamp or datetime.now(UTC),
+                mileage_km=record.mileage_km,
+                cost=record.cost,
+                provider=record.provider,
+                notes=record.notes,
+            )
+            session.add(row)
+            await session.commit()
+            record.id = row.id
+
+    async def delete_maintenance_record(self, record_id: int) -> None:
+        """Delete a maintenance record by id."""
+        async with self._session_factory() as session:
+            row = await session.get(MaintenanceRecordRow, record_id)
+            if row:
+                await session.delete(row)
+                await session.commit()
+
+    async def get_maintenance_record(self, record_id: int) -> object | None:
+        """Get a single maintenance record by id."""
+        from models import MaintenanceRecord
+
+        async with self._session_factory() as session:
+            row = await session.get(MaintenanceRecordRow, record_id)
+            if row is None:
+                return None
+            return MaintenanceRecord(
+                id=row.id,
+                vin=row.vin,
+                service_type=row.service_type,
+                label=row.label,
+                timestamp=row.timestamp,
+                mileage_km=row.mileage_km,
+                cost=row.cost,
+                provider=row.provider,
+                notes=row.notes,
+            )

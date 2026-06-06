@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from leapmotor_api.models import (
     ChargeRecord,
     ConsumptionLastWeekBreakdown,
@@ -1033,3 +1035,73 @@ class TelegramLinkTokenResponse(BaseModel):
     token: str
     link: str
     expires_at: str
+
+
+# ---------------------------------------------------------------------------
+# Maintenance
+# ---------------------------------------------------------------------------
+
+
+class MaintenancePlanItemResponse(BaseModel):
+    id: int
+    vin: str = ""
+    service_type: str
+    label: str
+    category: str
+    interval_km: int | None = None
+    interval_months: int | None = None
+    trigger_mode: str = "or"
+    priority: str = "routine"
+    last_done_km: int | None = None
+    last_done_date: datetime | None = None
+    enabled: bool = True
+    notes: str | None = None
+
+
+class MaintenancePlanItemUpdate(BaseModel):
+    enabled: bool | None = None
+    interval_km: int | None = None
+    interval_months: int | None = None
+    trigger_mode: str | None = None
+    priority: str | None = None
+    last_done_km: int | None = None
+    last_done_date: datetime | None = None
+    notes: str | None = None
+
+
+class MaintenanceRecordResponse(BaseModel):
+    id: int
+    vin: str = ""
+    service_type: str
+    label: str
+    timestamp: datetime | None = None
+    mileage_km: int | None = None
+    cost: float | None = None
+    provider: str | None = None
+    notes: str | None = None
+
+
+class MaintenanceRecordCreate(BaseModel):
+    service_type: str
+    label: str = ""
+    timestamp: datetime | None = None
+    mileage_km: int | None = None
+    cost: float | None = None
+    provider: str | None = None
+    notes: str | None = None
+    # If True, update the corresponding plan item's last_done fields
+    update_plan_item: bool = True
+
+
+class MaintenanceOverviewResponse(BaseModel):
+    model_key: str
+    display_name: str
+    variant: str | None = None
+    current_km: int | None = None
+    total_items: int = 0
+    upcoming_count: int = 0
+    overdue_count: int = 0
+    critical_count: int = 0
+    next_item: MaintenancePlanItemResponse | None = None
+    plan: list[MaintenancePlanItemResponse] = []
+    recent_records: list[MaintenanceRecordResponse] = []

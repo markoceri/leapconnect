@@ -247,3 +247,59 @@ class ChargingSessionCost:
     peak_power_kw: float | None = None
     cost: float | None = None
     note: str | None = None
+
+
+# ---------------------------------------------------------------------------
+# Maintenance
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class MaintenancePlanItem:
+    """A single maintenance service item in a vehicle's plan (editable)."""
+
+    id: int | None = None
+    vin: str = ""
+    service_type: str = ""
+    label: str = ""
+    category: str = ""
+    interval_km: int | None = None
+    interval_months: int | None = None
+    trigger_mode: str = "or"  # "or" | "km" | "time" | "and"
+    priority: str = "routine"  # "routine" | "important" | "urgent"
+    last_done_km: int | None = None
+    last_done_date: datetime | None = None
+    enabled: bool = True
+    notes: str | None = None
+
+
+@dataclass
+class MaintenanceRecord:
+    """A completed maintenance intervention (service log entry)."""
+
+    id: int | None = None
+    vin: str = ""
+    service_type: str = ""
+    label: str = ""
+    timestamp: datetime | None = None
+    mileage_km: int | None = None
+    cost: float | None = None
+    provider: str | None = None
+    notes: str | None = None
+
+
+@dataclass
+class MaintenanceAlert:
+    """Computed alert for an upcoming or overdue maintenance item."""
+
+    plan_item_id: int
+    service_type: str
+    label: str
+    category: str
+    priority: str
+    status: str  # "upcoming" | "overdue" | "critical"
+    due_km: int | None = None
+    due_date: datetime | None = None
+    current_km: int | None = None
+    remaining_km: int | None = None
+    remaining_days: int | None = None

@@ -79,3 +79,31 @@ class VehicleHistoryRepository(abc.ABC):
         event_type: str | None = None,
     ) -> list[VehicleEvent]:
         """Return events for *vin* over the last *days* days."""
+
+    # -- maintenance ----------------------------------------------------------
+
+    @abc.abstractmethod
+    async def get_maintenance_plan(self, vin: str) -> list:
+        """Return all plan items for a vehicle, ordered by priority then category."""
+
+    @abc.abstractmethod
+    async def upsert_maintenance_plan_item(self, vin: str, item) -> None:
+        """Insert or update a single plan item (keyed by vin + service_type)."""
+
+    @abc.abstractmethod
+    async def get_maintenance_records(
+        self, vin: str, *, service_type: str | None = None, limit: int = 20
+    ) -> list:
+        """Return completed maintenance records, newest first."""
+
+    @abc.abstractmethod
+    async def save_maintenance_record(self, record) -> None:
+        """Persist a completed maintenance record."""
+
+    @abc.abstractmethod
+    async def delete_maintenance_record(self, record_id: int) -> None:
+        """Delete a maintenance record by id."""
+
+    @abc.abstractmethod
+    async def get_maintenance_record(self, record_id: int) -> object | None:
+        """Get a single maintenance record by id."""

@@ -68,6 +68,11 @@ from schemas import (
     GeofenceUpdate,
     LiveRefreshStatusResponse,
     LoginResponse,
+    MaintenanceOverviewResponse,
+    MaintenancePlanItemResponse,
+    MaintenancePlanItemUpdate,
+    MaintenanceRecordCreate,
+    MaintenanceRecordResponse,
     MessageListResponse,
     MessageSchema,
     MqttStatusResponse,
@@ -97,6 +102,10 @@ from schemas import (
     VehicleStatusSchema,
 )
 from services.abrp import AbrpService
+from services.maintenance_resolver import (
+    get_maintenance_rules,
+    resolve_model,
+)
 from services.mqtt_ha import HomeAssistantMqttService
 from services.notification_dispatcher import (
     EVENT_CATALOG,
@@ -1724,6 +1733,402 @@ async def get_full_vehicle_data(vin: str) -> FullVehicleDataResponse:
         status_raw=status.raw if status else None,
         cache_age_seconds=_vehicle_cache.cache_age(vin) if _vehicle_cache else None,
     )
+
+
+# ---------------------------------------------------------------------------
+# Routes — Maintenance: model resolution
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/vehicles/{vin}/maintenance/model")
+async def get_vehicle_maintenance_model(vin: str) -> dict:
+    """Resolve the vehicle model for maintenance purposes.
+
+    Returns the canonical model key, display name, variant (if C10),
+    confidence level, and whether the user needs to confirm the C10 variant.
+    """
+    vehicle = _find_vehicle(vin)
+    result = resolve_model(vehicle)
+    return result
+
+
+@app.post("/api/vehicles/{vin}/maintenance/model")
+async def set_vehicle_maintenance_model(vin: str, body: dict) -> dict:
+    """Override the C10 variant choice for a vehicle.
+
+    Accepts JSON body: {"variant": "bev" | "reev"}
+    Persisted per VIN via app settings.
+    """
+    variant = body.get("variant")
+    if variant not in ("bev", "reev"):
+        raise HTTPException(status_code=400, detail="variant must be 'bev' or 'reev'")
+
+    vehicle = _find_vehicle(vin)
+    # Persist the override
+    if _history_repo:
+        await _history_repo.save_setting(f"c10_variant_{vin}", variant)
+
+    # Re-resolve with the override applied
+    base = resolve_model(vehicle)
+    if variant == "reev":
+        base["model_key"] = "C10_REEV"
+        base["display_name"] = "Leapmotor C10 REEV"
+        base["variant"] = "reev"
+    else:
+        base["model_key"] = "C10"
+        base["display_name"] = "Leapmotor C10"
+        base["variant"] = "bev"
+    base["confidence"] = "manual"
+    base["needs_confirmation"] = False
+    base["detection_reason"] = "user_override"
+    return base
+
+
+@app.get("/api/vehicles/{vin}/maintenance/rules")
+async def get_vehicle_maintenance_rules(vin: str) -> dict:
+    """Return the maintenance rules/templates applicable to this vehicle."""
+    vehicle = _find_vehicle(vin)
+    model_info = resolve_model(vehicle)
+
+    # Check for user override of C10 variant
+    if model_info.get("needs_confirmation") and _history_repo:
+        override = await _history_repo.get_setting(f"c10_variant_{vin}")
+        if override in ("bev", "reev"):
+            model_info["model_key"] = "C10_REEV" if override == "reev" else "C10"
+            model_info["variant"] = override
+            model_info["confidence"] = "manual"
+            model_info["needs_confirmation"] = False
+
+    model_key = model_info.get("model_key", "unknown")
+    rules = get_maintenance_rules(model_key)
+
+    if rules is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No maintenance rules found for model '{model_key}'",
+        )
+
+    return {
+        "model": model_info,
+        "rules": rules,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Routes — Maintenance Plan (CRUD)
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/vehicles/{vin}/maintenance/plan")
+async def get_maintenance_plan(vin: str) -> list:
+    """Get the maintenance plan for a vehicle. Auto-generates from catalog if empty."""
+    if not _history_repo:
+        raise HTTPException(status_code=503, detail="Persistence not available")
+
+    items = await _history_repo.get_maintenance_plan(vin)
+
+    # Auto-generate plan from catalog if empty
+    if not items:
+        vehicle = _find_vehicle(vin)
+        model_info = resolve_model(vehicle)
+        model_key = model_info.get("model_key", "unknown")
+        rules = get_maintenance_rules(model_key)
+        if rules and "items" in rules:
+            __import__("logging").getLogger(__name__).info(
+                "Auto-generating maintenance plan for VIN=%s model=%s", vin, model_key
+            )
+            from models import MaintenancePlanItem
+
+            for r in rules["items"]:
+                item = MaintenancePlanItem(
+                    vin=vin,
+                    service_type=r["service_type"],
+                    label=r["label"],
+                    category=r.get("category", "other"),
+                    interval_km=r.get("interval_km"),
+                    interval_months=r.get("interval_months"),
+                    trigger_mode=r.get("trigger_mode", "or"),
+                    priority=r.get("priority", "routine"),
+                )
+                await _history_repo.upsert_maintenance_plan_item(vin, item)
+        items = await _history_repo.get_maintenance_plan(vin)
+
+    return [MaintenancePlanItemResponse(**item.__dict__) for item in items]
+
+
+@app.put("/api/vehicles/{vin}/maintenance/plan/{service_type}")
+async def update_maintenance_plan_item(
+    vin: str, service_type: str, body: MaintenancePlanItemUpdate
+):
+    """Update a single maintenance plan item."""
+    if not _history_repo:
+        raise HTTPException(status_code=503, detail="Persistence not available")
+
+    from models import MaintenancePlanItem
+
+    item = MaintenancePlanItem(
+        vin=vin,
+        service_type=service_type,
+        label="",
+        enabled=body.enabled,
+        interval_km=body.interval_km,
+        interval_months=body.interval_months,
+        trigger_mode=body.trigger_mode,
+        priority=body.priority,
+        last_done_km=body.last_done_km,
+        last_done_date=body.last_done_date,
+        notes=body.notes,
+    )
+    await _history_repo.upsert_maintenance_plan_item(vin, item)
+
+    # Return the updated item
+    plan = await _history_repo.get_maintenance_plan(vin)
+    for p in plan:
+        if p.service_type == service_type:
+            return MaintenancePlanItemResponse(**p.__dict__)
+
+    raise HTTPException(status_code=404, detail="Plan item not found after upsert")
+
+
+# ---------------------------------------------------------------------------
+# Routes — Maintenance Records (CRUD)
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/vehicles/{vin}/maintenance/records")
+async def get_maintenance_records(
+    vin: str, service_type: str | None = None, limit: int = 20
+) -> list:
+    """Get completed maintenance records for a vehicle."""
+    if not _history_repo:
+        raise HTTPException(status_code=503, detail="Persistence not available")
+
+    records = await _history_repo.get_maintenance_records(
+        vin, service_type=service_type, limit=limit
+    )
+    return [MaintenanceRecordResponse(**r.__dict__) for r in records]
+
+
+@app.post("/api/vehicles/{vin}/maintenance/records")
+async def create_maintenance_record(vin: str, body: MaintenanceRecordCreate):
+    """Log a completed maintenance intervention.
+
+    If update_plan_item is True (default), the corresponding plan item's
+    last_done_km and last_done_date are updated automatically.
+    """
+    if not _history_repo:
+        raise HTTPException(status_code=503, detail="Persistence not available")
+
+    from models import MaintenanceRecord
+
+    record = MaintenanceRecord(
+        vin=vin,
+        service_type=body.service_type,
+        label=body.label or body.service_type,
+        timestamp=body.timestamp or datetime.now(UTC),
+        mileage_km=body.mileage_km,
+        cost=body.cost,
+        provider=body.provider,
+        notes=body.notes,
+    )
+    await _history_repo.save_maintenance_record(record)
+
+    # Auto-update plan item's last-done fields
+    if body.update_plan_item and _history_repo:
+        from models import MaintenancePlanItem
+
+        update = MaintenancePlanItem(
+            vin=vin,
+            service_type=body.service_type,
+            label="",
+            last_done_km=body.mileage_km,
+            last_done_date=record.timestamp,
+        )
+        await _history_repo.upsert_maintenance_plan_item(vin, update)
+
+    return MaintenanceRecordResponse(**record.__dict__)
+
+
+@app.delete("/api/vehicles/{vin}/maintenance/records/{record_id}")
+async def delete_maintenance_record(vin: str, record_id: int) -> dict:
+    """Delete a maintenance record and recalculate the plan item's last-done."""
+    if not _history_repo:
+        raise HTTPException(status_code=503, detail="Persistence not available")
+
+    existing = await _history_repo.get_maintenance_record(record_id)
+    if existing is None or existing.vin != vin:
+        raise HTTPException(status_code=404, detail="Record not found")
+
+    service_type = existing.service_type
+    await _history_repo.delete_maintenance_record(record_id)
+
+    # Recalculate plan item's last_done from the latest remaining record
+    if _history_repo:
+        remaining = await _history_repo.get_maintenance_records(
+            vin, service_type=service_type, limit=1
+        )
+        from models import MaintenancePlanItem
+
+        if remaining:
+            latest = remaining[0]
+            update = MaintenancePlanItem(
+                vin=vin,
+                service_type=service_type,
+                label="",
+                last_done_km=latest.mileage_km,
+                last_done_date=latest.timestamp,
+            )
+        else:
+            # No records left — clear last_done
+            update = MaintenancePlanItem(
+                vin=vin,
+                service_type=service_type,
+                label="",
+                last_done_km=None,
+                last_done_date=None,
+            )
+        await _history_repo.upsert_maintenance_plan_item(vin, update)
+
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Routes — Maintenance Overview
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/vehicles/{vin}/maintenance/overview")
+async def get_maintenance_overview(vin: str):
+    """Get a summary overview: model, plan, upcoming/overdue counts, next action."""
+    if not _history_repo:
+        raise HTTPException(status_code=503, detail="Persistence not available")
+
+    vehicle = _find_vehicle(vin)
+    model_info = resolve_model(vehicle)
+
+    # Apply variant override
+    if model_info.get("needs_confirmation") and _history_repo:
+        override = await _history_repo.get_setting(f"c10_variant_{vin}")
+        if override in ("bev", "reev"):
+            model_info["model_key"] = "C10_REEV" if override == "reev" else "C10"
+            model_info["variant"] = override
+            model_info["confidence"] = "manual"
+            model_info["needs_confirmation"] = False
+
+    plan = await _history_repo.get_maintenance_plan(vin)
+
+    # Auto-generate plan from catalog if empty
+    if not plan:
+        model_key = model_info.get("model_key", "unknown")
+        rules = get_maintenance_rules(model_key)
+        if rules and "items" in rules:
+            _LOGGER.info(
+                "Auto-generating maintenance plan for VIN=%s model=%s", vin, model_key
+            )
+            from models import MaintenancePlanItem
+
+            for r in rules["items"]:
+                item = MaintenancePlanItem(
+                    vin=vin,
+                    service_type=r["service_type"],
+                    label=r["label"],
+                    category=r.get("category", "other"),
+                    interval_km=r.get("interval_km"),
+                    interval_months=r.get("interval_months"),
+                    trigger_mode=r.get("trigger_mode", "or"),
+                    priority=r.get("priority", "routine"),
+                )
+                await _history_repo.upsert_maintenance_plan_item(vin, item)
+        plan = await _history_repo.get_maintenance_plan(vin)
+
+    records = await _history_repo.get_maintenance_records(vin, limit=5)
+
+    # Compute upcoming/overdue counts using the resolver's rules
+    from datetime import timedelta
+
+    now_utc = datetime.now(UTC).replace(tzinfo=None)  # naive UTC for DB comparison
+
+    upcoming = 0
+    overdue = 0
+    critical = 0
+    next_item = None
+
+    current_km = None
+    if _vehicle_cache:
+        try:
+            status = await _vehicle_cache.get(vehicle)
+            current_km = (
+                status.driving.total_mileage if (status and status.driving) else None
+            )
+        except Exception:
+            current_km = None
+
+    for item in plan:
+        if not item.enabled:
+            continue
+        due_km = None
+        if item.last_done_km is not None and item.interval_km:
+            due_km = item.last_done_km + item.interval_km
+
+        due_date = None
+        if item.last_done_date and item.interval_months:
+            due_date = item.last_done_date + timedelta(days=item.interval_months * 30)
+
+        # Determine status
+        status = "ok"
+        if (
+            due_km
+            and current_km is not None
+            and current_km >= due_km
+            or due_date
+            and due_date <= now_utc
+        ):
+            status = "overdue"
+
+        if status == "ok" and due_km and current_km is not None:
+            warn_km = max(item.interval_km * 0.15, 1000) if item.interval_km else 2000
+            if current_km >= due_km - warn_km:
+                status = "upcoming"
+
+        if status == "overdue":
+            overdue += 1
+            if item.priority == "urgent":
+                critical += 1
+        elif status == "upcoming":
+            upcoming += 1
+
+        if status in ("upcoming", "overdue") and next_item is None:
+            next_item = MaintenancePlanItemResponse(**item.__dict__)
+
+    return MaintenanceOverviewResponse(
+        model_key=model_info.get("model_key", "unknown"),
+        display_name=model_info.get("display_name", "Unknown"),
+        variant=model_info.get("variant"),
+        current_km=current_km,
+        total_items=len(plan),
+        upcoming_count=upcoming,
+        overdue_count=overdue,
+        critical_count=critical,
+        next_item=next_item,
+        plan=[MaintenancePlanItemResponse(**item.__dict__) for item in plan],
+        recent_records=[MaintenanceRecordResponse(**r.__dict__) for r in records],
+    )
+
+
+@app.get("/api/vehicles/{vin}/maintenance/current-mileage")
+async def get_current_mileage(vin: str) -> dict:
+    """Return the vehicle's current odometer reading (km),
+    fetched fresh from the API."""
+    client = _get_client()
+    vehicle = _find_vehicle(vin)
+
+    try:
+        status = await client.get_vehicle_status(vehicle)
+        mileage = status.driving.total_mileage if (status and status.driving) else None
+    except LeapmotorApiError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    return {"vin": vin, "mileage_km": mileage}
 
 
 # ---------------------------------------------------------------------------

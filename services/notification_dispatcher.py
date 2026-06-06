@@ -275,6 +275,45 @@ EVENT_CATALOG: list[dict] = [
             }
         },
     },
+    # -- Maintenance reminders ------------------------------------------------
+    {
+        "event_type": "maintenance_upcoming",
+        "label": "Service due soon",
+        "description": (
+            "Notify when a maintenance item is approaching its due date/mileage"
+        ),
+        "category": "maintenance",
+        "has_image": False,
+        "configurable": True,
+        "config_schema": {
+            "warn_days": {
+                "label": "Warning days before due",
+                "type": "number",
+                "default": 14,
+                "min": 1,
+                "max": 90,
+                "unit": "days",
+            },
+        },
+    },
+    {
+        "event_type": "maintenance_overdue",
+        "label": "Service overdue",
+        "description": "Notify when a maintenance item has passed its due date/mileage",
+        "category": "maintenance",
+        "has_image": False,
+        "configurable": True,
+        "config_schema": {},
+    },
+    {
+        "event_type": "maintenance_critical",
+        "label": "Critical maintenance",
+        "description": "Notify for urgent/critical overdue maintenance items",
+        "category": "maintenance",
+        "has_image": False,
+        "configurable": True,
+        "config_schema": {},
+    },
 ]
 
 # Lookup map
@@ -386,6 +425,32 @@ MESSAGE_TEMPLATES: dict[str, dict[str, str]] = {
     "range_low": {
         "title": "🪫 Low range",
         "body": "Estimated range: {range} km (threshold: {threshold_km} km)",
+    },
+    "maintenance_upcoming": {
+        "title": "🔧 Service due soon — {service_label}",
+        "body": (
+            "{service_label} is due in {remaining_days} days "
+            "({remaining_km} km remaining).\n"
+            "Due: {due_date}\n"
+            "Vehicle: {vehicle_name}"
+        ),
+    },
+    "maintenance_overdue": {
+        "title": "⚠️ Service overdue — {service_label}",
+        "body": (
+            "{service_label} is overdue by {overdue_days} days "
+            "({overdue_km} km over).\n"
+            "Due: {due_date}\n"
+            "Vehicle: {vehicle_name}"
+        ),
+    },
+    "maintenance_critical": {
+        "title": "🚨 Critical maintenance — {service_label}",
+        "body": (
+            "{service_label} is critically overdue!\n"
+            "Vehicle: {vehicle_name}\n"
+            "Please schedule service immediately."
+        ),
     },
 }
 
