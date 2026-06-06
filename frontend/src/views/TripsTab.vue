@@ -777,6 +777,14 @@ function destroySpeedChart() {
   }
 }
 
+function getChartColors() {
+  const s = getComputedStyle(document.documentElement)
+  return {
+    grid: s.getPropertyValue('--chart-grid').trim() || '#1c2135',
+    tick: s.getPropertyValue('--chart-tick').trim() || '#4a5468',
+  }
+}
+
 function renderSpeedChart() {
   destroySpeedChart()
   const canvas = speedCanvas.value
@@ -784,6 +792,7 @@ function renderSpeedChart() {
 
   const ctx = canvas.getContext('2d')
   const points = gpsPoints.value.filter(p => p.speed != null)
+  const cc = getChartColors()
 
   // Build labels: time if available, else index
   const labels = points.map((p, i) => {
@@ -832,12 +841,12 @@ function renderSpeedChart() {
       },
       scales: {
         x: {
-          ticks: { color: '#888', font: { size: 10 }, maxTicksLimit: 10 },
+          ticks: { color: cc.tick, font: { size: 10 }, maxTicksLimit: 10 },
           grid: { display: false },
         },
         y: {
-          ticks: { color: '#888', callback: v => v + ' km/h' },
-          grid: { color: 'rgba(255,255,255,0.05)' },
+          ticks: { color: cc.tick, callback: v => v + ' km/h' },
+          grid: { color: cc.grid },
           beginAtZero: true,
         },
       },
@@ -1086,9 +1095,9 @@ onBeforeUnmount(() => {
 .header-title p { font-size: 12px; color: var(--muted); margin: 2px 0 0; }
 .month-nav { display: flex; align-items: center; gap: 8px; }
 .month-label { font-size: 14px; font-weight: 600; color: var(--text); min-width: 130px; text-align: center; }
-.toolbar-btn { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 6px; color: var(--text); cursor: pointer; display: flex; align-items: center; }
+.toolbar-btn { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 6px; color: var(--text); cursor: pointer; display: flex; align-items: center; transition: all 0.15s; }
 .toolbar-btn:disabled { opacity: 0.4; cursor: default; }
-.toolbar-btn:hover:not(:disabled) { background: var(--bg2); }
+.toolbar-btn:hover:not(:disabled) { background: var(--btn-bg); color: var(--cyan); border-color: var(--cyan); }
 .toolbar-btn.active { border-color: var(--cyan); color: var(--cyan); }
 
 /* Compare bar */

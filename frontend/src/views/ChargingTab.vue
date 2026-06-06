@@ -447,9 +447,19 @@ function destroyCharts() {
   charts = []
 }
 
+function getChartColors() {
+  const s = getComputedStyle(document.documentElement)
+  return {
+    grid: s.getPropertyValue('--chart-grid').trim() || '#1c2135',
+    tick: s.getPropertyValue('--chart-tick').trim() || '#4a5468',
+    label: s.getPropertyValue('--label').trim() || '#6a748a',
+  }
+}
+
 function renderCharts() {
   destroyCharts()
   const sessions = [...filteredSessions.value].reverse() // chronological order (oldest first)
+  const cc = getChartColors()
 
   // Energy per session bar chart
   if (energyCanvas.value && sessions.length) {
@@ -480,8 +490,8 @@ function renderCharts() {
           },
         },
         scales: {
-          x: { ticks: { color: '#888', font: { size: 10 } }, grid: { display: false } },
-          y: { ticks: { color: '#888' }, grid: { color: 'rgba(255,255,255,0.05)' } },
+          x: { ticks: { color: cc.tick, font: { size: 10 } }, grid: { display: false } },
+          y: { ticks: { color: cc.tick }, grid: { color: cc.grid } },
         },
       },
     }))
@@ -515,8 +525,8 @@ function renderCharts() {
         responsive: true, maintainAspectRatio: false,
         plugins: { legend: { display: false } },
         scales: {
-          x: { ticks: { color: '#888', font: { size: 10 } }, grid: { display: false } },
-          y: { ticks: { color: '#888', callback: v => `€${v.toFixed(2)}` }, grid: { color: 'rgba(255,255,255,0.05)' } },
+          x: { ticks: { color: cc.tick, font: { size: 10 } }, grid: { display: false } },
+          y: { ticks: { color: cc.tick, callback: v => `€${v.toFixed(2)}` }, grid: { color: cc.grid } },
         },
       },
     }))
@@ -545,7 +555,7 @@ function renderCharts() {
       options: {
         responsive: true, maintainAspectRatio: false,
         plugins: {
-          legend: { position: 'bottom', labels: { color: '#aaa', font: { size: 11 } } },
+          legend: { position: 'bottom', labels: { color: cc.label, font: { size: 11 } } },
         },
       },
     }))
@@ -565,8 +575,9 @@ watch(selectedMonth, loadData)
 .header-title p { font-size: 12px; color: var(--muted); margin: 2px 0 0; }
 .month-nav { display: flex; align-items: center; gap: 8px; }
 .month-label { font-size: 14px; font-weight: 600; color: var(--text); min-width: 130px; text-align: center; }
-.toolbar-btn { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 6px; color: var(--text); cursor: pointer; display: flex; align-items: center; }
+.toolbar-btn { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 6px; color: var(--text); cursor: pointer; display: flex; align-items: center; transition: all 0.15s; }
 .toolbar-btn:disabled { opacity: 0.4; cursor: default; }
+.toolbar-btn:hover:not(:disabled) { background: var(--btn-bg); color: var(--cyan); border-color: var(--cyan); }
 
 /* KPI */
 .summary-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; margin-bottom: 16px; }
@@ -611,8 +622,8 @@ watch(selectedMonth, loadData)
 .session-date { font-size: 12px; font-weight: 500; color: var(--text); }
 .session-time { font-size: 11px; color: var(--muted); }
 .session-energy { min-width: 80px; }
-.session-val { font-size: 13px; font-weight: 600; color: #00e676; }
-.session-peak { display: block; font-size: 10px; font-weight: 400; color: #ff9100; margin-top: 1px; }
+.session-val { font-size: 13px; font-weight: 600; color: var(--green); }
+.session-peak { display: block; font-size: 10px; font-weight: 400; color: var(--amber); margin-top: 1px; }
 .session-tier { min-width: 80px; }
 .tier-badge { font-size: 10px; padding: 2px 6px; border-radius: 4px; font-weight: 500; }
 .tier-home_grid { background: rgba(102,187,106,0.15); color: #66bb6a; }
@@ -620,7 +631,7 @@ watch(selectedMonth, loadData)
 .tier-public_ac { background: rgba(66,165,245,0.15); color: #42a5f5; }
 .tier-public_dc { background: rgba(124,106,255,0.15); color: #7c6aff; }
 .tier-none { background: rgba(136,136,136,0.1); color: #888; }
-.session-cost { min-width: 60px; font-size: 13px; font-weight: 600; color: #ffd54f; }
+.session-cost { min-width: 60px; font-size: 13px; font-weight: 600; color: var(--amber); }
 .cost-none { color: var(--muted); }
 .edit-btn { background: none; border: 1px solid var(--border); border-radius: 6px; padding: 4px 6px; color: var(--muted); cursor: pointer; display: flex; align-items: center; }
 .edit-btn:hover { color: var(--text); border-color: var(--text); }
@@ -632,10 +643,10 @@ watch(selectedMonth, loadData)
 .edit-date { font-size: 12px; color: var(--muted); margin-bottom: 16px; }
 .form-group { margin-bottom: 12px; }
 .form-group label { display: block; font-size: 11px; color: var(--muted); margin-bottom: 4px; }
-.form-group input, .form-group select { width: 100%; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; color: var(--text); font-size: 13px; }
+.form-group input, .form-group select { width: 100%; background: var(--input); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; color: var(--text); font-size: 13px; }
 .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
-.btn-cancel { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 8px 16px; color: var(--text); cursor: pointer; font-size: 13px; }
-.btn-save { background: #00e676; border: none; border-radius: 8px; padding: 8px 16px; color: #111; font-weight: 600; cursor: pointer; font-size: 13px; }
+.btn-cancel { background: var(--btn-bg); border: 1px solid var(--btn-border); border-radius: 8px; padding: 8px 16px; color: var(--muted); cursor: pointer; font-size: 13px; }
+.btn-save { background: var(--green); border: none; border-radius: 8px; padding: 8px 16px; color: #000; font-weight: 600; cursor: pointer; font-size: 13px; }
 .btn-save:disabled { opacity: 0.5; }
 .field-error { color: #ff5252; font-size: 12px; margin-top: 8px; }
 
