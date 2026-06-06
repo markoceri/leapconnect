@@ -10,6 +10,7 @@ import asyncio
 import base64
 import io
 import logging
+import math
 import os
 import secrets
 import shutil
@@ -17,7 +18,7 @@ import time
 import tomllib
 import zipfile
 from contextlib import asynccontextmanager, suppress
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile, WebSocket
@@ -3587,9 +3588,14 @@ def _build_trip_row(segment: list[VehicleSnapshot]) -> dict | None:
         "eneryConsume": int(round(energy_wh)),
         "recoveryEnery": int(round(_segment_regen_energy_wh(segment))),
         "maxSpeed": max((s.drive_speed or 0) for s in segment),
+        "avgSpeed": round(travel_km / duration_h, 1) if duration_h > 0 else 0,
         "startSoc": start.battery_soc,
         "endSoc": end.battery_soc,
         "outdoorTemp": start.climate_outdoor_temp,
+        "startLat": start.vehicle_latitude,
+        "startLng": start.vehicle_longitude,
+        "endLat": end.vehicle_latitude,
+        "endLng": end.vehicle_longitude,
         "gpskey": (
             f"{int(start.timestamp.timestamp())}_{int(end.timestamp.timestamp())}"
         ),
@@ -3717,9 +3723,14 @@ def _build_local_trip_payload(snapshots: list[VehicleSnapshot]) -> dict:
                 "eneryConsume": trip["eneryConsume"],
                 "recoveryEnery": trip["recoveryEnery"],
                 "maxSpeed": trip["maxSpeed"],
+                "avgSpeed": trip["avgSpeed"],
                 "startSoc": trip["startSoc"],
                 "endSoc": trip["endSoc"],
                 "outdoorTemp": trip["outdoorTemp"],
+                "startLat": trip["startLat"],
+                "startLng": trip["startLng"],
+                "endLat": trip["endLat"],
+                "endLng": trip["endLng"],
                 "gpskey": trip["gpskey"],
             }
         )
@@ -3777,6 +3788,170 @@ def _segment_regen_energy_wh(segment: list[VehicleSnapshot]) -> float:
             continue
         total += power_kw * dt_h * 1000  # kWh → Wh
     return round(total, 1)
+
+
+def _flatten_trip_rows(payload: dict) -> list[dict]:
+    return [
+        trip
+        for day in payload.get("data", [])
+        for trip in day.get("drivingRecord", [])
+        if isinstance(trip, dict)
+    ]
+
+
+def _trip_distance_km(trip: dict) -> float:
+    return max(0.0, (float(trip.get("travelMile") or 0.0)) / 1000.0)
+
+
+def _trip_duration_h(trip: dict) -> float:
+    try:
+        start_dt = datetime.strptime(trip["beginTime"], "%Y-%m-%d %H:%M:%S")
+        end_dt = datetime.strptime(trip["endTime"], "%Y-%m-%d %H:%M:%S")
+        return max(0.0, (end_dt - start_dt).total_seconds() / 3600.0)
+    except (KeyError, TypeError, ValueError):
+        return 0.0
+
+
+def _trip_start_hour(trip: dict) -> int | None:
+    try:
+        start_dt = datetime.strptime(trip["beginTime"], "%Y-%m-%d %H:%M:%S")
+        return start_dt.hour
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def _trip_consumption_kwh_100km(trip: dict) -> float | None:
+    km = _trip_distance_km(trip)
+    kwh = (float(trip.get("eneryConsume") or 0.0)) / 1000.0
+    if km <= 0:
+        return None
+    return (kwh / km) * 100.0
+
+
+def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    radius_km = 6371.0
+    p1 = math.radians(lat1)
+    p2 = math.radians(lat2)
+    d_lat = math.radians(lat2 - lat1)
+    d_lon = math.radians(lon2 - lon1)
+    a = (
+        math.sin(d_lat / 2) ** 2
+        + math.cos(p1) * math.cos(p2) * math.sin(d_lon / 2) ** 2
+    )
+    return radius_km * (2 * math.atan2(math.sqrt(a), math.sqrt(1 - a)))
+
+
+def _trip_similarity_breakdown(reference: dict, candidate: dict) -> dict:
+    ref_distance = _trip_distance_km(reference)
+    cand_distance = _trip_distance_km(candidate)
+
+    # Distance score: 1 when equal, 0 when difference >= 100% of reference.
+    if ref_distance <= 0:
+        distance_score = 0.0
+    else:
+        distance_score = 1.0 - min(
+            1.0, abs(cand_distance - ref_distance) / ref_distance
+        )
+
+    # Time score on circular 24h clock.
+    ref_hour = _trip_start_hour(reference)
+    cand_hour = _trip_start_hour(candidate)
+    if ref_hour is None or cand_hour is None:
+        time_score = 0.0
+    else:
+        hour_diff = abs(ref_hour - cand_hour)
+        hour_diff = min(hour_diff, 24 - hour_diff)
+        time_score = 1.0 - min(1.0, hour_diff / 12.0)
+
+    # Route score based on start/end distance; fallback if GPS anchors are missing.
+    route_score = 0.5
+    try:
+        ref_start = (float(reference["startLat"]), float(reference["startLng"]))
+        ref_end = (float(reference["endLat"]), float(reference["endLng"]))
+        cand_start = (float(candidate["startLat"]), float(candidate["startLng"]))
+        cand_end = (float(candidate["endLat"]), float(candidate["endLng"]))
+        start_d = _haversine_km(
+            ref_start[0],
+            ref_start[1],
+            cand_start[0],
+            cand_start[1],
+        )
+        end_d = _haversine_km(ref_end[0], ref_end[1], cand_end[0], cand_end[1])
+        avg_d = (start_d + end_d) / 2.0
+        route_score = 1.0 - min(1.0, avg_d / 30.0)
+    except (KeyError, TypeError, ValueError):
+        route_score = 0.5
+
+    score = 0.40 * route_score + 0.35 * time_score + 0.25 * distance_score
+
+    return {
+        "score": round(score, 4),
+        "breakdown": {
+            "route": round(route_score, 4),
+            "time": round(time_score, 4),
+            "distance": round(distance_score, 4),
+        },
+    }
+
+
+def _trip_compare_metrics(reference: dict, candidate: dict) -> dict:
+    ref_distance = _trip_distance_km(reference)
+    cand_distance = _trip_distance_km(candidate)
+    ref_duration = _trip_duration_h(reference)
+    cand_duration = _trip_duration_h(candidate)
+
+    ref_cons = _trip_consumption_kwh_100km(reference)
+    cand_cons = _trip_consumption_kwh_100km(candidate)
+    ref_regen = (float(reference.get("recoveryEnery") or 0.0)) / 1000.0
+    cand_regen = (float(candidate.get("recoveryEnery") or 0.0)) / 1000.0
+
+    ref_avg_speed = float(reference.get("avgSpeed") or 0.0)
+    cand_avg_speed = float(candidate.get("avgSpeed") or 0.0)
+    ref_temp = reference.get("outdoorTemp")
+    cand_temp = candidate.get("outdoorTemp")
+
+    return {
+        "efficiency": {
+            "consumption_kwh_100km": {
+                "reference": round(ref_cons, 2) if ref_cons is not None else None,
+                "candidate": round(cand_cons, 2) if cand_cons is not None else None,
+                "delta": round((cand_cons - ref_cons), 2)
+                if ref_cons is not None and cand_cons is not None
+                else None,
+            },
+            "regen_kwh": {
+                "reference": round(ref_regen, 3),
+                "candidate": round(cand_regen, 3),
+                "delta": round(cand_regen - ref_regen, 3),
+            },
+        },
+        "performance": {
+            "distance_km": {
+                "reference": round(ref_distance, 2),
+                "candidate": round(cand_distance, 2),
+                "delta": round(cand_distance - ref_distance, 2),
+            },
+            "duration_h": {
+                "reference": round(ref_duration, 2),
+                "candidate": round(cand_duration, 2),
+                "delta": round(cand_duration - ref_duration, 2),
+            },
+            "avg_speed_kmh": {
+                "reference": round(ref_avg_speed, 1),
+                "candidate": round(cand_avg_speed, 1),
+                "delta": round(cand_avg_speed - ref_avg_speed, 1),
+            },
+        },
+        "conditions": {
+            "outside_temp_c": {
+                "reference": ref_temp,
+                "candidate": cand_temp,
+                "delta": (cand_temp - ref_temp)
+                if ref_temp is not None and cand_temp is not None
+                else None,
+            },
+        },
+    }
 
 
 def _detect_local_charge_sessions(snapshots: list[VehicleSnapshot]) -> list[dict]:
@@ -3958,6 +4133,125 @@ async def get_trip_gps(vin: str, gpskey: str):
         )
     ]
     return points
+
+
+@app.get("/api/vehicles/{vin}/trips/similar")
+async def get_similar_trips(
+    vin: str,
+    gpskey: str,
+    limit: int = 3,
+    begin_time: str | None = None,
+    end_time: str | None = None,
+):
+    """Suggest trips similar to a reference trip.
+
+    Similarity score is composed by route (40%), time-of-day (35%), and
+    distance (25%).
+    """
+    from datetime import date as date_cls
+    from datetime import timedelta
+
+    if not _history_repo:
+        raise HTTPException(status_code=503, detail="History not available")
+
+    _find_vehicle(vin)
+    today = date_cls.today()
+    bt = _parse_range_date(begin_time) or (today - timedelta(days=90)).isoformat()
+    et = _parse_range_date(end_time) or today.isoformat()
+    snapshots = await _history_repo.get_history(
+        vin,
+        from_date=bt,
+        to_date=et,
+        max_points=50_000,
+    )
+    payload = _build_local_trip_payload(snapshots)
+    trips = _flatten_trip_rows(payload)
+
+    # Try exact gpskey match first; if downsampling shifted boundaries,
+    # fall back to fuzzy match using the timestamps embedded in gpskey.
+    reference = next((t for t in trips if t.get("gpskey") == gpskey), None)
+    if not reference:
+        try:
+            ref_start_ts, ref_end_ts = gpskey.split("_", 1)
+            ref_start = int(ref_start_ts)
+            ref_end = int(ref_end_ts)
+            # Allow ±120 seconds tolerance for downsampling-induced shifts
+            for t in trips:
+                t_start = t.get("beginTime", "")
+                t_end = t.get("endTime", "")
+                if not t_start or not t_end:
+                    continue
+                try:
+                    ts_s = int(
+                        datetime.strptime(t_start, "%Y-%m-%d %H:%M:%S")
+                        .replace(tzinfo=UTC)
+                        .timestamp()
+                    )
+                    ts_e = int(
+                        datetime.strptime(t_end, "%Y-%m-%d %H:%M:%S")
+                        .replace(tzinfo=UTC)
+                        .timestamp()
+                    )
+                except (ValueError, OSError):
+                    continue
+                if abs(ts_s - ref_start) <= 120 and abs(ts_e - ref_end) <= 120:
+                    reference = t
+                    break
+        except (ValueError, IndexError):
+            pass
+
+    if not reference:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Trip not found for gpskey={gpskey}",
+        )
+
+    candidates: list[dict] = []
+    ref_distance = _trip_distance_km(reference)
+    ref_hour = _trip_start_hour(reference)
+    for trip in trips:
+        if trip.get("gpskey") == gpskey:
+            continue
+
+        cand_distance = _trip_distance_km(trip)
+        if ref_distance > 0:
+            ratio = cand_distance / ref_distance if ref_distance else 0
+            if ratio < 0.6 or ratio > 1.4:
+                continue
+
+        cand_hour = _trip_start_hour(trip)
+        if ref_hour is not None and cand_hour is not None:
+            hour_diff = abs(ref_hour - cand_hour)
+            hour_diff = min(hour_diff, 24 - hour_diff)
+            if hour_diff > 6:
+                continue
+
+        similarity = _trip_similarity_breakdown(reference, trip)
+        metrics = _trip_compare_metrics(reference, trip)
+        candidates.append(
+            {
+                "trip": trip,
+                "similarity_score": similarity["score"],
+                "score_breakdown": similarity["breakdown"],
+                "metrics": metrics,
+            }
+        )
+
+    candidates.sort(
+        key=lambda c: (
+            c["similarity_score"],
+            c["trip"].get("beginTime", ""),
+        ),
+        reverse=True,
+    )
+    max_limit = max(1, min(int(limit or 3), 10))
+
+    return {
+        "source": "local_history",
+        "reference": reference,
+        "count": len(candidates),
+        "items": candidates[:max_limit],
+    }
 
 
 @app.get("/api/vehicles/{vin}/charge-stats/cloud")

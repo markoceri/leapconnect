@@ -35,6 +35,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Chronological trip list grouped by day with distance, energy use, regen energy, and consumption summary
   - Trip detail modal with GPS trace map, speed chart, and per-trip stats such as duration, max speed, SOC, and outside temperature
   - Monthly totals and navigation for reviewing trips by period
+- **Trip comparison** — compare driving records side-by-side to analyze efficiency, performance, and conditions:
+  - **Manual compare**: select any two trips from the trip list (even across different months) and compare them in a split-panel view with metric-by-metric deltas and insight cards
+  - **Similar trips suggestions**: from any trip detail, find trips with similar route (start/end proximity), time-of-day, and distance; grouped by month with a composite similarity score and breakdown (route 40%, time 35%, distance 25%)
+  - **Scoped search**: suggestions first search within the trip's own month, then offer to extend across all available data on demand
+  - **Comparison insights**: efficiency analysis (kWh/100km, regen), performance metrics (distance, duration, avg speed), conditions (outside temperature), and a combined ranking with score explanation
+  - **Backend similarity engine**: haversine-based route matching, circular 24h time-of-day scoring, distance tolerance gating (±40%), and fuzzy gpskey fallback for downsampled trip boundaries
+  - **New API endpoint**: `GET /api/vehicles/{vin}/trips/similar` with configurable date range and result limit
 
 ### Changed
 - **Settings layout**: energy/charging preferences moved from "Preferences" card to dedicated "Energy & Charging Costs" card
