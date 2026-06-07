@@ -166,7 +166,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, watch, nextTick } from 'vue'
+import { ref, computed, onMounted, watch, nextTick, onUnmounted } from 'vue'
 import { Chart, registerables } from 'chart.js'
 import { api } from '../composables/useApi'
 import { parseUTC } from '../utils/maintenance'
@@ -197,6 +197,7 @@ const energyCanvas = ref(null)
 const costCanvas = ref(null)
 const pieCanvas = ref(null)
 let charts = []
+let resizeTimeout
 
 // Month navigation
 const monthLabel = computed(() => {
@@ -577,8 +578,23 @@ function renderCharts() {
   }
 }
 
+// Resize handler with debounce
+function handleResize() {
+  clearTimeout(resizeTimeout)
+  resizeTimeout = setTimeout(() => {
+    renderCharts()
+  }, 300)
+}
+
 // Lifecycle
-onMounted(loadData)
+onMounted(() => {
+  loadData()
+  window.addEventListener('resize', handleResize)
+})
+onUnmounted(() => {
+  window.removeEventListener('resize', handleResize)
+  clearTimeout(resizeTimeout)
+})
 watch(() => props.vin, loadData)
 watch(selectedMonth, loadData)
 </script>
@@ -605,10 +621,10 @@ watch(selectedMonth, loadData)
 .summary-label { font-size: 10px; color: var(--muted); margin-top: 4px; }
 
 /* Charts */
-.charts-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; margin-bottom: 12px; }
+.charts-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px; margin-bottom: 12px; }
 .charts-grid-3 { grid-template-columns: 1fr; }
-@media (min-width: 860px) {
-  .charts-grid-3 { grid-template-columns: repeat(3, 1fr); }
+@media (min-width: 640px) {
+  .charts-grid-3 { grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
 }
 .chart-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 14px; }
 .chart-card.wide { grid-column: 1 / -1; }
@@ -670,13 +686,12 @@ watch(selectedMonth, loadData)
 @media (max-width: 640px) {
   .session-head { display: none; }
   .session-row {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: 1fr 1fr 1fr 1fr;
     gap: 8px 12px;
     padding: 12px;
     border: 1px solid var(--border);
     border-radius: 10px;
     margin-bottom: 8px;
-    position: relative;
   }
   .session-row:last-child { border-bottom: 1px solid var(--border); }
   .cell { display: flex; flex-direction: column; font-size: 13px; }
@@ -685,9 +700,14 @@ watch(selectedMonth, loadData)
     font-size: 9px; text-transform: uppercase; letter-spacing: 0.04em;
     color: var(--muted); margin-bottom: 2px; font-weight: 600;
   }
-  .cell-date { grid-column: 1 / -1; font-size: 14px; padding-right: 36px; }
-  .cell-time { grid-column: 1 / -1; }
-  .cell-edit { position: absolute; top: 10px; right: 10px; }
+  .cell-date { grid-column: 1; grid-row: 1; }
+  .cell-time { grid-column: 2; grid-row: 1; }
+  .cell-energy { grid-column: 1; grid-row: 2; }
+  .cell-peak { grid-column: 2; grid-row: 2; }
+  .cell-cost { grid-column: 3; grid-row: 2; }
+  .cell-tier { grid-column: 4; grid-row: 2; display: flex; align-items: center; width: fit-content; }
+  .tier-badge { display: inline-block; }
+  .cell-edit { grid-column: 4; grid-row: 1; justify-self: flex-end; }
 }
 
 /* Modal */
