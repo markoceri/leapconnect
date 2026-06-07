@@ -42,15 +42,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Comparison insights**: efficiency analysis (kWh/100km, regen), performance metrics (distance, duration, avg speed), conditions (outside temperature), and a combined ranking with score explanation
   - **Backend similarity engine**: haversine-based route matching, circular 24h time-of-day scoring, distance tolerance gating (±40%), and fuzzy gpskey fallback for downsampled trip boundaries
   - **New API endpoint**: `GET /api/vehicles/{vin}/trips/similar` with configurable date range and result limit
-- **Vehicle Maintenance & Health** — full-service tracker with model-aware schedules, service logging, and proactive reminders:
-  - **Maintenance tab** in the main navigation (Wrench icon) with:
-    - Dashboard summary: overdue/upcoming counters, next action card, model badge
-    - Service Plan table: all maintenance items with category, interval, priority, last done, and due columns
-    - Inline editing: interval, trigger mode (km/time/both), priority, last-done km, enabled/disabled toggle
-    - Recent Service Records history with date, mileage, provider, cost
-    - Log Service modal with date picker, mileage field, cost, provider, and notes
-    - "Use current" button to fetch live odometer reading from the vehicle API
-    - Delete confirmation modal (reuses existing ConfirmDialog component)
+- **Vehicle Maintenance & Health** — full-service tracker with model-aware schedules, community intervention library, service logging, and proactive reminders:
+  - **Maintenance tab** in the main navigation (Wrench icon) with a segmented control: **Overview** | **Interventions**
+  - **Overview**: static base vehicle image, hero status, KPI dashboard (overdue/upcoming counters, next action card, model badge), "Coming up" shortlist of overdue + due-soon interventions (≤ 2,000 km or ≤ 60 days), recent service records, and quick service logging
+  - **Interventions library**: full plan table (edit / log / remove, with source badges), plus:
+    - **Local** custom interventions — add your own, export as a shareable pack JSON, import from a file or raw URL
+    - **Remote** community repositories: add a GitHub repo, browse its maintenance packs, and explicitly import items into your plan with collision handling (update / keep both / skip)
+    - Official community repository ([leapconnect-maintenance-packs](https://github.com/markoceri/leapconnect-maintenance-packs)) pre-configured by default with factory schedules as versioned JSON packs, auto-registered on first use and hidden from the user repo list
   - **Model-aware maintenance rules** — schedules automatically loaded per vehicle model:
     - T03: 21 factory-specified service items extracted from the user manual (brakes, tires, drivetrain, climate, battery, body, electrical)
     - B10: 13 items (medium-confidence, inferred from manual text)
@@ -60,24 +58,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Service logging** — record completed interventions with date, mileage, cost, provider, and notes:
     - Auto-updates the plan item's `last_done` fields on log
     - Deleting a record recalculates `last_done` from the latest remaining record (or clears it)
-  - **Overdue/upcoming computation** — per-item status based on km thresholds and time elapsed, with configurable trigger mode (km-only, time-only, either, or both)
+  - **Overdue/upcoming computation** — per-item status based on km thresholds and time elapsed; configurable trigger mode (km-only, time-only, either, or both); server-computed alerts honouring each item's `trigger_mode`
+  - Plan items track their `source` (`catalog` / `repo` / `local`)
+  - Inline editing: interval, trigger mode, priority, last-done km, enabled/disabled toggle; Log Service modal with date picker, mileage field, cost, provider, notes; "Use current" button to fetch live odometer; delete confirmation modal
   - **Notification events** extended:
     - `maintenance_upcoming` — service due soon (configurable warning days)
     - `maintenance_overdue` — service past due date/mileage
     - `maintenance_critical` — urgent overdue items
     - Message templates with service label, remaining/overdue days, vehicle name
-  - **Database migration 0009**: added `maintenance_plan_items` and `maintenance_records` tables with indexes and unique constraint
-  - **New API endpoints**:
+  - **Database migrations**:
+    - **0009**: added `maintenance_plan_items` and `maintenance_records` tables with indexes and unique constraint
+    - **0010**: added `maintenance_repos` and `maintenance_packs` tables; added `source` / `source_ref` columns to `maintenance_plan_items`
+  - **API endpoints**:
     - `GET /api/vehicles/{vin}/maintenance/model` — resolve vehicle model and variant
     - `POST /api/vehicles/{vin}/maintenance/model` — override C10 variant (bev/reev)
     - `GET /api/vehicles/{vin}/maintenance/rules` — get maintenance rules for resolved model
     - `GET /api/vehicles/{vin}/maintenance/plan` — get (auto-generated on first access) service plan
     - `PUT /api/vehicles/{vin}/maintenance/plan/{service_type}` — edit a plan item
+    - `POST /api/vehicles/{vin}/maintenance/plan` — create a custom local intervention
+    - `DELETE /api/vehicles/{vin}/maintenance/plan/{service_type}` — remove an item from the plan
+    - `POST /api/vehicles/{vin}/maintenance/plan/import` — explicit import with conflict strategy
+    - `GET /api/vehicles/{vin}/maintenance/export` — download local items as a shareable pack
+    - `GET /api/vehicles/{vin}/maintenance/library` — aggregated catalog + local + community packs with `in_plan` flags
     - `GET /api/vehicles/{vin}/maintenance/records` — list service records
     - `POST /api/vehicles/{vin}/maintenance/records` — log a completed service
     - `DELETE /api/vehicles/{vin}/maintenance/records/{record_id}` — delete a record (with plan recalculation)
-    - `GET /api/vehicles/{vin}/maintenance/overview` — full dashboard with counts, plan, records, next action, current km
+    - `GET /api/vehicles/{vin}/maintenance/overview` — full dashboard with counts, plan, records, next action, current km, and `due_soon` shortlist
     - `GET /api/vehicles/{vin}/maintenance/current-mileage` — fetch live odometer from vehicle API
+    - `GET/POST/DELETE /api/maintenance/repos`, `POST /api/maintenance/repos/{id}/refresh`, `GET /api/maintenance/repos/{id}/packs`
+    - `POST /api/maintenance/packs/import` (repo+slug / raw URL / inline) and `POST /api/maintenance/upload` (file)
 
 ### Changed
 - **Navigation menu refactor**:
