@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import io
+import json
 import logging
 import math
 import os
@@ -68,11 +69,23 @@ from schemas import (
     GeofenceUpdate,
     LiveRefreshStatusResponse,
     LoginResponse,
+    MaintenanceAlertResponse,
+    MaintenanceCostSummary,
+    MaintenanceCustomItemCreate,
+    MaintenanceLibraryItem,
+    MaintenanceLibraryResponse,
     MaintenanceOverviewResponse,
+    MaintenancePackImportRequest,
+    MaintenancePackResponse,
+    MaintenancePlanImportRequest,
+    MaintenancePlanImportResult,
     MaintenancePlanItemResponse,
     MaintenancePlanItemUpdate,
     MaintenanceRecordCreate,
     MaintenanceRecordResponse,
+    MaintenanceRecordUpdate,
+    MaintenanceRepoCreate,
+    MaintenanceRepoResponse,
     MessageListResponse,
     MessageSchema,
     MqttStatusResponse,
@@ -102,9 +115,25 @@ from schemas import (
     VehicleStatusSchema,
 )
 from services.abrp import AbrpService
-from services.maintenance_resolver import (
-    get_maintenance_rules,
-    resolve_model,
+from services.maintenance_community import (
+    CommunityError,
+    discover_repo,
+    fetch_pack_file,
+    fetch_pack_url,
+)
+from services.maintenance_resolver import resolve_model
+from services.maintenance_service import (
+    OFFICIAL_REPO_URL,
+    PACK_SCHEMA,
+    compute_alerts,
+    compute_cost_summary,
+    due_soon_alerts,
+    ensure_plan_generated,
+    factory_items_for_model,
+    normalize_pack,
+    official_pack_for_model,
+    pack_applies_to_model,
+    summarize,
 )
 from services.mqtt_ha import HomeAssistantMqttService
 from services.notification_dispatcher import (
@@ -196,6 +225,27 @@ _vehicles: list[Vehicle] = []
 _connected: bool = False
 _picture_cache: dict[str, dict[str, str]] = {}  # vin -> {filename: data-URI}
 _image_packages: dict[str, CarImagePackage] = {}  # vin -> CarImagePackage
+
+# On-disk cache for the static vehicle image, so it is fetched from the
+# Leapmotor cloud only once per vehicle and then served from local storage.
+_VEHICLE_IMAGE_DIR = DATA_DIR / "vehicle_images"
+_IMAGE_MEDIA_TYPES = {
+    "png": "image/png",
+    "jpg": "image/jpeg",
+    "jpeg": "image/jpeg",
+    "webp": "image/webp",
+}
+
+
+def _cached_vehicle_image(vin: str) -> Path | None:
+    """Return the locally-cached image file for a VIN, or None if not cached."""
+    if _VEHICLE_IMAGE_DIR.is_dir():
+        for path in _VEHICLE_IMAGE_DIR.glob(f"{vin}.*"):
+            if path.is_file():
+                return path
+    return None
+
+
 _history_repo: SQLAlchemyVehicleHistoryRepository | None = None
 _scheduler: VehicleDataScheduler | None = None
 _mqtt_service: HomeAssistantMqttService | None = None
@@ -1396,10 +1446,30 @@ async def download_picture(vin: str, key: str) -> Response:
 
 
 @app.get("/api/vehicles/{vin}/picture/image")
-async def get_picture_image(vin: str) -> Response:
-    """Download the car picture ZIP, extract and serve the main image."""
-    client = _get_client()
+async def get_picture_image(vin: str, refresh: bool = False) -> Response:
+    """Serve the main car image, caching it on the server's local disk.
+
+    The image is downloaded from the Leapmotor cloud only on the first request
+    per vehicle (or when ``refresh=1``); afterwards it is served from local
+    storage without contacting the cloud.
+    """
     vehicle = _find_vehicle(vin)
+
+    # Serve from local disk if already cached.
+    if not refresh:
+        cached = _cached_vehicle_image(vin)
+        if cached is not None:
+            media_type = _IMAGE_MEDIA_TYPES.get(
+                cached.suffix.lstrip(".").lower(), "image/png"
+            )
+            return Response(
+                content=cached.read_bytes(),
+                media_type=media_type,
+                headers={"Cache-Control": "public, max-age=86400"},
+            )
+
+    # Cache miss — fetch from the cloud once.
+    client = _get_client()
     picture_data = await client.get_car_picture(vehicle)
     key = (picture_data.get("data") or {}).get("key")
     if not key:
@@ -1430,18 +1500,23 @@ async def get_picture_image(vin: str) -> Response:
         img_name = "image.png"
 
     ext = img_name.rsplit(".", 1)[-1].lower()
-    media_types = {
-        "png": "image/png",
-        "jpg": "image/jpeg",
-        "jpeg": "image/jpeg",
-        "webp": "image/webp",
-    }
-    media_type = media_types.get(ext, "image/png")
+    if ext not in _IMAGE_MEDIA_TYPES:
+        ext = "png"
+    media_type = _IMAGE_MEDIA_TYPES[ext]
+
+    # Persist to local disk for subsequent requests (best-effort).
+    try:
+        _VEHICLE_IMAGE_DIR.mkdir(parents=True, exist_ok=True)
+        for stale in _VEHICLE_IMAGE_DIR.glob(f"{vin}.*"):
+            stale.unlink()
+        (_VEHICLE_IMAGE_DIR / f"{vin}.{ext}").write_bytes(img_data)
+    except OSError as exc:
+        _LOGGER.warning("Could not cache vehicle image for %s: %s", vin, exc)
 
     return Response(
         content=img_data,
         media_type=media_type,
-        headers={"Cache-Control": "public, max-age=3600"},
+        headers={"Cache-Control": "public, max-age=86400"},
     )
 
 
@@ -1740,6 +1815,71 @@ async def get_full_vehicle_data(vin: str) -> FullVehicleDataResponse:
 # ---------------------------------------------------------------------------
 
 
+async def _resolve_maintenance_model(vin: str, vehicle) -> dict:
+    """Resolve the vehicle model, applying any persisted C10 variant override."""
+    model_info = resolve_model(vehicle)
+    if model_info.get("needs_confirmation") and _history_repo:
+        override = await _history_repo.get_setting(f"c10_variant_{vin}")
+        if override in ("bev", "reev"):
+            model_info["model_key"] = "C10_REEV" if override == "reev" else "C10"
+            model_info["variant"] = override
+            model_info["confidence"] = "manual"
+            model_info["needs_confirmation"] = False
+    return model_info
+
+
+async def _current_mileage_cached(vehicle) -> int | None:
+    """Best-effort current odometer reading from the status cache."""
+    if not _vehicle_cache:
+        return None
+    try:
+        status = await _vehicle_cache.get(vehicle)
+        return status.driving.total_mileage if (status and status.driving) else None
+    except Exception:
+        return None
+
+
+async def _ensure_official_packs() -> list:
+    """Return the official factory packs, registering the official repo on first use.
+
+    The factory maintenance schedule lives in the community repo (no embedded
+    catalog). This lazily registers and caches it. On any network/parse failure
+    it logs and returns whatever is cached (possibly empty) so the app degrades
+    gracefully instead of erroring.
+    """
+    if not _history_repo:
+        return []
+    repo = await _history_repo.get_maintenance_repo_by_url(OFFICIAL_REPO_URL)
+    if repo is None:
+        from models import MaintenanceRepo
+
+        try:
+            discovered = await discover_repo(OFFICIAL_REPO_URL)
+        except CommunityError as exc:
+            _LOGGER.warning("Official maintenance repo unavailable: %s", exc)
+            return []
+        repo = MaintenanceRepo(
+            type=discovered["type"],
+            url=discovered["url"],
+            name=discovered["name"],
+            author=discovered["author"],
+            description=discovered.get("description"),
+            branch=discovered["branch"],
+            added_at=datetime.now(UTC),
+            last_fetched_at=datetime.now(UTC),
+            status="ok",
+            manifest=discovered["packs"],
+        )
+        repo = await _history_repo.save_maintenance_repo(repo)
+        await _cache_repo_packs(repo)
+    return await _history_repo.list_maintenance_packs(repo.id)
+
+
+async def _factory_items(model_key: str) -> list[dict]:
+    """Return the factory service items for a model from the official packs."""
+    return factory_items_for_model(await _ensure_official_packs(), model_key)
+
+
 @app.get("/api/vehicles/{vin}/maintenance/model")
 async def get_vehicle_maintenance_model(vin: str) -> dict:
     """Resolve the vehicle model for maintenance purposes.
@@ -1786,31 +1926,25 @@ async def set_vehicle_maintenance_model(vin: str, body: dict) -> dict:
 
 @app.get("/api/vehicles/{vin}/maintenance/rules")
 async def get_vehicle_maintenance_rules(vin: str) -> dict:
-    """Return the maintenance rules/templates applicable to this vehicle."""
+    """Return the official factory maintenance schedule applicable to this vehicle."""
     vehicle = _find_vehicle(vin)
-    model_info = resolve_model(vehicle)
-
-    # Check for user override of C10 variant
-    if model_info.get("needs_confirmation") and _history_repo:
-        override = await _history_repo.get_setting(f"c10_variant_{vin}")
-        if override in ("bev", "reev"):
-            model_info["model_key"] = "C10_REEV" if override == "reev" else "C10"
-            model_info["variant"] = override
-            model_info["confidence"] = "manual"
-            model_info["needs_confirmation"] = False
+    model_info = await _resolve_maintenance_model(vin, vehicle)
 
     model_key = model_info.get("model_key", "unknown")
-    rules = get_maintenance_rules(model_key)
+    pack = official_pack_for_model(await _ensure_official_packs(), model_key)
 
-    if rules is None:
+    if pack is None:
         raise HTTPException(
             status_code=404,
-            detail=f"No maintenance rules found for model '{model_key}'",
+            detail=(
+                f"No official factory schedule found for model '{model_key}'. "
+                "The official maintenance repository may be unreachable."
+            ),
         )
 
     return {
         "model": model_info,
-        "rules": rules,
+        "rules": pack.payload,
     }
 
 
@@ -1825,33 +1959,11 @@ async def get_maintenance_plan(vin: str) -> list:
     if not _history_repo:
         raise HTTPException(status_code=503, detail="Persistence not available")
 
-    items = await _history_repo.get_maintenance_plan(vin)
-
-    # Auto-generate plan from catalog if empty
-    if not items:
-        vehicle = _find_vehicle(vin)
-        model_info = resolve_model(vehicle)
-        model_key = model_info.get("model_key", "unknown")
-        rules = get_maintenance_rules(model_key)
-        if rules and "items" in rules:
-            __import__("logging").getLogger(__name__).info(
-                "Auto-generating maintenance plan for VIN=%s model=%s", vin, model_key
-            )
-            from models import MaintenancePlanItem
-
-            for r in rules["items"]:
-                item = MaintenancePlanItem(
-                    vin=vin,
-                    service_type=r["service_type"],
-                    label=r["label"],
-                    category=r.get("category", "other"),
-                    interval_km=r.get("interval_km"),
-                    interval_months=r.get("interval_months"),
-                    trigger_mode=r.get("trigger_mode", "or"),
-                    priority=r.get("priority", "routine"),
-                )
-                await _history_repo.upsert_maintenance_plan_item(vin, item)
-        items = await _history_repo.get_maintenance_plan(vin)
+    vehicle = _find_vehicle(vin)
+    model_info = await _resolve_maintenance_model(vin, vehicle)
+    model_key = model_info.get("model_key", "unknown")
+    factory = await _factory_items(model_key)
+    items = await ensure_plan_generated(_history_repo, vin, factory)
 
     return [MaintenancePlanItemResponse(**item.__dict__) for item in items]
 
@@ -1949,6 +2061,48 @@ async def create_maintenance_record(vin: str, body: MaintenanceRecordCreate):
     return MaintenanceRecordResponse(**record.__dict__)
 
 
+async def _recalc_plan_last_done(vin: str, service_type: str) -> None:
+    """Set the plan item's last_done to its most recent remaining record.
+
+    Uses ``set_plan_item_last_done`` (not upsert) so last_done is cleared to
+    NULL when no records remain.
+    """
+    remaining = await _history_repo.get_maintenance_records(
+        vin, service_type=service_type, limit=1
+    )
+    latest = remaining[0] if remaining else None
+    await _history_repo.set_plan_item_last_done(
+        vin,
+        service_type,
+        last_done_km=latest.mileage_km if latest else None,
+        last_done_date=latest.timestamp if latest else None,
+    )
+
+
+@app.put("/api/vehicles/{vin}/maintenance/records/{record_id}")
+async def edit_maintenance_record(
+    vin: str, record_id: int, body: MaintenanceRecordUpdate
+):
+    """Update a maintenance record and recalculate the plan item's last-done."""
+    if not _history_repo:
+        raise HTTPException(status_code=503, detail="Persistence not available")
+
+    existing = await _history_repo.get_maintenance_record(record_id)
+    if existing is None or existing.vin != vin:
+        raise HTTPException(status_code=404, detail="Record not found")
+
+    updated = await _history_repo.update_maintenance_record(
+        record_id,
+        timestamp=body.timestamp,
+        mileage_km=body.mileage_km,
+        cost=body.cost,
+        provider=body.provider,
+        notes=body.notes,
+    )
+    await _recalc_plan_last_done(vin, existing.service_type)
+    return MaintenanceRecordResponse(**updated.__dict__)
+
+
 @app.delete("/api/vehicles/{vin}/maintenance/records/{record_id}")
 async def delete_maintenance_record(vin: str, record_id: int) -> dict:
     """Delete a maintenance record and recalculate the plan item's last-done."""
@@ -1959,36 +2113,8 @@ async def delete_maintenance_record(vin: str, record_id: int) -> dict:
     if existing is None or existing.vin != vin:
         raise HTTPException(status_code=404, detail="Record not found")
 
-    service_type = existing.service_type
     await _history_repo.delete_maintenance_record(record_id)
-
-    # Recalculate plan item's last_done from the latest remaining record
-    if _history_repo:
-        remaining = await _history_repo.get_maintenance_records(
-            vin, service_type=service_type, limit=1
-        )
-        from models import MaintenancePlanItem
-
-        if remaining:
-            latest = remaining[0]
-            update = MaintenancePlanItem(
-                vin=vin,
-                service_type=service_type,
-                label="",
-                last_done_km=latest.mileage_km,
-                last_done_date=latest.timestamp,
-            )
-        else:
-            # No records left — clear last_done
-            update = MaintenancePlanItem(
-                vin=vin,
-                service_type=service_type,
-                label="",
-                last_done_km=None,
-                last_done_date=None,
-            )
-        await _history_repo.upsert_maintenance_plan_item(vin, update)
-
+    await _recalc_plan_last_done(vin, existing.service_type)
     return {"ok": True}
 
 
@@ -2004,114 +2130,46 @@ async def get_maintenance_overview(vin: str):
         raise HTTPException(status_code=503, detail="Persistence not available")
 
     vehicle = _find_vehicle(vin)
-    model_info = resolve_model(vehicle)
-
-    # Apply variant override
-    if model_info.get("needs_confirmation") and _history_repo:
-        override = await _history_repo.get_setting(f"c10_variant_{vin}")
-        if override in ("bev", "reev"):
-            model_info["model_key"] = "C10_REEV" if override == "reev" else "C10"
-            model_info["variant"] = override
-            model_info["confidence"] = "manual"
-            model_info["needs_confirmation"] = False
-
-    plan = await _history_repo.get_maintenance_plan(vin)
-
-    # Auto-generate plan from catalog if empty
-    if not plan:
-        model_key = model_info.get("model_key", "unknown")
-        rules = get_maintenance_rules(model_key)
-        if rules and "items" in rules:
-            _LOGGER.info(
-                "Auto-generating maintenance plan for VIN=%s model=%s", vin, model_key
-            )
-            from models import MaintenancePlanItem
-
-            for r in rules["items"]:
-                item = MaintenancePlanItem(
-                    vin=vin,
-                    service_type=r["service_type"],
-                    label=r["label"],
-                    category=r.get("category", "other"),
-                    interval_km=r.get("interval_km"),
-                    interval_months=r.get("interval_months"),
-                    trigger_mode=r.get("trigger_mode", "or"),
-                    priority=r.get("priority", "routine"),
-                )
-                await _history_repo.upsert_maintenance_plan_item(vin, item)
-        plan = await _history_repo.get_maintenance_plan(vin)
-
-    records = await _history_repo.get_maintenance_records(vin, limit=5)
-
-    # Compute upcoming/overdue counts using the resolver's rules
-    from datetime import timedelta
+    model_info = await _resolve_maintenance_model(vin, vehicle)
+    model_key = model_info.get("model_key", "unknown")
+    factory = await _factory_items(model_key)
+    plan = await ensure_plan_generated(_history_repo, vin, factory)
+    # All records (newest first): used for cost aggregation; first 5 are "recent".
+    records = await _history_repo.get_maintenance_records(vin, limit=None)
 
     now_utc = datetime.now(UTC).replace(tzinfo=None)  # naive UTC for DB comparison
+    current_km = await _current_mileage_cached(vehicle)
+    costs = compute_cost_summary(records, plan, now_utc)
 
-    upcoming = 0
-    overdue = 0
-    critical = 0
+    alerts = compute_alerts(plan, current_km, now_utc)
+    counts = summarize(alerts)
+    shortlist = due_soon_alerts(alerts)
     next_item = None
-
-    current_km = None
-    if _vehicle_cache:
-        try:
-            status = await _vehicle_cache.get(vehicle)
-            current_km = (
-                status.driving.total_mileage if (status and status.driving) else None
-            )
-        except Exception:
-            current_km = None
-
-    for item in plan:
-        if not item.enabled:
-            continue
-        due_km = None
-        if item.last_done_km is not None and item.interval_km:
-            due_km = item.last_done_km + item.interval_km
-
-        due_date = None
-        if item.last_done_date and item.interval_months:
-            due_date = item.last_done_date + timedelta(days=item.interval_months * 30)
-
-        # Determine status
-        status = "ok"
-        if (
-            due_km
-            and current_km is not None
-            and current_km >= due_km
-            or due_date
-            and due_date <= now_utc
-        ):
-            status = "overdue"
-
-        if status == "ok" and due_km and current_km is not None:
-            warn_km = max(item.interval_km * 0.15, 1000) if item.interval_km else 2000
-            if current_km >= due_km - warn_km:
-                status = "upcoming"
-
-        if status == "overdue":
-            overdue += 1
-            if item.priority == "urgent":
-                critical += 1
-        elif status == "upcoming":
-            upcoming += 1
-
-        if status in ("upcoming", "overdue") and next_item is None:
-            next_item = MaintenancePlanItemResponse(**item.__dict__)
+    if shortlist:
+        next_st = shortlist[0].service_type
+        next_item = next(
+            (
+                MaintenancePlanItemResponse(**i.__dict__)
+                for i in plan
+                if i.service_type == next_st
+            ),
+            None,
+        )
 
     return MaintenanceOverviewResponse(
-        model_key=model_info.get("model_key", "unknown"),
+        model_key=model_key,
         display_name=model_info.get("display_name", "Unknown"),
         variant=model_info.get("variant"),
         current_km=current_km,
-        total_items=len(plan),
-        upcoming_count=upcoming,
-        overdue_count=overdue,
-        critical_count=critical,
+        total_items=len([i for i in plan if i.enabled]),
+        upcoming_count=counts["upcoming"],
+        overdue_count=counts["overdue"],
+        critical_count=counts["critical"],
         next_item=next_item,
+        due_soon=[MaintenanceAlertResponse(**a.__dict__) for a in shortlist],
+        costs=MaintenanceCostSummary(**costs),
         plan=[MaintenancePlanItemResponse(**item.__dict__) for item in plan],
-        recent_records=[MaintenanceRecordResponse(**r.__dict__) for r in records],
+        recent_records=[MaintenanceRecordResponse(**r.__dict__) for r in records[:5]],
     )
 
 
@@ -2129,6 +2187,540 @@ async def get_current_mileage(vin: str) -> dict:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     return {"vin": vin, "mileage_km": mileage}
+
+
+# ---------------------------------------------------------------------------
+# Routes — Maintenance Library (catalog + local + community packs)
+# ---------------------------------------------------------------------------
+
+
+def _pack_to_response(pack, in_plan_types: set[str], model_key: str):
+    """Build a MaintenancePackResponse from a cached MaintenancePack."""
+    payload = pack.payload or {}
+    items = []
+    for it in payload.get("items", []):
+        items.append(
+            MaintenanceLibraryItem(
+                **{
+                    k: it.get(k) for k in MaintenanceLibraryItem.model_fields if k in it
+                },
+                origin="repo",
+                origin_ref=pack.slug,
+                in_plan=it.get("service_type") in in_plan_types,
+            )
+        )
+    return MaintenancePackResponse(
+        id=pack.id,
+        repo_id=pack.repo_id,
+        slug=pack.slug,
+        name=pack.name or pack.slug,
+        author=pack.author,
+        version=pack.version,
+        description=payload.get("description"),
+        model_compat=pack.model_compat,
+        items=items,
+        applies=pack_applies_to_model(payload, model_key),
+    )
+
+
+@app.get("/api/vehicles/{vin}/maintenance/library")
+async def get_maintenance_library(vin: str) -> MaintenanceLibraryResponse:
+    """Aggregated browse surface: catalog + local items + community packs.
+
+    Each item is flagged ``in_plan`` so the UI knows what's already imported.
+    """
+    if not _history_repo:
+        raise HTTPException(status_code=503, detail="Persistence not available")
+
+    vehicle = _find_vehicle(vin)
+    model_info = await _resolve_maintenance_model(vin, vehicle)
+    model_key = model_info.get("model_key", "unknown")
+
+    factory = await _factory_items(model_key)
+    plan = await ensure_plan_generated(_history_repo, vin, factory)
+    in_plan_types = {i.service_type for i in plan}
+
+    # Catalog items: the official factory schedule for the vehicle's model.
+    catalog: list[MaintenanceLibraryItem] = []
+    for r in factory:
+        catalog.append(
+            MaintenanceLibraryItem(
+                service_type=r["service_type"],
+                label=r["label"],
+                category=r.get("category", "other"),
+                interval_km=r.get("interval_km"),
+                interval_months=r.get("interval_months"),
+                trigger_mode=r.get("trigger_mode", "or"),
+                priority=r.get("priority", "routine"),
+                origin="catalog",
+                in_plan=r["service_type"] in in_plan_types,
+            )
+        )
+
+    # Local items: user-created plan items.
+    local = [
+        MaintenanceLibraryItem(
+            service_type=i.service_type,
+            label=i.label,
+            category=i.category,
+            interval_km=i.interval_km,
+            interval_months=i.interval_months,
+            trigger_mode=i.trigger_mode,
+            priority=i.priority,
+            notes=i.notes,
+            origin="local",
+            in_plan=True,
+        )
+        for i in plan
+        if i.source == "local"
+    ]
+
+    # The official repo (factory schedule source) is listed like any other,
+    # flagged is_official so the UI can mark it and prevent its removal.
+    repos = await _history_repo.list_maintenance_repos()
+    all_packs = await _history_repo.list_maintenance_packs()
+    packs_by_repo: dict[int | None, int] = {}
+    for p in all_packs:
+        packs_by_repo[p.repo_id] = packs_by_repo.get(p.repo_id, 0) + 1
+
+    repo_responses = [
+        MaintenanceRepoResponse(
+            id=r.id,
+            type=r.type,
+            url=r.url,
+            name=r.name,
+            author=r.author,
+            description=r.description,
+            branch=r.branch,
+            added_at=r.added_at,
+            last_fetched_at=r.last_fetched_at,
+            status=r.status,
+            pack_count=packs_by_repo.get(r.id, 0),
+            is_official=r.url == OFFICIAL_REPO_URL,
+        )
+        for r in repos
+    ]
+
+    pack_responses = [_pack_to_response(p, in_plan_types, model_key) for p in all_packs]
+
+    return MaintenanceLibraryResponse(
+        model_key=model_key,
+        display_name=model_info.get("display_name", "Unknown"),
+        variant=model_info.get("variant"),
+        catalog=catalog,
+        local=local,
+        repos=repo_responses,
+        packs=pack_responses,
+    )
+
+
+@app.post("/api/vehicles/{vin}/maintenance/plan/import")
+async def import_maintenance_plan_items(
+    vin: str, body: MaintenancePlanImportRequest
+) -> MaintenancePlanImportResult:
+    """Explicitly import service items into the vehicle's plan.
+
+    Honours a per-item or request-level conflict strategy when a
+    ``service_type`` already exists: ``update`` | ``variant`` | ``skip``.
+    """
+    if not _history_repo:
+        raise HTTPException(status_code=503, detail="Persistence not available")
+    from models import MaintenancePlanItem
+
+    existing = {i.service_type for i in await _history_repo.get_maintenance_plan(vin)}
+    result = MaintenancePlanImportResult()
+
+    for entry in body.items:
+        strategy = entry.conflict or body.on_conflict
+        service_type = entry.service_type
+        conflict = service_type in existing
+
+        if conflict and strategy == "skip":
+            result.skipped.append(service_type)
+            continue
+
+        outcome = "imported"
+        if conflict and strategy == "variant":
+            n = 2
+            while f"{service_type}_v{n}" in existing:
+                n += 1
+            service_type = f"{service_type}_v{n}"
+            outcome = "variant"
+        elif conflict:
+            outcome = "updated"
+
+        item = MaintenancePlanItem(
+            vin=vin,
+            service_type=service_type,
+            label=entry.label,
+            category=entry.category,
+            interval_km=entry.interval_km,
+            interval_months=entry.interval_months,
+            trigger_mode=entry.trigger_mode,
+            priority=entry.priority,
+            notes=entry.notes,
+            enabled=True,
+            source=body.source,
+            source_ref=body.source_ref,
+        )
+        await _history_repo.upsert_maintenance_plan_item(vin, item)
+        existing.add(service_type)
+
+        bucket = {
+            "imported": result.imported,
+            "updated": result.updated,
+            "variant": result.variants,
+        }[outcome]
+        bucket.append(service_type)
+
+    return result
+
+
+@app.post("/api/vehicles/{vin}/maintenance/plan")
+async def create_maintenance_custom_item(
+    vin: str, body: MaintenanceCustomItemCreate
+) -> MaintenancePlanItemResponse:
+    """Create a user-defined (local) maintenance item in the plan."""
+    if not _history_repo:
+        raise HTTPException(status_code=503, detail="Persistence not available")
+    from models import MaintenancePlanItem
+
+    existing = {i.service_type for i in await _history_repo.get_maintenance_plan(vin)}
+    if body.service_type in existing:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"A plan item with service_type '{body.service_type}' already exists"
+            ),
+        )
+
+    item = MaintenancePlanItem(
+        vin=vin,
+        service_type=body.service_type,
+        label=body.label,
+        category=body.category,
+        interval_km=body.interval_km,
+        interval_months=body.interval_months,
+        trigger_mode=body.trigger_mode,
+        priority=body.priority,
+        last_done_km=body.last_done_km,
+        last_done_date=body.last_done_date,
+        notes=body.notes,
+        enabled=True,
+        source="local",
+    )
+    await _history_repo.upsert_maintenance_plan_item(vin, item)
+    for p in await _history_repo.get_maintenance_plan(vin):
+        if p.service_type == body.service_type:
+            return MaintenancePlanItemResponse(**p.__dict__)
+    raise HTTPException(status_code=500, detail="Item not found after create")
+
+
+@app.delete("/api/vehicles/{vin}/maintenance/plan/{service_type}")
+async def delete_maintenance_plan_item(vin: str, service_type: str) -> dict:
+    """Remove a plan item (un-import a community item or delete a custom one)."""
+    if not _history_repo:
+        raise HTTPException(status_code=503, detail="Persistence not available")
+    await _history_repo.delete_maintenance_plan_item(vin, service_type)
+    return {"deleted": service_type}
+
+
+@app.get("/api/vehicles/{vin}/maintenance/export")
+async def export_local_maintenance(vin: str) -> Response:
+    """Export the vehicle's local (user-defined) items as a shareable pack."""
+    if not _history_repo:
+        raise HTTPException(status_code=503, detail="Persistence not available")
+
+    plan = await _history_repo.get_maintenance_plan(vin)
+    vehicle = _find_vehicle(vin)
+    model_info = await _resolve_maintenance_model(vin, vehicle)
+
+    items = [
+        {
+            "service_type": i.service_type,
+            "label": i.label,
+            "category": i.category,
+            "interval_km": i.interval_km,
+            "interval_months": i.interval_months,
+            "trigger_mode": i.trigger_mode,
+            "priority": i.priority,
+            "notes": i.notes,
+        }
+        for i in plan
+        if i.source == "local"
+    ]
+    pack = {
+        "schema": PACK_SCHEMA,
+        "name": f"{model_info.get('display_name', 'Vehicle')} — custom maintenance",
+        "version": 1,
+        "model_compat": [model_info.get("model_key", "unknown")],
+        "items": items,
+    }
+    body = json.dumps(pack, indent=2, default=str)
+    return Response(
+        content=body,
+        media_type="application/json",
+        headers={
+            "Content-Disposition": "attachment; "
+            "filename=leapconnect-maintenance-local.json"
+        },
+    )
+
+
+# ---------------------------------------------------------------------------
+# Routes — Maintenance Community Repositories & Packs
+# ---------------------------------------------------------------------------
+
+
+async def _cache_repo_packs(repo) -> int:
+    """Fetch every pack listed in a repo's manifest and cache it. Returns count."""
+    from models import MaintenancePack
+
+    count = 0
+    for entry in repo.manifest or []:
+        try:
+            payload = await fetch_pack_file(repo.url, repo.branch, entry["file"])
+        except (CommunityError, KeyError) as exc:
+            _LOGGER.warning("Skipping pack %s in %s: %s", entry, repo.url, exc)
+            continue
+        pack = MaintenancePack(
+            repo_id=repo.id,
+            slug=entry.get("slug") or payload.get("name"),
+            name=payload.get("name"),
+            version=payload.get("version"),
+            author=payload.get("author"),
+            model_compat=payload.get("model_compat"),
+            payload=payload,
+        )
+        await _history_repo.save_maintenance_pack(pack)
+        count += 1
+    return count
+
+
+@app.get("/api/maintenance/repos")
+async def list_maintenance_repos() -> list[MaintenanceRepoResponse]:
+    """List all maintenance repositories, including the official one."""
+    if not _history_repo:
+        raise HTTPException(status_code=503, detail="Persistence not available")
+    repos = await _history_repo.list_maintenance_repos()
+    packs = await _history_repo.list_maintenance_packs()
+    counts: dict[int | None, int] = {}
+    for p in packs:
+        counts[p.repo_id] = counts.get(p.repo_id, 0) + 1
+    return [
+        MaintenanceRepoResponse(
+            id=r.id,
+            type=r.type,
+            url=r.url,
+            name=r.name,
+            author=r.author,
+            description=r.description,
+            branch=r.branch,
+            added_at=r.added_at,
+            last_fetched_at=r.last_fetched_at,
+            status=r.status,
+            pack_count=counts.get(r.id, 0),
+            is_official=r.url == OFFICIAL_REPO_URL,
+        )
+        for r in repos
+    ]
+
+
+@app.post("/api/maintenance/repos")
+async def add_maintenance_repo(
+    body: MaintenanceRepoCreate,
+) -> MaintenanceRepoResponse:
+    """Add a community repository: discover and cache its packs."""
+    if not _history_repo:
+        raise HTTPException(status_code=503, detail="Persistence not available")
+    from models import MaintenanceRepo
+
+    try:
+        discovered = await discover_repo(body.url)
+    except CommunityError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    existing = await _history_repo.get_maintenance_repo_by_url(discovered["url"])
+    if existing:
+        raise HTTPException(status_code=409, detail="Repository already added")
+
+    repo = MaintenanceRepo(
+        type=discovered["type"],
+        url=discovered["url"],
+        name=discovered["name"],
+        author=discovered["author"],
+        description=discovered.get("description"),
+        branch=discovered["branch"],
+        added_at=datetime.now(UTC),
+        last_fetched_at=datetime.now(UTC),
+        status="ok",
+        manifest=discovered["packs"],
+    )
+    repo = await _history_repo.save_maintenance_repo(repo)
+    count = await _cache_repo_packs(repo)
+
+    return MaintenanceRepoResponse(
+        id=repo.id,
+        type=repo.type,
+        url=repo.url,
+        name=repo.name,
+        author=repo.author,
+        description=repo.description,
+        branch=repo.branch,
+        added_at=repo.added_at,
+        last_fetched_at=repo.last_fetched_at,
+        status=repo.status,
+        pack_count=count,
+        is_official=repo.url == OFFICIAL_REPO_URL,
+    )
+
+
+@app.post("/api/maintenance/repos/{repo_id}/refresh")
+async def refresh_maintenance_repo(repo_id: int) -> MaintenanceRepoResponse:
+    """Re-discover a repository's manifest and re-cache its packs."""
+    if not _history_repo:
+        raise HTTPException(status_code=503, detail="Persistence not available")
+    repo = await _history_repo.get_maintenance_repo(repo_id)
+    if not repo:
+        raise HTTPException(status_code=404, detail="Repository not found")
+
+    try:
+        discovered = await discover_repo(repo.url)
+    except CommunityError as exc:
+        repo.status = "error"
+        await _history_repo.save_maintenance_repo(repo)
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    repo.name = discovered["name"]
+    repo.author = discovered["author"]
+    repo.description = discovered.get("description")
+    repo.branch = discovered["branch"]
+    repo.manifest = discovered["packs"]
+    repo.last_fetched_at = datetime.now(UTC)
+    repo.status = "ok"
+    repo = await _history_repo.save_maintenance_repo(repo)
+
+    # Drop old cached packs for this repo, then re-cache.
+    for p in await _history_repo.list_maintenance_packs(repo_id):
+        await _history_repo.delete_maintenance_pack(p.id)
+    count = await _cache_repo_packs(repo)
+
+    return MaintenanceRepoResponse(
+        id=repo.id,
+        type=repo.type,
+        url=repo.url,
+        name=repo.name,
+        author=repo.author,
+        description=repo.description,
+        branch=repo.branch,
+        added_at=repo.added_at,
+        last_fetched_at=repo.last_fetched_at,
+        status=repo.status,
+        pack_count=count,
+        is_official=repo.url == OFFICIAL_REPO_URL,
+    )
+
+
+@app.delete("/api/maintenance/repos/{repo_id}")
+async def delete_maintenance_repo(repo_id: int) -> dict:
+    """Remove a repository and all packs cached from it."""
+    if not _history_repo:
+        raise HTTPException(status_code=503, detail="Persistence not available")
+    existing = await _history_repo.get_maintenance_repo(repo_id)
+    if existing and existing.url == OFFICIAL_REPO_URL:
+        raise HTTPException(
+            status_code=403,
+            detail="The official factory repository cannot be removed",
+        )
+    await _history_repo.delete_maintenance_repo(repo_id)
+    return {"deleted": repo_id}
+
+
+@app.get("/api/maintenance/repos/{repo_id}/packs")
+async def list_repo_packs(repo_id: int) -> list[MaintenancePackResponse]:
+    """List the packs cached from a repository."""
+    if not _history_repo:
+        raise HTTPException(status_code=503, detail="Persistence not available")
+    packs = await _history_repo.list_maintenance_packs(repo_id)
+    return [_pack_to_response(p, set(), "unknown") for p in packs]
+
+
+@app.post("/api/maintenance/packs/import")
+async def import_maintenance_pack(
+    body: MaintenancePackImportRequest,
+) -> MaintenancePackResponse:
+    """Fetch/cache a standalone pack from a raw URL or inline JSON.
+
+    For (repo_id + slug) the already-cached pack is returned.
+    """
+    if not _history_repo:
+        raise HTTPException(status_code=503, detail="Persistence not available")
+    from models import MaintenancePack
+
+    if body.repo_id is not None and body.slug:
+        for p in await _history_repo.list_maintenance_packs(body.repo_id):
+            if p.slug == body.slug:
+                return _pack_to_response(p, set(), "unknown")
+        raise HTTPException(status_code=404, detail="Pack not found in repository")
+
+    try:
+        if body.url:
+            payload = await fetch_pack_url(body.url)
+            slug = body.url.rstrip("/").split("/")[-1].replace(".json", "")
+        elif body.inline is not None:
+            payload = normalize_pack(body.inline)
+            slug = (payload.get("name") or "imported").lower().replace(" ", "-")
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="Provide one of: repo_id+slug, url, or inline",
+            )
+    except CommunityError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    pack = MaintenancePack(
+        repo_id=None,
+        slug=slug,
+        name=payload.get("name"),
+        version=payload.get("version"),
+        author=payload.get("author"),
+        model_compat=payload.get("model_compat"),
+        payload=payload,
+    )
+    pack = await _history_repo.save_maintenance_pack(pack)
+    return _pack_to_response(pack, set(), "unknown")
+
+
+@app.post("/api/maintenance/upload")
+async def upload_maintenance_pack(
+    file: UploadFile = File(...),  # noqa: B008
+) -> MaintenancePackResponse:
+    """Upload a maintenance pack JSON file and cache it as a standalone pack."""
+    if not _history_repo:
+        raise HTTPException(status_code=503, detail="Persistence not available")
+    from models import MaintenancePack
+
+    raw = await file.read()
+    try:
+        payload = normalize_pack(json.loads(raw))
+    except (json.JSONDecodeError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=f"Invalid pack: {exc}") from exc
+
+    slug = (file.filename or payload.get("name") or "uploaded").rsplit("/", 1)[-1]
+    slug = slug.replace(".json", "")
+    pack = MaintenancePack(
+        repo_id=None,
+        slug=slug,
+        name=payload.get("name"),
+        version=payload.get("version"),
+        author=payload.get("author"),
+        model_compat=payload.get("model_compat"),
+        payload=payload,
+    )
+    pack = await _history_repo.save_maintenance_pack(pack)
+    return _pack_to_response(pack, set(), "unknown")
 
 
 # ---------------------------------------------------------------------------

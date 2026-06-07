@@ -91,14 +91,33 @@ class VehicleHistoryRepository(abc.ABC):
         """Insert or update a single plan item (keyed by vin + service_type)."""
 
     @abc.abstractmethod
+    async def set_plan_item_last_done(
+        self, vin: str, service_type: str, *, last_done_km, last_done_date
+    ) -> None:
+        """Set a plan item's last_done fields explicitly (``None`` clears them)."""
+
+    @abc.abstractmethod
     async def get_maintenance_records(
-        self, vin: str, *, service_type: str | None = None, limit: int = 20
+        self, vin: str, *, service_type: str | None = None, limit: int | None = 20
     ) -> list:
-        """Return completed maintenance records, newest first."""
+        """Return completed maintenance records, newest first (``limit=None`` = all)."""
 
     @abc.abstractmethod
     async def save_maintenance_record(self, record) -> None:
         """Persist a completed maintenance record."""
+
+    @abc.abstractmethod
+    async def update_maintenance_record(
+        self,
+        record_id: int,
+        *,
+        timestamp=None,
+        mileage_km=None,
+        cost=None,
+        provider=None,
+        notes=None,
+    ) -> object | None:
+        """Update an existing record's editable fields. Returns it, or None."""
 
     @abc.abstractmethod
     async def delete_maintenance_record(self, record_id: int) -> None:
@@ -107,3 +126,45 @@ class VehicleHistoryRepository(abc.ABC):
     @abc.abstractmethod
     async def get_maintenance_record(self, record_id: int) -> object | None:
         """Get a single maintenance record by id."""
+
+    @abc.abstractmethod
+    async def delete_maintenance_plan_item(self, vin: str, service_type: str) -> None:
+        """Delete a single plan item (keyed by vin + service_type)."""
+
+    # -- maintenance repos & packs -------------------------------------------
+
+    @abc.abstractmethod
+    async def list_maintenance_repos(self) -> list:
+        """Return all community repositories the user has added."""
+
+    @abc.abstractmethod
+    async def get_maintenance_repo(self, repo_id: int) -> object | None:
+        """Get a single repository by id."""
+
+    @abc.abstractmethod
+    async def get_maintenance_repo_by_url(self, url: str) -> object | None:
+        """Get a single repository by its URL."""
+
+    @abc.abstractmethod
+    async def save_maintenance_repo(self, repo) -> object:
+        """Insert or update a repository; returns it with its id populated."""
+
+    @abc.abstractmethod
+    async def delete_maintenance_repo(self, repo_id: int) -> None:
+        """Delete a repository and all packs cached from it."""
+
+    @abc.abstractmethod
+    async def list_maintenance_packs(self, repo_id: int | None = None) -> list:
+        """Return cached packs, optionally filtered by repository."""
+
+    @abc.abstractmethod
+    async def get_maintenance_pack(self, pack_id: int) -> object | None:
+        """Get a single cached pack by id."""
+
+    @abc.abstractmethod
+    async def save_maintenance_pack(self, pack) -> object:
+        """Insert or update a cached pack; returns it with its id populated."""
+
+    @abc.abstractmethod
+    async def delete_maintenance_pack(self, pack_id: int) -> None:
+        """Delete a cached pack by id."""

@@ -15,6 +15,8 @@ from sqlalchemy import (
     Float,
     Integer,
     String,
+    Text,
+    UniqueConstraint,
     func,
     select,
     text,
@@ -244,6 +246,9 @@ class MaintenancePlanItemRow(Base):
     """An editable maintenance plan item for a single vehicle."""
 
     __tablename__ = "maintenance_plan_items"
+    __table_args__ = (
+        UniqueConstraint("vin", "service_type", name="uq_vin_service_type"),
+    )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     vin = Column(String(20), nullable=False, index=True)
@@ -258,6 +263,8 @@ class MaintenancePlanItemRow(Base):
     last_done_date = Column(DateTime, nullable=True)
     enabled = Column(Boolean, nullable=False, default=True)
     notes = Column(String(256), nullable=True)
+    source = Column(String(16), nullable=False, default="catalog")
+    source_ref = Column(String(128), nullable=True)
 
 
 class MaintenanceRecordRow(Base):
@@ -274,6 +281,41 @@ class MaintenanceRecordRow(Base):
     cost = Column(Float, nullable=True)
     provider = Column(String(128), nullable=True)
     notes = Column(String(256), nullable=True)
+
+
+class MaintenanceRepoRow(Base):
+    """A community repository the user has added."""
+
+    __tablename__ = "maintenance_repos"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    type = Column(String(16), nullable=False, default="github")
+    url = Column(String(512), nullable=False, unique=True)
+    name = Column(String(128), nullable=True)
+    author = Column(String(128), nullable=True)
+    description = Column(String(512), nullable=True)
+    branch = Column(String(64), nullable=True)
+    added_at = Column(DateTime, nullable=True)
+    last_fetched_at = Column(DateTime, nullable=True)
+    etag = Column(String(128), nullable=True)
+    status = Column(String(32), nullable=False, default="ok")
+    manifest_json = Column(Text, nullable=True)
+
+
+class MaintenancePackRow(Base):
+    """A cached maintenance pack (from a repo, URL, or uploaded file)."""
+
+    __tablename__ = "maintenance_packs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    repo_id = Column(Integer, nullable=True, index=True)
+    slug = Column(String(128), nullable=False)
+    name = Column(String(128), nullable=True)
+    version = Column(Integer, nullable=True)
+    author = Column(String(128), nullable=True)
+    model_compat = Column(Text, nullable=True)
+    payload_json = Column(Text, nullable=False)
+    fetched_at = Column(DateTime, nullable=True)
 
 
 # ---------------------------------------------------------------------------
@@ -352,6 +394,8 @@ class SQLAlchemyVehicleHistoryRepository(VehicleHistoryRepository):
             _known_create_all_tables = {
                 "maintenance_plan_items",
                 "maintenance_records",
+                "maintenance_repos",
+                "maintenance_packs",
             }
             existing_tables = set(inspector.get_table_names())
             pre_created = _known_create_all_tables & existing_tables
@@ -383,6 +427,50 @@ class SQLAlchemyVehicleHistoryRepository(VehicleHistoryRepository):
                 with Operations.context(context):
                     context._migrations_fn = do_upgrade
                     context.run_migrations()
+
+        # Self-healing: ensure additive columns exist even when a prior boot
+        # stamped Alembic past a migration that ALTERs a pre-existing table.
+        # The create_all + "stamp to head" path skips ALTER TABLE migrations
+        # (e.g. 0010 adding maintenance_plan_items.source), leaving the DB
+        # marked up-to-date but missing columns. Reconcile them idempotently.
+        reconcile = sqlalchemy.inspect(sync_conn)
+        if reconcile.has_table("maintenance_plan_items"):
+            cols = {c["name"] for c in reconcile.get_columns("maintenance_plan_items")}
+            if "source" not in cols:
+                sync_conn.execute(
+                    text(
+                        "ALTER TABLE maintenance_plan_items "
+                        "ADD COLUMN source VARCHAR(16) NOT NULL DEFAULT 'catalog'"
+                    )
+                )
+            if "source_ref" not in cols:
+                sync_conn.execute(
+                    text(
+                        "ALTER TABLE maintenance_plan_items "
+                        "ADD COLUMN source_ref VARCHAR(128)"
+                    )
+                )
+
+            # The (vin, service_type) unique constraint is also skipped when the
+            # table was pre-created by create_all (which lacked it) and 0009 got
+            # stamped. De-duplicate any rows that slipped in, then enforce it.
+            indexes = {
+                ix["name"] for ix in reconcile.get_indexes("maintenance_plan_items")
+            }
+            if "uq_vin_service_type" not in indexes:
+                sync_conn.execute(
+                    text(
+                        "DELETE FROM maintenance_plan_items WHERE id NOT IN ("
+                        "  SELECT MIN(id) FROM maintenance_plan_items "
+                        "  GROUP BY vin, service_type)"
+                    )
+                )
+                sync_conn.execute(
+                    text(
+                        "CREATE UNIQUE INDEX IF NOT EXISTS uq_vin_service_type "
+                        "ON maintenance_plan_items (vin, service_type)"
+                    )
+                )
 
     async def close(self) -> None:
         await self._engine.dispose()
@@ -1444,6 +1532,8 @@ class SQLAlchemyVehicleHistoryRepository(VehicleHistoryRepository):
                     last_done_date=r.last_done_date,
                     enabled=r.enabled,
                     notes=r.notes,
+                    source=r.source,
+                    source_ref=r.source_ref,
                 )
                 for r in rows
             ]
@@ -1459,7 +1549,9 @@ class SQLAlchemyVehicleHistoryRepository(VehicleHistoryRepository):
                 MaintenancePlanItemRow.service_type == item.service_type,
             )
             result = await session.execute(stmt)
-            existing = result.scalar_one_or_none()
+            # .first() (not scalar_one_or_none) so a legacy duplicate row never
+            # crashes the upsert; the unique index prevents new duplicates.
+            existing = result.scalars().first()
 
             if existing:
                 # Update fields that are provided
@@ -1483,6 +1575,10 @@ class SQLAlchemyVehicleHistoryRepository(VehicleHistoryRepository):
                     existing.enabled = item.enabled
                 if item.notes is not None:
                     existing.notes = item.notes
+                if getattr(item, "source", None):
+                    existing.source = item.source
+                if getattr(item, "source_ref", None) is not None:
+                    existing.source_ref = item.source_ref
             else:
                 row = MaintenancePlanItemRow(
                     vin=vin,
@@ -1497,15 +1593,37 @@ class SQLAlchemyVehicleHistoryRepository(VehicleHistoryRepository):
                     last_done_date=item.last_done_date,
                     enabled=item.enabled if item.enabled is not None else True,
                     notes=item.notes,
+                    source=getattr(item, "source", None) or "catalog",
+                    source_ref=getattr(item, "source_ref", None),
                 )
                 session.add(row)
 
             await session.commit()
 
+    async def set_plan_item_last_done(
+        self, vin: str, service_type: str, *, last_done_km, last_done_date
+    ) -> None:
+        """Set a plan item's last_done fields explicitly (``None`` clears them).
+
+        Unlike :meth:`upsert_maintenance_plan_item`, this assigns the values
+        unconditionally so the fields can be reset to NULL (e.g. after the last
+        service record for an item is deleted).
+        """
+        async with self._session_factory() as session:
+            stmt = select(MaintenancePlanItemRow).where(
+                MaintenancePlanItemRow.vin == vin,
+                MaintenancePlanItemRow.service_type == service_type,
+            )
+            row = (await session.execute(stmt)).scalars().first()
+            if row is not None:
+                row.last_done_km = last_done_km
+                row.last_done_date = last_done_date
+                await session.commit()
+
     async def get_maintenance_records(
-        self, vin: str, *, service_type: str | None = None, limit: int = 20
+        self, vin: str, *, service_type: str | None = None, limit: int | None = 20
     ) -> list:
-        """Return completed maintenance records, newest first."""
+        """Return completed maintenance records, newest first (``limit=None`` = all)."""
         from models import MaintenanceRecord
 
         async with self._session_factory() as session:
@@ -1516,8 +1634,9 @@ class SQLAlchemyVehicleHistoryRepository(VehicleHistoryRepository):
                 select(MaintenanceRecordRow)
                 .where(*conditions)
                 .order_by(MaintenanceRecordRow.timestamp.desc())
-                .limit(limit)
             )
+            if limit is not None:
+                stmt = stmt.limit(limit)
             result = await session.execute(stmt)
             rows = result.scalars().all()
             return [
@@ -1552,6 +1671,42 @@ class SQLAlchemyVehicleHistoryRepository(VehicleHistoryRepository):
             await session.commit()
             record.id = row.id
 
+    async def update_maintenance_record(
+        self,
+        record_id: int,
+        *,
+        timestamp=None,
+        mileage_km=None,
+        cost=None,
+        provider=None,
+        notes=None,
+    ) -> object | None:
+        """Update an existing record's editable fields. Returns it, or None."""
+        from models import MaintenanceRecord
+
+        async with self._session_factory() as session:
+            row = await session.get(MaintenanceRecordRow, record_id)
+            if row is None:
+                return None
+            if timestamp is not None:
+                row.timestamp = timestamp
+            row.mileage_km = mileage_km
+            row.cost = cost
+            row.provider = provider
+            row.notes = notes
+            await session.commit()
+            return MaintenanceRecord(
+                id=row.id,
+                vin=row.vin,
+                service_type=row.service_type,
+                label=row.label,
+                timestamp=row.timestamp,
+                mileage_km=row.mileage_km,
+                cost=row.cost,
+                provider=row.provider,
+                notes=row.notes,
+            )
+
     async def delete_maintenance_record(self, record_id: int) -> None:
         """Delete a maintenance record by id."""
         async with self._session_factory() as session:
@@ -1579,3 +1734,177 @@ class SQLAlchemyVehicleHistoryRepository(VehicleHistoryRepository):
                 provider=row.provider,
                 notes=row.notes,
             )
+
+    async def delete_maintenance_plan_item(self, vin: str, service_type: str) -> None:
+        """Delete a single plan item (keyed by vin + service_type)."""
+        async with self._session_factory() as session:
+            stmt = select(MaintenancePlanItemRow).where(
+                MaintenancePlanItemRow.vin == vin,
+                MaintenancePlanItemRow.service_type == service_type,
+            )
+            result = await session.execute(stmt)
+            row = result.scalar_one_or_none()
+            if row:
+                await session.delete(row)
+                await session.commit()
+
+    # -- maintenance repos & packs -------------------------------------------
+
+    @staticmethod
+    def _repo_from_row(row: MaintenanceRepoRow):
+        from models import MaintenanceRepo
+
+        return MaintenanceRepo(
+            id=row.id,
+            type=row.type,
+            url=row.url,
+            name=row.name,
+            author=row.author,
+            description=row.description,
+            branch=row.branch,
+            added_at=row.added_at,
+            last_fetched_at=row.last_fetched_at,
+            etag=row.etag,
+            status=row.status,
+            manifest=json.loads(row.manifest_json) if row.manifest_json else None,
+        )
+
+    async def list_maintenance_repos(self) -> list:
+        async with self._session_factory() as session:
+            stmt = select(MaintenanceRepoRow).order_by(MaintenanceRepoRow.id)
+            result = await session.execute(stmt)
+            return [self._repo_from_row(r) for r in result.scalars().all()]
+
+    async def get_maintenance_repo(self, repo_id: int):
+        async with self._session_factory() as session:
+            row = await session.get(MaintenanceRepoRow, repo_id)
+            return self._repo_from_row(row) if row else None
+
+    async def get_maintenance_repo_by_url(self, url: str):
+        async with self._session_factory() as session:
+            stmt = select(MaintenanceRepoRow).where(MaintenanceRepoRow.url == url)
+            result = await session.execute(stmt)
+            row = result.scalar_one_or_none()
+            return self._repo_from_row(row) if row else None
+
+    async def save_maintenance_repo(self, repo):
+        """Insert or update a repo (keyed by id when set, else by url)."""
+        manifest_json = json.dumps(repo.manifest) if repo.manifest is not None else None
+        async with self._session_factory() as session:
+            row = None
+            if repo.id is not None:
+                row = await session.get(MaintenanceRepoRow, repo.id)
+            if row is None:
+                stmt = select(MaintenanceRepoRow).where(
+                    MaintenanceRepoRow.url == repo.url
+                )
+                result = await session.execute(stmt)
+                row = result.scalar_one_or_none()
+
+            if row is None:
+                row = MaintenanceRepoRow(
+                    type=repo.type,
+                    url=repo.url,
+                    added_at=repo.added_at or datetime.now(UTC),
+                )
+                session.add(row)
+
+            row.type = repo.type
+            row.name = repo.name
+            row.author = repo.author
+            row.description = repo.description
+            row.branch = repo.branch
+            row.last_fetched_at = repo.last_fetched_at
+            row.etag = repo.etag
+            row.status = repo.status
+            row.manifest_json = manifest_json
+
+            await session.commit()
+            repo.id = row.id
+            return repo
+
+    async def delete_maintenance_repo(self, repo_id: int) -> None:
+        """Delete a repo and all packs cached from it."""
+        async with self._session_factory() as session:
+            row = await session.get(MaintenanceRepoRow, repo_id)
+            if row:
+                await session.delete(row)
+            pack_stmt = select(MaintenancePackRow).where(
+                MaintenancePackRow.repo_id == repo_id
+            )
+            pack_result = await session.execute(pack_stmt)
+            for pack in pack_result.scalars().all():
+                await session.delete(pack)
+            await session.commit()
+
+    @staticmethod
+    def _pack_from_row(row: MaintenancePackRow):
+        from models import MaintenancePack
+
+        return MaintenancePack(
+            id=row.id,
+            repo_id=row.repo_id,
+            slug=row.slug,
+            name=row.name,
+            version=row.version,
+            author=row.author,
+            model_compat=json.loads(row.model_compat) if row.model_compat else None,
+            payload=json.loads(row.payload_json) if row.payload_json else None,
+            fetched_at=row.fetched_at,
+        )
+
+    async def list_maintenance_packs(self, repo_id: int | None = None) -> list:
+        async with self._session_factory() as session:
+            stmt = select(MaintenancePackRow)
+            if repo_id is not None:
+                stmt = stmt.where(MaintenancePackRow.repo_id == repo_id)
+            stmt = stmt.order_by(MaintenancePackRow.id)
+            result = await session.execute(stmt)
+            return [self._pack_from_row(r) for r in result.scalars().all()]
+
+    async def get_maintenance_pack(self, pack_id: int):
+        async with self._session_factory() as session:
+            row = await session.get(MaintenancePackRow, pack_id)
+            return self._pack_from_row(row) if row else None
+
+    async def save_maintenance_pack(self, pack):
+        """Insert or update a cached pack (keyed by id, or repo_id + slug)."""
+        model_compat_json = (
+            json.dumps(pack.model_compat) if pack.model_compat is not None else None
+        )
+        payload_json = json.dumps(pack.payload or {})
+        async with self._session_factory() as session:
+            row = None
+            if pack.id is not None:
+                row = await session.get(MaintenancePackRow, pack.id)
+            if row is None:
+                stmt = select(MaintenancePackRow).where(
+                    MaintenancePackRow.repo_id == pack.repo_id,
+                    MaintenancePackRow.slug == pack.slug,
+                )
+                result = await session.execute(stmt)
+                row = result.scalar_one_or_none()
+
+            if row is None:
+                row = MaintenancePackRow(repo_id=pack.repo_id, slug=pack.slug)
+                session.add(row)
+
+            row.repo_id = pack.repo_id
+            row.slug = pack.slug
+            row.name = pack.name
+            row.version = pack.version
+            row.author = pack.author
+            row.model_compat = model_compat_json
+            row.payload_json = payload_json
+            row.fetched_at = pack.fetched_at or datetime.now(UTC)
+
+            await session.commit()
+            pack.id = row.id
+            return pack
+
+    async def delete_maintenance_pack(self, pack_id: int) -> None:
+        async with self._session_factory() as session:
+            row = await session.get(MaintenancePackRow, pack_id)
+            if row:
+                await session.delete(row)
+                await session.commit()
