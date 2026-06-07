@@ -146,20 +146,31 @@
     <!-- Content area -->
     <div class="content-area">
       <!-- Sidebar (desktop only) -->
-      <div class="sidebar hidden md:flex">
+      <div class="sidebar hidden md:flex" :class="{ expanded: sidebarExpanded }">
+        <div class="sidebar-nav">
+          <button
+            v-for="t in tabs"
+            :key="t.id"
+            class="sidebar-btn"
+            :class="{ active: store.activeTab === t.id }"
+            :title="sidebarExpanded ? '' : t.label"
+            @click="store.activeTab = t.id"
+          >
+            <div class="sidebar-icon-wrap">
+              <component :is="t.icon" :size="18" />
+              <span v-if="t.id === 'messages' && store.unreadMessages > 0" class="tab-unread-dot" />
+            </div>
+            <span v-if="sidebarExpanded" class="sidebar-label">{{ t.label }}</span>
+            <div v-if="store.activeTab === t.id" class="sidebar-indicator" />
+          </button>
+        </div>
         <button
-          v-for="t in tabs"
-          :key="t.id"
-          class="sidebar-btn"
-          :class="{ active: store.activeTab === t.id }"
-          :title="t.label"
-          @click="store.activeTab = t.id"
+          class="sidebar-toggle"
+          :title="sidebarExpanded ? 'Collapse menu' : 'Expand menu'"
+          @click="toggleSidebar"
         >
-          <div class="sidebar-icon-wrap">
-            <component :is="t.icon" :size="18" />
-            <span v-if="t.id === 'messages' && store.unreadMessages > 0" class="tab-unread-dot" />
-          </div>
-          <div v-if="store.activeTab === t.id" class="sidebar-indicator" />
+          <component :is="sidebarExpanded ? PanelLeftClose : PanelLeft" :size="18" />
+          <span v-if="sidebarExpanded" class="sidebar-label">Collapse</span>
         </button>
       </div>
 
@@ -223,7 +234,7 @@
     <!-- Bottom tab bar (mobile only) -->
     <div class="bottom-bar md:hidden">
       <button
-        v-for="t in tabs"
+        v-for="t in primaryTabs"
         :key="t.id"
         class="bottom-tab"
         :class="{ active: store.activeTab === t.id }"
@@ -231,11 +242,46 @@
       >
         <div class="bottom-icon-wrap">
           <component :is="t.icon" :size="20" />
-          <span v-if="t.id === 'messages' && store.unreadMessages > 0" class="tab-unread-dot" />
         </div>
         <span class="bottom-tab-label">{{ t.label }}</span>
       </button>
+      <button
+        class="bottom-tab"
+        :class="{ active: moreActive }"
+        @click="showMoreSheet = true"
+      >
+        <div class="bottom-icon-wrap">
+          <MoreHorizontal :size="20" />
+          <span v-if="moreHasUnread" class="tab-unread-dot" />
+        </div>
+        <span class="bottom-tab-label">More</span>
+      </button>
     </div>
+
+    <!-- "More" bottom sheet (mobile only) -->
+    <Transition name="sheet">
+      <div v-if="showMoreSheet" class="more-sheet-overlay md:hidden" @click="showMoreSheet = false">
+        <div class="more-sheet" @click.stop>
+          <div class="more-sheet-grab" />
+          <div class="more-sheet-title">More</div>
+          <button
+            v-for="t in moreTabs"
+            :key="t.id"
+            class="more-sheet-row"
+            :class="{ active: store.activeTab === t.id }"
+            @click="selectTab(t.id)"
+          >
+            <span class="more-sheet-icon">
+              <component :is="t.icon" :size="20" />
+            </span>
+            <span class="more-sheet-label">{{ t.label }}</span>
+            <span v-if="t.id === 'messages' && store.unreadMessages > 0" class="more-sheet-badge">
+              {{ store.unreadMessages }}
+            </span>
+          </button>
+        </div>
+      </div>
+    </Transition>
   </div>
 
   <ToastContainer />
@@ -262,7 +308,7 @@ import MessagesTab from './views/MessagesTab.vue'
 import SettingsTab from './views/SettingsTab.vue'
 import ToastContainer from './components/ToastContainer.vue'
 import MessageDropdown from './components/MessageDropdown.vue'
-import { LayoutDashboard, List, TrendingUp, Mail, Settings, RefreshCw, LogOut, Cloud, CloudOff, Sun, Moon, PanelTop, PanelTopClose, Bell, BatteryCharging, MapPin, Wrench } from 'lucide-vue-next'
+import { LayoutDashboard, List, TrendingUp, Mail, Settings, RefreshCw, LogOut, Cloud, CloudOff, Sun, Moon, PanelTop, PanelTopClose, PanelLeft, PanelLeftClose, MoreHorizontal, Bell, BatteryCharging, MapPin, Wrench } from 'lucide-vue-next'
 
 const store = useAppStore()
 const { toast } = useToast()
@@ -291,16 +337,39 @@ const userInitials = computed(() => {
   return name.slice(0, 2).toUpperCase() || '?'
 })
 
+// Ordered by usage hierarchy. On mobile the first PRIMARY_TAB_COUNT appear in
+// the bottom bar; the rest are grouped under the "More" sheet. New tabs added
+// to this list fall under "More" automatically.
 const tabs = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { id: 'details', label: 'Details', icon: List },
-  { id: 'messages', label: 'Messages', icon: Mail },
-  { id: 'history', label: 'History', icon: TrendingUp },
   { id: 'charging', label: 'Charging', icon: BatteryCharging },
   { id: 'trips', label: 'Trips', icon: MapPin },
   { id: 'maintenance', label: 'Maintenance', icon: Wrench },
+  { id: 'details', label: 'Details', icon: List },
+  { id: 'history', label: 'History', icon: TrendingUp },
+  { id: 'messages', label: 'Messages', icon: Mail },
   { id: 'settings', label: 'Settings', icon: Settings },
 ]
+
+const PRIMARY_TAB_COUNT = 4
+const primaryTabs = tabs.slice(0, PRIMARY_TAB_COUNT)
+const moreTabs = tabs.slice(PRIMARY_TAB_COUNT)
+const moreActive = computed(() => moreTabs.some((t) => store.activeTab === t.id))
+const moreHasUnread = computed(() => store.unreadMessages > 0 && moreTabs.some((t) => t.id === 'messages'))
+
+// Desktop sidebar expand/collapse — collapsed by default, persisted
+const sidebarExpanded = ref(localStorage.getItem('sidebarExpanded') === 'true')
+function toggleSidebar() {
+  sidebarExpanded.value = !sidebarExpanded.value
+  localStorage.setItem('sidebarExpanded', String(sidebarExpanded.value))
+}
+
+// Mobile "More" bottom sheet
+const showMoreSheet = ref(false)
+function selectTab(id) {
+  store.activeTab = id
+  showMoreSheet.value = false
+}
 
 const vehicle = computed(() => store.currentData?.vehicle || {})
 const status = computed(() => store.currentData?.status || {})
@@ -649,25 +718,45 @@ onBeforeUnmount(() => {
   background: var(--bg2);
   border-right: 1px solid var(--border2);
   flex-direction: column;
-  align-items: center;
-  padding-top: 16px;
-  gap: 6px;
+  padding: 16px 8px 12px;
   flex-shrink: 0;
   overflow: hidden;
+  transition: width 0.22s ease;
 }
+.sidebar.expanded { width: 200px; }
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  width: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: none;
+}
+.sidebar-nav::-webkit-scrollbar { display: none; }
+.sidebar.expanded .sidebar-nav { align-items: stretch; }
 .sidebar-btn {
   width: 40px; height: 40px; border-radius: 10px;
   border: none; cursor: pointer; font-size: 16px;
   background: transparent; color: var(--muted2);
-  transition: all 0.2s; position: relative;
+  transition: background 0.2s, color 0.2s; position: relative;
   display: flex; align-items: center; justify-content: center;
   flex-shrink: 0;
+}
+.sidebar.expanded .sidebar-btn {
+  width: 100%; justify-content: flex-start;
+  gap: 13px; padding: 0 11px;
 }
 .sidebar-btn.active {
   background: #00d4ff18;
   color: #00d4ff;
 }
 .sidebar-btn:hover { color: #5c6478; }
+.sidebar-label {
+  font-size: 13px; font-weight: 600; white-space: nowrap;
+}
 .sidebar-indicator {
   position: absolute; left: 0; top: 50%;
   transform: translateY(-50%);
@@ -675,6 +764,21 @@ onBeforeUnmount(() => {
   background: #00d4ff;
   border-radius: 0 2px 2px 0;
 }
+.sidebar.expanded .sidebar-indicator { left: -11px; }
+.sidebar-toggle {
+  margin-top: 8px;
+  height: 40px; border-radius: 10px;
+  border: none; cursor: pointer;
+  background: transparent; color: var(--muted3);
+  transition: background 0.2s, color 0.2s;
+  display: flex; align-items: center; justify-content: center;
+  gap: 13px; flex-shrink: 0; align-self: center; width: 40px;
+}
+.sidebar.expanded .sidebar-toggle {
+  align-self: stretch; width: 100%;
+  justify-content: flex-start; padding: 0 11px;
+}
+.sidebar-toggle:hover { color: var(--text); background: var(--elevated); }
 
 /* Main scroll */
 .main-scroll {
@@ -745,6 +849,61 @@ onBeforeUnmount(() => {
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.02em;
+}
+
+/* "More" bottom sheet (mobile only) */
+.more-sheet-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(2px);
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+.more-sheet {
+  background: var(--bg2);
+  border-top: 1px solid var(--border);
+  border-radius: 20px 20px 0 0;
+  padding: 8px 0 calc(14px + env(safe-area-inset-bottom, 0px));
+  box-shadow: 0 -8px 30px rgba(0, 0, 0, 0.4);
+}
+.more-sheet-grab {
+  width: 38px; height: 4px; border-radius: 3px;
+  background: var(--muted2); margin: 6px auto 8px;
+}
+.more-sheet-title {
+  font-size: 11px; font-weight: 600; color: var(--label);
+  text-transform: uppercase; letter-spacing: 0.06em;
+  padding: 4px 20px 8px;
+}
+.more-sheet-row {
+  display: flex; align-items: center; gap: 14px;
+  width: 100%; padding: 14px 20px;
+  background: none; border: none; cursor: pointer;
+  color: var(--text); font-size: 15px; font-weight: 500;
+  -webkit-tap-highlight-color: transparent;
+}
+.more-sheet-row:active { background: var(--elevated); }
+.more-sheet-icon { color: var(--muted3); display: inline-flex; flex-shrink: 0; }
+.more-sheet-row.active { color: #00d4ff; }
+.more-sheet-row.active .more-sheet-icon { color: #00d4ff; }
+.more-sheet-label { flex: 1; text-align: left; }
+.more-sheet-badge {
+  background: #ff5252; color: #fff;
+  font-size: 10px; font-weight: 700;
+  min-width: 18px; height: 18px; border-radius: 9px;
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 0 5px;
+}
+.sheet-enter-active, .sheet-leave-active { transition: opacity 0.25s ease; }
+.sheet-enter-from, .sheet-leave-to { opacity: 0; }
+.sheet-enter-active .more-sheet, .sheet-leave-active .more-sheet {
+  transition: transform 0.28s cubic-bezier(0.32, 0.72, 0, 1);
+}
+.sheet-enter-from .more-sheet, .sheet-leave-to .more-sheet {
+  transform: translateY(100%);
 }
 
 /* Unread dot on sidebar/bottom tabs */

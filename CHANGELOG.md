@@ -80,6 +80,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - `GET /api/vehicles/{vin}/maintenance/current-mileage` — fetch live odometer from vehicle API
 
 ### Changed
+- **Navigation menu refactor**:
+  - **Desktop**: the icon-only sidebar can now be expanded/collapsed via an always-visible toggle. Collapsed by default (icons only), expands to show page titles; the state is remembered across sessions
+  - **Mobile**: the bottom bar no longer crams in every tab — it now shows the 4 primary sections (Dashboard, Charging, Trips, Maintenance) plus a **"More"** button that opens a bottom sheet with the remaining sections (Details, History, Messages, Settings). New sections added in the future fall under "More" automatically. Unread badge now surfaces on "More" and on the Messages row inside the sheet
+  - Tabs reordered by usage hierarchy (Dashboard, Charging, Trips, Maintenance first)
 - **Settings layout**: energy/charging preferences moved from "Preferences" card to dedicated "Energy & Charging Costs" card
 - **Preferences API**: extended with `has_solar_panels` and `home_pricing_mode` fields
 - **History tab**: removed tier-specific KPIs (moved to dedicated Charging tab)
