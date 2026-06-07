@@ -14,21 +14,45 @@
 
 Web dashboard for monitoring and controlling Leapmotor vehicles via the [leapmotor-api](https://github.com/markoceri/leapmotor-api) Python client.
 
+## What is LeapConnect?
+
+**LeapConnect** is a self-hosted web application that gives you a complete, private dashboard for your Leapmotor vehicle — everything the official app does, plus a lot more, all running on your own server.
+
+Leapmotor cars expose their data and remote commands through a cloud API. LeapConnect connects to that cloud on your behalf, then presents it in a clean, fast interface you can open from any browser on your network — phone, tablet, or desktop. Because it runs on your own machine, your vehicle data stays with you instead of being scattered across third-party services.
+
+What you get out of the box:
+
+- **A live cockpit** for your car — battery, range, location, climate, doors, tires, and more, refreshed automatically in real time.
+- **Full remote control** — over 50 commands (lock, climate, charging, windows, sunroof, find car…), each respecting your account permissions and your car's actual hardware.
+- **Your own history** — every reading is optionally saved to a local database, so you can chart battery health, charging sessions, efficiency, and driving trends over weeks and months.
+- **Dedicated tools** for the things that matter most: a **Charging** hub with real cost tracking, a **Trips** log with maps and comparisons, and a **Maintenance** tracker that reminds you before a service is due.
+- **It talks to your other tools** — push everything into **Home Assistant** via MQTT, send live telemetry to **A Better Route Planner**, or control and monitor your car straight from a **Telegram bot**.
+- **Stay informed** — a configurable notification system alerts you about charging, security, geofencing, and maintenance events.
+
+LeapConnect is an independent, community-driven project (see the [disclaimer](#disclaimer)) — not affiliated with Leapmotor.
+
 ## Features
 
 - **Live vehicle status**: Battery, range, speed, odometer, temperature, lock status and more — with configurable auto-refresh via WebSocket
 - **51 remote commands**: Lock/unlock, trunk, windows, sunroof, sunshade, climate (A/C, quick cool/heat, defrost), battery preheat, start/stop charging, charge schedule, climate schedule, seat heating & ventilation, steering wheel heat, sentry mode, speed limit, send destination, media playback, firmware OTA, find car, and more
 - **Charge management**: Adjustable charge limit slider, charge schedule programming (days, times, SOC target), healthy charging toggle, start/stop charging, unlock charger
+- **Charging tab**: Dedicated hub with automatic session detection, cost & energy KPIs, per-session and daily charts, time-of-use band distribution, monthly summary, and an editable session list
+- **Multi-tier charging costs**: Configurable price tiers for home grid, home solar, public AC, and public DC — flat rate or time-of-use bands (e.g. Italian ARERA F1/F2/F3) — with automatic AC/DC tier detection on each charge
+- **Trips tab**: Driving log grouped by day with distance, energy, and regen; trip detail with GPS route map, speed chart, and per-trip stats; monthly totals
+- **Trip comparison**: Compare any two trips side-by-side, or auto-discover similar trips by route, time of day, and distance with ranked efficiency insights
+- **Maintenance & health**: Model-aware service schedules (T03, B10, C10 BEV/REEV), service logging, overdue/upcoming tracking, importable community maintenance packs, and proactive reminders
 - **Climate scheduling**: Create, edit, and delete scheduled climate pre-conditioning timers
 - **Vehicle details**: Battery & charging info, doors, windows, tire pressure, climate, seat comfort, security, connectivity, charge plan, and vehicle info
 - **Location**: OpenStreetMap embedded view with coordinates and send-to-car destination picker
-- **History & analytics**: Interactive charts for SOC, range, speed, efficiency, charging sessions, energy consumption, vampire drain, tire pressure, usage heatmap, trip map with GPS traces, and CSV export
+- **History & analytics**: Interactive charts for SOC, range, speed, efficiency, charging sessions, energy consumption, vampire drain, tire pressure, usage heatmap, trip map with GPS traces, an events timeline, and CSV export
+- **Notifications**: Event-driven alerts (charging, driving, security, geofencing, maintenance) with configurable thresholds, per-event toggles, and dynamic vehicle images
+- **Telegram bot**: Full interactive bot to query and control the car — 20+ commands, per-command PIN auth, permission-aware menu, location tracking, and multi-user access with an approval workflow
 - **Cloud statistics**: Weekly energy consumption ranking and distribution from Leapmotor cloud
 - **Vehicle messages**: Notifications from Leapmotor with unread count and pagination
 - **Car picture**: Dynamic image reflecting lock status, doors, windows, sunshade, and lights
 - **Permission gating**: Controls filtered by vehicle hardware abilities and user account permissions
 - **Multi-vehicle**: Tab switching for accounts with multiple vehicles
-- **Home Assistant integration**: Optional MQTT export of all vehicle data for smart home automation
+- **Home Assistant integration**: Optional MQTT export of all vehicle data (sensors, controls, and cloud statistics) for smart home automation
 - **ABRP integration**: Optional live telemetry to [A Better Route Planner](https://abetterrouteplanner.com) for real-time route planning
 - **Local history recording**: Optional SQLite database to track and visualize vehicle data over time
 - **Dark & light theme**: Switchable UI theme
