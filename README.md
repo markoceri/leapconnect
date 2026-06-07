@@ -40,7 +40,7 @@ LeapConnect is an independent, community-driven project (see the [disclaimer](#d
 - **Multi-tier charging costs**: Configurable price tiers for home grid, home solar, public AC, and public DC — flat rate or time-of-use bands (e.g. Italian ARERA F1/F2/F3) — with automatic AC/DC tier detection on each charge
 - **Trips tab**: Driving log grouped by day with distance, energy, and regen; trip detail with GPS route map, speed chart, and per-trip stats; monthly totals
 - **Trip comparison**: Compare any two trips side-by-side, or auto-discover similar trips by route, time of day, and distance with ranked efficiency insights
-- **Maintenance & health**: Model-aware service schedules (T03, B10, C10 BEV/REEV), service logging, overdue/upcoming tracking, importable community maintenance packs, and proactive reminders
+- **Maintenance & health**: Model-aware service schedules (T03, B10, C10 BEV/REEV), service logging, overdue/upcoming tracking, importable [community maintenance packs](https://github.com/markoceri/leapconnect-maintenance-packs), and proactive reminders
 - **Climate scheduling**: Create, edit, and delete scheduled climate pre-conditioning timers
 - **Vehicle details**: Battery & charging info, doors, windows, tire pressure, climate, seat comfort, security, connectivity, charge plan, and vehicle info
 - **Location**: OpenStreetMap embedded view with coordinates and send-to-car destination picker
@@ -61,13 +61,13 @@ LeapConnect is an independent, community-driven project (see the [disclaimer](#d
 
 ## Screenshots
 
-| Login | Dashboard | Details |
-|:---:|:---:|:---:|
-| [![Login](docs/screenshots/login.png)](docs/screenshots/login.png) | [![Dashboard](docs/screenshots/dashboard.png)](docs/screenshots/dashboard.png) | [![Details](docs/screenshots/details.png)](docs/screenshots/details.png) |
+| Dashboard | Charging | Trips | Trip Comparison | Maintenance |
+|:---:|:---:|:---:|:---:|:---:|
+| [![Dashboard](docs/screenshots/dashboard.jpeg)](docs/screenshots/dashboard.jpeg) | [![Charging](docs/screenshots/charging.jpeg)](docs/screenshots/charging.jpeg) | [![Trips](docs/screenshots/trips.jpeg)](docs/screenshots/trips.jpeg) | [![Trip Comparison](docs/screenshots/trip-comparison.jpeg)](docs/screenshots/trip-comparison.jpeg) | [![Maintenance](docs/screenshots/maintenance.jpeg)](docs/screenshots/maintenance.jpeg) |
 
-| History | Messages | Settings |
-|:---:|:---:|:---:|
-| [![History](docs/screenshots/history.png)](docs/screenshots/history.png) | [![Messages](docs/screenshots/messages.png)](docs/screenshots/messages.png) | [![Settings](docs/screenshots/settings.png)](docs/screenshots/settings.png) |
+| Maintenance Library | History (Local) | History (Cloud) | Details | Energy & Charging Costs |
+|:---:|:---:|:---:|:---:|:---:|
+| [![Maintenance Library](docs/screenshots/maintenance-library.jpeg)](docs/screenshots/maintenance-library.jpeg) | [![History Local](docs/screenshots/history-local.jpeg)](docs/screenshots/history-local.jpeg) | [![History Cloud](docs/screenshots/history-cloud.jpeg)](docs/screenshots/history-cloud.jpeg) | [![Details](docs/screenshots/details.jpeg)](docs/screenshots/details.jpeg) | [![Energy & Charging Costs](docs/screenshots/energy-charge-cost.jpeg)](docs/screenshots/energy-charge-cost.jpeg) |
 
 ## Tested Vehicles
 
