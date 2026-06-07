@@ -12,6 +12,12 @@
       </div>
     </div>
 
+    <!-- Loading -->
+    <div v-if="loading" class="loading-center">
+      <div class="spinner" />
+    </div>
+
+    <template v-else>
     <!-- KPI cards -->
     <div v-if="kpiCards.length" class="summary-grid">
       <div v-for="s in kpiCards" :key="s.label" class="summary-card">
@@ -20,9 +26,9 @@
       </div>
     </div>
 
-    <!-- Charts row -->
-    <div class="charts-grid">
-      <div class="chart-card wide">
+    <!-- Charts row: three charts side by side on desktop -->
+    <div class="charts-grid charts-grid-3">
+      <div class="chart-card">
         <div class="chart-header"><Zap :size="16" class="chart-icon" /> Energy per session (kWh)</div>
         <div class="chart-area"><canvas ref="energyCanvas" /></div>
       </div>
@@ -91,30 +97,38 @@
     <div class="chart-card wide">
       <div class="chart-header"><List :size="16" class="chart-icon" /> Charging sessions</div>
       <div class="session-list">
+        <div class="session-head">
+          <span>Date</span>
+          <span>Time</span>
+          <span>Energy</span>
+          <span>Peak</span>
+          <span>Tier</span>
+          <span>Cost</span>
+          <span class="head-edit" />
+        </div>
         <div v-for="s in filteredSessions" :key="s.id || s.start_ts" class="session-row">
-          <div class="session-info">
-            <span class="session-date">{{ formatDate(s.start_ts) }}</span>
-            <span class="session-time">{{ formatTimeRange(s.start_ts, s.end_ts) }}</span>
-          </div>
-          <div class="session-energy">
-            <span class="session-val">{{ s.energy_kwh != null ? s.energy_kwh.toFixed(1) : '—' }} kWh</span>
-            <span v-if="s.peak_power_kw != null" class="session-peak">{{ s.peak_power_kw.toFixed(1) }} kW peak</span>
-          </div>
-          <div class="session-tier">
+          <span class="cell cell-date" data-label="Date">{{ formatDate(s.start_ts) }}</span>
+          <span class="cell cell-time" data-label="Time">{{ formatTimeRange(s.start_ts, s.end_ts) }}</span>
+          <span class="cell cell-energy" data-label="Energy">{{ s.energy_kwh != null ? s.energy_kwh.toFixed(1) + ' kWh' : '—' }}</span>
+          <span class="cell cell-peak" data-label="Peak">{{ s.peak_power_kw != null ? s.peak_power_kw.toFixed(1) + ' kW' : '—' }}</span>
+          <span class="cell cell-tier" data-label="Tier">
             <span v-if="s.tier_label" class="tier-badge" :class="'tier-' + s.tier_id">{{ s.tier_label }}</span>
             <span v-else class="tier-badge tier-none">No tier</span>
-          </div>
-          <div class="session-cost">
+          </span>
+          <span class="cell cell-cost" data-label="Cost">
             <span v-if="s.cost != null">€{{ s.cost.toFixed(2) }}</span>
             <span v-else class="cost-none">—</span>
-          </div>
-          <button class="edit-btn" @click="editSession(s)" title="Edit session cost">
-            <Pencil :size="14" />
-          </button>
+          </span>
+          <span class="cell cell-edit">
+            <button class="edit-btn" @click="editSession(s)" title="Edit session cost">
+              <Pencil :size="14" />
+            </button>
+          </span>
         </div>
         <div v-if="!filteredSessions.length" class="empty-row">No charging sessions in this period</div>
       </div>
     </div>
+    </template>
 
     <!-- Edit session dialog -->
     <Teleport to="body">
@@ -155,6 +169,7 @@
 import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import { Chart, registerables } from 'chart.js'
 import { api } from '../composables/useApi'
+import { parseUTC } from '../utils/maintenance'
 import { Zap, TrendingUp, PieChart, Clock, CalendarDays, ChevronLeft, ChevronRight, List, Pencil } from 'lucide-vue-next'
 
 Chart.register(...registerables)
@@ -175,7 +190,7 @@ const editingSession = ref(null)
 const editForm = ref({})
 const editError = ref('')
 const saving = ref(false)
-const loading = ref(false)
+const loading = ref(true)
 
 // Charts
 const energyCanvas = ref(null)
@@ -213,7 +228,7 @@ const filteredSessions = computed(() => {
   const merged = detectedSessions.value.map(ds => {
     // Try to match with a cost record (within 2 min of start_ts)
     const match = sessionCosts.value.find(sc =>
-      sc.start_ts && Math.abs(new Date(sc.start_ts) - new Date(ds.start_ts)) < 120000
+      sc.start_ts && Math.abs(parseUTC(sc.start_ts) - parseUTC(ds.start_ts)) < 120000
     )
     if (match) {
       return { ...match, energy_kwh: match.energy_kwh ?? ds.energy_kwh, peak_power_kw: match.peak_power_kw ?? ds.peak_power_kw, _detected: true }
@@ -224,7 +239,7 @@ const filteredSessions = computed(() => {
 
   // Also include cost records that don't match any detected session (e.g. manually created)
   for (const sc of sessionCosts.value) {
-    const d = new Date(sc.start_ts)
+    const d = parseUTC(sc.start_ts)
     if (d.getFullYear() !== y || d.getMonth() !== m) continue
     const alreadyMerged = merged.some(ms => ms.id === sc.id)
     if (!alreadyMerged) {
@@ -232,7 +247,7 @@ const filteredSessions = computed(() => {
     }
   }
 
-  return merged.sort((a, b) => new Date(b.start_ts) - new Date(a.start_ts))
+  return merged.sort((a, b) => parseUTC(b.start_ts) - parseUTC(a.start_ts))
 })
 
 // KPI cards
@@ -271,7 +286,7 @@ const monthlySummary = computed(() => {
   if (!all.length) return []
   const months = {}
   for (const s of all) {
-    const d = new Date(s.start_ts)
+    const d = parseUTC(s.start_ts)
     const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
     if (!months[key]) months[key] = { month: key, sessions: 0, energy: 0, homeGrid: 0, solar: 0, public: 0, cost: 0 }
     months[key].sessions++
@@ -308,11 +323,11 @@ const timeBandsWithEnergy = computed(() => {
 // Formatting
 function formatDate(ts) {
   if (!ts) return '—'
-  return new Date(ts).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+  return parseUTC(ts).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 function formatTimeRange(start, end) {
-  const s = start ? new Date(start).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : ''
-  const e = end ? new Date(end).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : 'ongoing'
+  const s = start ? parseUTC(start).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : ''
+  const e = end ? parseUTC(end).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : 'ongoing'
   return `${s} – ${e}`
 }
 
@@ -503,7 +518,7 @@ function renderCharts() {
     // Aggregate by day
     const daily = {}
     for (const s of sessions) {
-      const day = new Date(s.start_ts).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })
+      const day = parseUTC(s.start_ts).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })
       daily[day] = (daily[day] || 0) + (s.cost || 0)
     }
     const labels = Object.keys(daily)
@@ -569,7 +584,8 @@ watch(selectedMonth, loadData)
 </script>
 
 <style scoped>
-.charging-tab { padding: 16px; max-width: 1200px; margin: 0 auto; }
+.charging-tab { width: 100%; }
+.loading-center { display: flex; justify-content: center; padding: 48px; }
 .charging-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; flex-wrap: wrap; gap: 12px; }
 .header-title h2 { font-size: 20px; font-weight: 700; color: var(--text); margin: 0; }
 .header-title p { font-size: 12px; color: var(--muted); margin: 2px 0 0; }
@@ -579,14 +595,21 @@ watch(selectedMonth, loadData)
 .toolbar-btn:disabled { opacity: 0.4; cursor: default; }
 .toolbar-btn:hover:not(:disabled) { background: var(--btn-bg); color: var(--cyan); border-color: var(--cyan); }
 
-/* KPI */
-.summary-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; margin-bottom: 16px; }
-.summary-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 12px; text-align: center; }
-.summary-value { font-size: 18px; font-weight: 700; }
-.summary-label { font-size: 11px; color: var(--muted); margin-top: 2px; }
+/* KPI — aligned with the Data History tab */
+.summary-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 16px; }
+@media (min-width: 768px) {
+  .summary-grid { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
+}
+.summary-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; text-align: center; }
+.summary-value { font-size: 20px; font-weight: 700; }
+.summary-label { font-size: 10px; color: var(--muted); margin-top: 4px; }
 
 /* Charts */
 .charts-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; margin-bottom: 12px; }
+.charts-grid-3 { grid-template-columns: 1fr; }
+@media (min-width: 860px) {
+  .charts-grid-3 { grid-template-columns: repeat(3, 1fr); }
+}
 .chart-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 14px; }
 .chart-card.wide { grid-column: 1 / -1; }
 .charts-grid + .chart-card.wide,
@@ -615,26 +638,57 @@ watch(selectedMonth, loadData)
 .empty-row { color: var(--muted); text-align: center; padding: 20px; }
 
 /* Session list */
-.session-list { display: flex; flex-direction: column; gap: 0; }
-.session-row { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+.session-list { display: flex; flex-direction: column; }
+/* Desktop: aligned table with header */
+.session-head, .session-row {
+  display: grid;
+  grid-template-columns: 1.1fr 1.4fr 0.9fr 0.8fr 1.1fr 0.9fr 40px;
+  gap: 12px; align-items: center;
+}
+.session-head { padding: 0 0 8px; border-bottom: 1px solid var(--border); }
+.session-head span { font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); font-weight: 600; }
+.session-row { padding: 10px 0; border-bottom: 1px solid var(--border); }
 .session-row:last-child { border-bottom: none; }
-.session-info { display: flex; flex-direction: column; min-width: 120px; }
-.session-date { font-size: 12px; font-weight: 500; color: var(--text); }
-.session-time { font-size: 11px; color: var(--muted); }
-.session-energy { min-width: 80px; }
-.session-val { font-size: 13px; font-weight: 600; color: var(--green); }
-.session-peak { display: block; font-size: 10px; font-weight: 400; color: var(--amber); margin-top: 1px; }
-.session-tier { min-width: 80px; }
+.cell { font-size: 13px; color: var(--text); min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.cell-date { font-weight: 500; }
+.cell-time { font-size: 12px; color: var(--muted); }
+.cell-energy { font-weight: 600; color: var(--green); }
+.cell-peak { font-size: 12px; color: var(--amber); }
+.cell-cost { font-weight: 600; color: var(--amber); }
+.cell-edit { display: flex; justify-content: flex-end; }
+.cost-none { color: var(--muted); }
 .tier-badge { font-size: 10px; padding: 2px 6px; border-radius: 4px; font-weight: 500; }
 .tier-home_grid { background: rgba(102,187,106,0.15); color: #66bb6a; }
 .tier-home_solar { background: rgba(253,216,53,0.15); color: #fdd835; }
 .tier-public_ac { background: rgba(66,165,245,0.15); color: #42a5f5; }
 .tier-public_dc { background: rgba(124,106,255,0.15); color: #7c6aff; }
 .tier-none { background: rgba(136,136,136,0.1); color: #888; }
-.session-cost { min-width: 60px; font-size: 13px; font-weight: 600; color: var(--amber); }
-.cost-none { color: var(--muted); }
 .edit-btn { background: none; border: 1px solid var(--border); border-radius: 6px; padding: 4px 6px; color: var(--muted); cursor: pointer; display: flex; align-items: center; }
 .edit-btn:hover { color: var(--text); border-color: var(--text); }
+
+/* Mobile: each session becomes a compact labelled card */
+@media (max-width: 640px) {
+  .session-head { display: none; }
+  .session-row {
+    grid-template-columns: 1fr 1fr;
+    gap: 8px 12px;
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    margin-bottom: 8px;
+    position: relative;
+  }
+  .session-row:last-child { border-bottom: 1px solid var(--border); }
+  .cell { display: flex; flex-direction: column; font-size: 13px; }
+  .cell[data-label]::before {
+    content: attr(data-label);
+    font-size: 9px; text-transform: uppercase; letter-spacing: 0.04em;
+    color: var(--muted); margin-bottom: 2px; font-weight: 600;
+  }
+  .cell-date { grid-column: 1 / -1; font-size: 14px; padding-right: 36px; }
+  .cell-time { grid-column: 1 / -1; }
+  .cell-edit { position: absolute; top: 10px; right: 10px; }
+}
 
 /* Modal */
 .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 1000; display: flex; align-items: center; justify-content: center; }
@@ -651,8 +705,6 @@ watch(selectedMonth, loadData)
 .field-error { color: #ff5252; font-size: 12px; margin-top: 8px; }
 
 @media (max-width: 640px) {
-  .session-row { flex-wrap: wrap; gap: 6px; }
   .charts-grid { grid-template-columns: 1fr; }
-  .summary-grid { grid-template-columns: repeat(2, 1fr); }
 }
 </style>

@@ -1089,7 +1089,7 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-.trips-tab { padding: 16px; max-width: 900px; margin: 0 auto; }
+.trips-tab { width: 100%; }
 .trips-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; flex-wrap: wrap; gap: 12px; }
 .header-title h2 { font-size: 20px; font-weight: 700; color: var(--text); margin: 0; }
 .header-title p { font-size: 12px; color: var(--muted); margin: 2px 0 0; }
@@ -1137,10 +1137,13 @@ onBeforeUnmount(() => {
 .compare-count-label { font-size: 11px; color: var(--muted); }
 
 /* Summary grid */
-.summary-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; margin-bottom: 16px; }
-.summary-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 12px; text-align: center; }
-.summary-value { font-size: 18px; font-weight: 700; }
-.summary-label { font-size: 11px; color: var(--muted); margin-top: 2px; }
+.summary-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 16px; }
+@media (min-width: 768px) {
+  .summary-grid { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
+}
+.summary-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; text-align: center; }
+.summary-value { font-size: 20px; font-weight: 700; }
+.summary-label { font-size: 10px; color: var(--muted); margin-top: 4px; }
 
 /* Trip days */
 .trip-days { display: flex; flex-direction: column; gap: 12px; }
@@ -1273,7 +1276,6 @@ onBeforeUnmount(() => {
 .chart-area { height: 350px; position: relative; }
 
 @media (max-width: 640px) {
-  .summary-grid { grid-template-columns: repeat(2, 1fr); }
   .trip-row { flex-wrap: wrap; gap: 6px; }
   .compare-columns { grid-template-columns: 1fr; }
   .compare-row { grid-template-columns: 1.2fr 1fr 1fr 1fr; font-size: 11px; }
