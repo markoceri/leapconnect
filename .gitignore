@@ -42,3 +42,7 @@ data/*
 # Traefik generated certificates
 traefik/certs/
 !data/.gitkeep
+
+# Ignore folders
+logs/
+ignore/
