@@ -18,6 +18,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Account Setup screen**: "Test Connection" button next to "Save & Connect" with live feedback (success with vehicle count or error detail)
   - **Settings → Leapmotor Credentials modal**: "Test Connection" button alongside "Save & Reconnect"
 - **Account security hint** in the setup wizard — amber info banner recommending a shared/secondary Leapmotor account to avoid session conflicts with the official app
+- **Telegram Bot card in Services Setup** — dedicated card to configure Telegram notifications and bot commands during first-time setup:
+  - Bot Token and Chat ID fields with Test Connection button
+  - Bot commands toggle (enable/disable `/status`, `/lock`, `/climate`, etc.)
+  - Notifications toggle to enable/disable alerts through the channel (enabled by default)
+  - Channel is automatically created on save
+
+### Changed
+- **Services Setup defaults**: Data Recording interval changed from 15 min to 1 min; Home Assistant MQTT polling interval changed from 60 sec to 10 sec
 
 ## [0.9.0] - 2026-06-07
 

@@ -148,11 +148,72 @@
         </Transition>
       </div>
 
+      <!-- ─── Telegram Bot ─── -->
+      <div class="service-card">
+        <div class="service-header">
+          <div class="service-icon telegram-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M22 2L11 13" /><path d="M22 2l-7 20-4-9-9-4 20-7z" />
+            </svg>
+          </div>
+          <div class="service-info">
+            <h3>Telegram Bot</h3>
+            <p>Receive notifications and control your vehicle remotely via Telegram.</p>
+          </div>
+          <button
+            class="toggle-btn"
+            :class="{ active: telegramEnabled }"
+            @click="telegramEnabled = !telegramEnabled"
+          >
+            <span class="toggle-track"><span class="toggle-thumb" /></span>
+          </button>
+        </div>
+        <Transition name="expand">
+          <div v-if="telegramEnabled" class="service-options">
+            <p class="section-desc">
+              Create a bot with <a href="https://t.me/BotFather" target="_blank" rel="noopener">@BotFather</a> on Telegram,
+              then paste the token below. To find your Chat ID, send a message to your bot
+              and visit <code>https://api.telegram.org/bot&lt;TOKEN&gt;/getUpdates</code>.
+            </p>
+            <div class="form-group">
+              <label>Bot Token</label>
+              <input v-model="telegramForm.bot_token" :type="showTelegramSecrets ? 'text' : 'password'" placeholder="123456:ABC-DEF..." />
+            </div>
+            <div class="form-group">
+              <label>Chat ID</label>
+              <input v-model="telegramForm.chat_id" :type="showTelegramSecrets ? 'text' : 'password'" placeholder="-100123456789" />
+            </div>
+            <div class="form-group">
+              <label class="checkbox-label">
+                <input type="checkbox" v-model="telegramForm.bot_enabled" />
+                <span>Enable bot commands</span>
+              </label>
+              <span class="field-hint">Allow /status, /lock, /climate and other commands from Telegram.</span>
+            </div>
+            <div class="form-group">
+              <label class="checkbox-label">
+                <input type="checkbox" v-model="telegramForm.channel_enabled" />
+                <span>Enable notifications</span>
+              </label>
+              <span class="field-hint">Send vehicle alerts (charging started, geofence, etc.) to this Telegram channel.</span>
+            </div>
+            <div v-if="telegramTestResult" :class="telegramTestResult.ok ? 'setup-success' : 'setup-error'" style="margin-top:8px">
+              {{ telegramTestResult.message }}
+            </div>
+            <div class="channel-actions">
+              <button class="btn-test" :disabled="telegramTesting || !telegramForm.bot_token || !telegramForm.chat_id" @click="testTelegram">
+                {{ telegramTesting ? 'Testing…' : 'Test Connection' }}
+              </button>
+            </div>
+          </div>
+        </Transition>
+      </div>
+
       <!-- ─── Actions ─── -->
       <div v-if="error" class="setup-error">{{ error }}</div>
 
       <button class="btn-primary" :disabled="submitting" @click="handleContinue">
-        {{ submitting ? 'Saving…' : (historyEnabled || mqttEnabled || abrpEnabled) ? 'Save & Continue' : 'Skip & Continue' }}
+        {{ submitting ? 'Saving…' : (historyEnabled || mqttEnabled || abrpEnabled || telegramEnabled) ? 'Save & Continue' : 'Skip & Continue' }}
       </button>
     </div>
   </div>
@@ -172,11 +233,11 @@ const error = ref('')
 
 // History / Data Recording
 const historyEnabled = ref(false)
-const historyInterval = ref(15)
+const historyInterval = ref(1)
 
 // MQTT / Home Assistant
 const mqttEnabled = ref(false)
-const mqttInterval = ref(60)
+const mqttInterval = ref(10)
 const mqttTesting = ref(false)
 const mqttTestResult = ref(null)
 const mqttForm = reactive({
@@ -191,6 +252,18 @@ const mqttForm = reactive({
 const abrpEnabled = ref(false)
 const abrpForm = reactive({
   user_token: '',
+})
+
+// Telegram Bot
+const telegramEnabled = ref(false)
+const telegramTesting = ref(false)
+const telegramTestResult = ref(null)
+const showTelegramSecrets = ref(false)
+const telegramForm = reactive({
+  bot_token: '',
+  chat_id: '',
+  bot_enabled: true,
+  channel_enabled: true,
 })
 
 function formatSeconds(s) {
@@ -220,7 +293,27 @@ async function testMqtt() {
     mqttTesting.value = false
   }
 }
-
+async function testTelegram() {
+  telegramTesting.value = true
+  telegramTestResult.value = null
+  try {
+    // Create or update a temporary channel to test
+    const data = await api('POST', '/api/notifications/channels', {
+      channel_type: 'telegram',
+      config: { bot_token: telegramForm.bot_token, chat_id: telegramForm.chat_id, bot_enabled: telegramForm.bot_enabled },
+      enabled: telegramForm.channel_enabled,
+    })
+    // Test the channel
+    const test = await api('POST', `/api/notifications/channels/${data.id}/test`)
+    telegramTestResult.value = { ok: test.success, message: test.message || 'Test notification sent. Check Telegram.' }
+    // Clean up the test channel
+    await api('DELETE', `/api/notifications/channels/${data.id}`)
+  } catch (err) {
+    telegramTestResult.value = { ok: false, message: err.message }
+  } finally {
+    telegramTesting.value = false
+  }
+}
 function proceedToApp() {
   if (store.vehicles.length === 1) {
     store.selectedVin = store.vehicles[0].vin
@@ -265,6 +358,19 @@ async function handleContinue() {
       await api('PUT', '/api/abrp', {
         enabled: true,
         user_token: abrpForm.user_token,
+      })
+    }
+
+    // Save Telegram bot channel
+    if (telegramEnabled.value && telegramForm.bot_token && telegramForm.chat_id) {
+      await api('POST', '/api/notifications/channels', {
+        channel_type: 'telegram',
+        config: {
+          bot_token: telegramForm.bot_token,
+          chat_id: telegramForm.chat_id,
+          bot_enabled: telegramForm.bot_enabled,
+        },
+        enabled: telegramForm.channel_enabled,
       })
     }
 
@@ -369,6 +475,8 @@ async function handleContinue() {
 .ha-icon svg { color: #00d4ff; }
 .abrp-icon { background: #4caf5022; border: 1px solid #4caf5044; }
 .abrp-icon svg { color: #4caf50; }
+.telegram-icon { background: #039be522; border: 1px solid #039be544; }
+.telegram-icon svg { color: #039be5; }
 
 .service-info {
   flex: 1;
@@ -589,5 +697,65 @@ async function handleContinue() {
   padding: 10px 14px;
   font-size: 12px;
   color: #00e676;
+}
+
+/* ─── Section description ─── */
+.section-desc {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.5;
+  margin-bottom: 0.8rem;
+}
+.section-desc a {
+  color: var(--cyan);
+  text-decoration: none;
+}
+.section-desc a:hover { text-decoration: underline; }
+.section-desc code {
+  background: var(--bg);
+  padding: 1px 4px;
+  border-radius: 4px;
+  font-size: 11px;
+  word-break: break-all;
+}
+
+/* ─── Checkbox label ─── */
+.checkbox-label {
+  display: flex !important;
+  align-items: center;
+  gap: 8px;
+  text-transform: none !important;
+  letter-spacing: normal !important;
+  font-size: 13px !important;
+  color: var(--text) !important;
+  font-weight: 500 !important;
+  cursor: pointer;
+}
+.checkbox-label input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--cyan);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+/* ─── Field hint ─── */
+.field-hint {
+  display: block;
+  font-size: 11px;
+  color: var(--muted2);
+  margin-top: 3px;
+  margin-left: 24px;
+}
+
+/* ─── Channel actions ─── */
+.channel-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+.channel-actions .btn-test {
+  flex: 1;
+  margin-top: 0;
 }
 </style>
