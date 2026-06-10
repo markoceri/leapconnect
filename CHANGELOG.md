@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-06-07
+
 ### Added
 - **New dedicated Charging tab** — full-page view with:
   - Session detection from vehicle snapshots (battery_is_charging transitions)
