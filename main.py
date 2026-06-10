@@ -47,6 +47,7 @@ from persistence.sqlite_adapter import SQLAlchemyVehicleHistoryRepository
 from schemas import (
     AbrpStatusResponse,
     AccountSetupResponse,
+    AccountTestResponse,
     AuthLoginResponse,
     CertificateFetchResponse,
     CertificateStatusResponse,
@@ -1151,6 +1152,69 @@ async def save_account(request: Request) -> AccountSetupResponse:
             connection_error=str(exc),
             vehicles=[],
         )
+
+
+@app.post("/api/setup/account/test", response_model=AccountTestResponse)
+async def test_account(request: Request) -> AccountTestResponse:
+    """Test Leapmotor credentials without saving them."""
+    if not _history_repo:
+        raise HTTPException(status_code=503, detail="DB not ready")
+
+    body = await request.json()
+    username = body.get("username", "").strip()
+    password = body.get("password", "").strip()
+    p12_password = body.get("p12_password", "").strip() or None
+
+    if not all([username, password]):
+        raise HTTPException(
+            status_code=422, detail="username and password are required"
+        )
+
+    # Resolve cert paths from previously uploaded files
+    cert_path = await _history_repo.get_setting("cert_path") or ""
+    key_path = await _history_repo.get_setting("key_path") or ""
+
+    if not cert_path or not key_path:
+        raise HTTPException(status_code=422, detail="Certificates not uploaded yet")
+    if not Path(cert_path).is_file():
+        raise HTTPException(
+            status_code=400, detail=f"Certificate file not found: {cert_path}"
+        )
+    if not Path(key_path).is_file():
+        raise HTTPException(status_code=400, detail=f"Key file not found: {key_path}")
+
+    # Attempt a temporary connection (do NOT affect the global client)
+    test_sync = None
+    test_async = None
+    try:
+        test_sync = LeapmotorApiClient(
+            username=username,
+            password=password,
+            app_cert_path=cert_path,
+            app_key_path=key_path,
+            account_p12_password=p12_password,
+        )
+        test_async = AsyncLeapmotorApiClient(test_sync)
+        await test_async.login()
+        test_vehicles = await test_async.get_vehicle_list()
+
+        return AccountTestResponse(
+            status="ok",
+            connected=True,
+            vehicles=[VehicleSchema.from_model(v) for v in test_vehicles],
+        )
+    except Exception as exc:
+        return AccountTestResponse(
+            status="ok",
+            connected=False,
+            connection_error=str(exc),
+            vehicles=[],
+        )
+    finally:
+        # Always clean up the temporary client
+        if test_sync:
+            with suppress(Exception):
+                test_sync.close()
 
 
 @app.post("/api/reconnect", response_model=ReconnectResponse)

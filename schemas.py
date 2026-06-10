@@ -521,6 +521,13 @@ class AccountSetupResponse(BaseModel):
     connection_error: str | None = None
 
 
+class AccountTestResponse(BaseModel):
+    status: str = "ok"
+    connected: bool
+    vehicles: list[VehicleSchema] = []
+    connection_error: str | None = None
+
+
 class ReconnectResponse(BaseModel):
     status: str = "ok"
     connected: bool

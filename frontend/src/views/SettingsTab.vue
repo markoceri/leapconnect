@@ -1110,7 +1110,10 @@
             </div>
             <div class="mqtt-modal-footer">
               <button class="test-btn" @click="closeLeapmotorModal">Cancel</button>
-              <button class="save-btn" :disabled="accountSaving" @click="saveLeapmotorAccount">
+              <button class="save-btn" :disabled="testingLeapmotor || accountSaving" @click="testLeapmotorConnection">
+                {{ testingLeapmotor ? 'Testing…' : 'Test Connection' }}
+              </button>
+              <button class="save-btn" :disabled="accountSaving || testingLeapmotor" @click="saveLeapmotorAccount">
                 {{ accountSaving ? 'Saving…' : 'Save & Reconnect' }}
               </button>
             </div>
@@ -1291,6 +1294,7 @@ const appVersion = ref('')
 // Leapmotor credentials edit
 const showLeapmotorEdit = ref(false)
 const accountSaving = ref(false)
+const testingLeapmotor = ref(false)
 const accountError = ref('')
 const accountSuccess = ref('')
 const leapmotorEmail = ref('—')
@@ -1681,6 +1685,31 @@ async function saveUser() {
     userError.value = err.message
   } finally {
     userSaving.value = false
+  }
+}
+
+async function testLeapmotorConnection() {
+  accountError.value = ''
+  accountSuccess.value = ''
+  if (!accountForm.username || !accountForm.password) {
+    accountError.value = 'Email and password are required'
+    return
+  }
+  testingLeapmotor.value = true
+  try {
+    const result = await api('POST', '/api/setup/account/test', {
+      username: accountForm.username,
+      password: accountForm.password,
+    })
+    if (result.connected) {
+      accountSuccess.value = 'Connection successful — ' + (result.vehicles?.length || 0) + ' vehicle(s) found.'
+    } else {
+      accountError.value = result.connection_error || 'Connection failed'
+    }
+  } catch (err) {
+    accountError.value = err.message
+  } finally {
+    testingLeapmotor.value = false
   }
 }
 

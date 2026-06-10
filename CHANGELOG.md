@@ -13,6 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Certificate Setup screen**: new "Download from GitHub" banner with link to the certs repository, available when no certs are on disk
   - **Settings → Account → Certificates**: new "Download from GitHub" button next to "Update Certificates", with repo link always visible
   - Uses GitHub Releases API to automatically resolve the latest release tag and asset download URLs
+- **Test Connection for Leapmotor credentials** — verify credentials before saving:
+  - New `POST /api/setup/account/test` endpoint attempts a temporary connection without persisting credentials
+  - **Account Setup screen**: "Test Connection" button next to "Save & Connect" with live feedback (success with vehicle count or error detail)
+  - **Settings → Leapmotor Credentials modal**: "Test Connection" button alongside "Save & Reconnect"
+- **Account security hint** in the setup wizard — amber info banner recommending a shared/secondary Leapmotor account to avoid session conflicts with the official app
 
 ## [0.9.0] - 2026-06-07
 

@@ -19,6 +19,15 @@
           and collect vehicle data.
         </p>
 
+        <div class="setup-hint">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="hint-icon">
+            <circle cx="12" cy="12" r="10" />
+            <line x1="12" y1="16" x2="12" y2="12" />
+            <line x1="12" y1="8" x2="12.01" y2="8" />
+          </svg>
+          <span>Consider creating a <strong>shared/secondary account</strong> in the Leapmotor app and sharing the vehicle with it. This avoids conflicts with your primary account sessions (e.g. being logged out from the phone app or temporary account locks on Leapmotor's servers).</span>
+        </div>
+
         <form @submit.prevent="handleSubmit" autocomplete="off">
           <div class="form-group">
             <label>Email</label>
@@ -43,10 +52,24 @@
             </div>
           </div>
 
-          <button type="submit" class="btn-primary" :disabled="submitting">
-            {{ submitting ? 'Saving…' : 'Save & Connect' }}
-          </button>
+          <div class="setup-buttons">
+            <button type="button" class="btn-primary" :disabled="testingConnection || submitting" @click="testConnection">
+              <svg v-if="testingConnection" class="spinner" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10" stroke-opacity="0.2" />
+                <path d="M12 2a10 10 0 0 1 10 10" stroke-linecap="round" />
+              </svg>
+              {{ testingConnection ? 'Testing…' : 'Test Connection' }}
+            </button>
+            <button type="submit" class="btn-primary" :disabled="submitting || testingConnection">
+              {{ submitting ? 'Saving…' : 'Save & Connect' }}
+            </button>
+          </div>
 
+          <div v-if="testSuccess" class="setup-success">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5" /></svg>
+            Connection successful — {{ testVehicles }} vehicle(s) found.
+          </div>
+          <div v-if="testError" class="setup-error">{{ testError }}</div>
           <div v-if="warning" class="setup-warning">
             <strong>Credentials saved.</strong> {{ warning }}
           </div>
@@ -66,14 +89,42 @@ import { useToast } from '../composables/useToast'
 const store = useAppStore()
 const { toast } = useToast()
 const submitting = ref(false)
+const testingConnection = ref(false)
 const showPassword = ref(false)
 const error = ref('')
 const warning = ref('')
+const testSuccess = ref(false)
+const testError = ref('')
+const testVehicles = ref(0)
 
 const form = reactive({
   username: '',
   password: '',
 })
+
+async function testConnection() {
+  testError.value = ''
+  testSuccess.value = false
+  testingConnection.value = true
+  try {
+    const result = await api('POST', '/api/setup/account/test', {
+      username: form.username,
+      password: form.password,
+    })
+
+    if (result.connected) {
+      testSuccess.value = true
+      testVehicles.value = result.vehicles?.length || 0
+      toast('Connection successful', 'success')
+    } else {
+      testError.value = result.connection_error || 'Connection failed'
+    }
+  } catch (err) {
+    testError.value = err.message
+  } finally {
+    testingConnection.value = false
+  }
+}
 
 async function handleSubmit() {
   error.value = ''
@@ -174,7 +225,45 @@ async function handleSubmit() {
   font-size: 13px;
   color: var(--muted);
   line-height: 1.5;
+  margin-bottom: 1rem;
+}
+
+.setup-hint {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  background: #ffab4012;
+  border: 1px solid #ffab4030;
+  border-radius: 10px;
   margin-bottom: 1.5rem;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #e8d0a0;
+}
+.setup-hint .hint-icon {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  color: #ffab40;
+  margin-top: 1px;
+}
+.setup-hint strong {
+  color: #ffab40;
+  font-weight: 600;
+}
+
+[data-theme="light"] .setup-hint {
+  background: #ffab4015;
+  border-color: #ffab4050;
+  color: #5a3a10;
+}
+[data-theme="light"] .setup-hint strong {
+  color: #b8700a;
+}
+.setup-hint strong {
+  color: #ffab40;
+  font-weight: 600;
 }
 
 .form-group { margin-bottom: 1.1rem; }
@@ -239,9 +328,8 @@ async function handleSubmit() {
 }
 
 .btn-primary {
-  width: 100%;
+  flex: 1;
   padding: 14px;
-  margin-top: 6px;
   background: linear-gradient(135deg, #00d4ff22, #00d4ff44);
   border: 1px solid #00d4ff55;
   border-radius: 10px;
@@ -251,11 +339,49 @@ async function handleSubmit() {
   cursor: pointer;
   transition: all 0.2s;
   letter-spacing: 0.04em;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
 }
 .btn-primary:hover {
   background: linear-gradient(135deg, #00d4ff33, #00d4ff55);
 }
 .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.setup-buttons {
+  display: flex;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.spinner {
+  width: 16px;
+  height: 16px;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.setup-success {
+  margin-top: 1rem;
+  padding: 9px 12px;
+  background: #00e67610;
+  border: 1px solid #00e67630;
+  border-radius: 8px;
+  color: #00e676;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.setup-success svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
 
 .setup-error {
   margin-top: 1rem;
