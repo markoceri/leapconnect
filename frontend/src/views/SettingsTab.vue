@@ -146,6 +146,73 @@
         >{{ databaseSize.loading ? 'Refreshing…' : 'Refresh' }}</button>
       </SectionCard>
 
+      <SectionCard title="Geofences" :icon="Navigation">
+        <p class="rate-limit-hint" style="margin-bottom:12px">
+          Configure geographic zones to receive notifications when the vehicle enters or exits. Click on the map to set coordinates for a new zone.
+        </p>
+
+        <!-- Map -->
+        <div class="geofence-map-wrapper">
+          <div ref="geofenceMapEl" class="geofence-map-container"></div>
+        </div>
+
+        <div v-for="gf in geofences" :key="gf.id" class="geofence-item">
+          <div class="geofence-header">
+            <div class="geofence-name-row">
+              <MapPin :size="13" class="geofence-pin" />
+              <span class="geofence-name">{{ gf.name }}</span>
+            </div>
+            <button class="geofence-delete-btn" @click="deleteGeofence(gf.id)">
+              <Trash2 :size="13" />
+            </button>
+          </div>
+          <div class="geofence-details">
+            <span>{{ gf.latitude.toFixed(5) }}, {{ gf.longitude.toFixed(5) }} · {{ gf.radius_m }}m</span>
+          </div>
+          <div class="geofence-toggles">
+            <label class="geofence-toggle-label">
+              <input type="checkbox" :checked="gf.notify_on_enter" @change="updateGeofenceField(gf, 'notify_on_enter', $event.target.checked)" /> Enter
+            </label>
+            <label class="geofence-toggle-label">
+              <input type="checkbox" :checked="gf.notify_on_exit" @change="updateGeofenceField(gf, 'notify_on_exit', $event.target.checked)" /> Exit
+            </label>
+          </div>
+        </div>
+
+        <div class="divider" v-if="geofences.length" />
+
+        <div class="notif-category-title" style="cursor:default">
+          <div class="notif-category-left">
+            <MapPin :size="13" />
+            <span>Add zone</span>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Name</label>
+          <input v-model="newGeofence.name" type="text" placeholder="Home, Work, ..." />
+        </div>
+        <div style="display:flex;gap:8px;align-items:flex-end">
+          <div class="form-group" style="flex:1">
+            <label>Latitude</label>
+            <input v-model.number="newGeofence.latitude" type="number" step="0.00001" placeholder="45.12345" />
+          </div>
+          <div class="form-group" style="flex:1">
+            <label>Longitude</label>
+            <input v-model.number="newGeofence.longitude" type="number" step="0.00001" placeholder="9.12345" />
+          </div>
+          <button class="locate-btn" :disabled="geolocating" @click="useCurrentLocation" title="Use current location">
+            <Locate :size="15" :class="{ spinning: geolocating }" />
+          </button>
+        </div>
+        <div class="form-group">
+          <label>Radius (m)</label>
+          <input v-model.number="newGeofence.radius_m" type="number" min="10" max="5000" step="10" />
+        </div>
+        <button class="save-btn" :disabled="notifSaving || !newGeofence.name || !newGeofence.latitude" @click="addGeofence">
+          {{ notifSaving ? 'Saving…' : 'Add geofence' }}
+        </button>
+      </SectionCard>
+
       <SectionCard title="Energy & Charging Costs" :icon="Zap">
         <!-- Solar panels toggle -->
         <div class="pref-row">
@@ -916,72 +983,6 @@
         </div>
       </SectionCard>
 
-      <SectionCard title="Geofences" :icon="Navigation">
-        <p class="rate-limit-hint" style="margin-bottom:12px">
-          Configure geographic zones to receive notifications when the vehicle enters or exits. Click on the map to set coordinates for a new zone.
-        </p>
-
-        <!-- Map -->
-        <div class="geofence-map-wrapper">
-          <div ref="geofenceMapEl" class="geofence-map-container"></div>
-        </div>
-
-        <div v-for="gf in geofences" :key="gf.id" class="geofence-item">
-          <div class="geofence-header">
-            <div class="geofence-name-row">
-              <MapPin :size="13" class="geofence-pin" />
-              <span class="geofence-name">{{ gf.name }}</span>
-            </div>
-            <button class="geofence-delete-btn" @click="deleteGeofence(gf.id)">
-              <Trash2 :size="13" />
-            </button>
-          </div>
-          <div class="geofence-details">
-            <span>{{ gf.latitude.toFixed(5) }}, {{ gf.longitude.toFixed(5) }} · {{ gf.radius_m }}m</span>
-          </div>
-          <div class="geofence-toggles">
-            <label class="geofence-toggle-label">
-              <input type="checkbox" :checked="gf.notify_on_enter" @change="updateGeofenceField(gf, 'notify_on_enter', $event.target.checked)" /> Enter
-            </label>
-            <label class="geofence-toggle-label">
-              <input type="checkbox" :checked="gf.notify_on_exit" @change="updateGeofenceField(gf, 'notify_on_exit', $event.target.checked)" /> Exit
-            </label>
-          </div>
-        </div>
-
-        <div class="divider" v-if="geofences.length" />
-
-        <div class="notif-category-title" style="cursor:default">
-          <div class="notif-category-left">
-            <MapPin :size="13" />
-            <span>Add zone</span>
-          </div>
-        </div>
-        <div class="form-group">
-          <label>Name</label>
-          <input v-model="newGeofence.name" type="text" placeholder="Home, Work, ..." />
-        </div>
-        <div style="display:flex;gap:8px;align-items:flex-end">
-          <div class="form-group" style="flex:1">
-            <label>Latitude</label>
-            <input v-model.number="newGeofence.latitude" type="number" step="0.00001" placeholder="45.12345" />
-          </div>
-          <div class="form-group" style="flex:1">
-            <label>Longitude</label>
-            <input v-model.number="newGeofence.longitude" type="number" step="0.00001" placeholder="9.12345" />
-          </div>
-          <button class="locate-btn" :disabled="geolocating" @click="useCurrentLocation" title="Use current location">
-            <Locate :size="15" :class="{ spinning: geolocating }" />
-          </button>
-        </div>
-        <div class="form-group">
-          <label>Radius (m)</label>
-          <input v-model.number="newGeofence.radius_m" type="number" min="10" max="5000" step="10" />
-        </div>
-        <button class="save-btn" :disabled="notifSaving || !newGeofence.name || !newGeofence.latitude" @click="addGeofence">
-          {{ notifSaving ? 'Saving…' : 'Add geofence' }}
-        </button>
-      </SectionCard>
     </template>
 
     <!-- ═══════════════ ADVANCED ═══════════════ -->
@@ -2249,7 +2250,7 @@ function updateNewGeofencePreview() {
 watch(() => [newGeofence.latitude, newGeofence.longitude, newGeofence.radius_m], updateNewGeofencePreview)
 watch(geofences, renderGeofencesOnMap, { deep: true })
 watch(() => activeSection.value, (val) => {
-  if (val === 'notifications') {
+  if (val === 'general') {
     geofenceMap = null
     nextTick(() => initGeofenceMap())
   }
