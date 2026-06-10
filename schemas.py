@@ -1006,9 +1006,11 @@ class NotificationEventStatus(BaseModel):
 class GeofenceCreate(BaseModel):
     vin: str | None = None
     name: str
+    shape_type: str = "circle"
     latitude: float
     longitude: float
     radius_m: float = 200.0
+    points: list[list[float]] | None = None
     notify_on_enter: bool = True
     notify_on_exit: bool = True
     enabled: bool = True
@@ -1016,9 +1018,11 @@ class GeofenceCreate(BaseModel):
 
 class GeofenceUpdate(BaseModel):
     name: str | None = None
+    shape_type: str | None = None
     latitude: float | None = None
     longitude: float | None = None
     radius_m: float | None = None
+    points: list[list[float]] | None = None
     notify_on_enter: bool | None = None
     notify_on_exit: bool | None = None
     enabled: bool | None = None
@@ -1028,9 +1032,11 @@ class GeofenceResponse(BaseModel):
     id: int
     vin: str | None = None
     name: str
+    shape_type: str
     latitude: float
     longitude: float
     radius_m: float
+    points: list[list[float]] | None = None
     notify_on_enter: bool
     notify_on_exit: bool
     enabled: bool

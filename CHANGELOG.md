@@ -27,8 +27,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Database size display** — view the current SQLite database size from the Settings page:
   - New `GET /api/system/database-size` endpoint returning size in bytes and human-readable format (KB/MB/GB)
   - Dedicated **Database** card in **Settings → General** showing current size with a Refresh button
+- **Polygon geofences** — geofence zones can now be either a circle or a free-form polygon:
+  - New **Shape** selector (Circle / Polygon) in the geofence editor; polygons are drawn directly on the map (click to add vertices, double-click to finish, drag vertices to adjust) via leaflet-geoman
+  - Geofence model/API extended with `shape_type` and `points` (`[[lat, lon], ...]`); polygon center is derived from the vertices
+  - Containment detection uses a ray-casting point-in-polygon test for polygon zones, haversine radius for circles
+  - DB migration `0011` adds `shape_type` and `points_json` columns to the `geofences` table, with a startup self-healing fallback that adds the columns idempotently if the create_all + stamp-to-head path skipped the ALTER (which otherwise left the DB marked up-to-date but missing the columns, crashing geofence reads)
 
 ### Changed
+- **Geofences moved to Settings → General** (above Energy & Charging Costs) into a dedicated section; **Notifications** now only covers channels, events and location tracking
 - **Services Setup defaults**: Data Recording interval changed from 15 min to 1 min; Home Assistant MQTT polling interval changed from 60 sec to 10 sec
 - **Database renamed** from `history.db` to `leapconnect.db` — all references updated across the codebase (default path, Docker, Alembic). Existing `history.db` files are automatically migrated on startup via `os.rename`.
 

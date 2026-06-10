@@ -476,6 +476,38 @@ def haversine_distance_m(lat1: float, lon1: float, lat2: float, lon2: float) -> 
     return R * c
 
 
+def point_in_polygon(lat: float, lon: float, points: list) -> bool:
+    """Return True if (lat, lon) lies inside the polygon defined by points.
+
+    Uses the ray-casting algorithm. ``points`` is a list of [lat, lon] pairs.
+    At geofence scale the small-angle distortion of treating lat/lon as planar
+    coordinates is negligible.
+    """
+    if not points or len(points) < 3:
+        return False
+    inside = False
+    n = len(points)
+    j = n - 1
+    for i in range(n):
+        yi, xi = points[i][0], points[i][1]
+        yj, xj = points[j][0], points[j][1]
+        if ((yi > lat) != (yj > lat)) and (
+            lon < (xj - xi) * (lat - yi) / (yj - yi) + xi
+        ):
+            inside = not inside
+        j = i
+    return inside
+
+
+def _geofence_contains(geofence, lat: float, lon: float) -> bool:
+    """Return True if the vehicle position falls inside the geofence."""
+    if geofence.shape_type == "polygon":
+        return point_in_polygon(lat, lon, geofence.points or [])
+    return haversine_distance_m(geofence.latitude, geofence.longitude, lat, lon) <= (
+        geofence.radius_m
+    )
+
+
 # ---------------------------------------------------------------------------
 # Dispatcher
 # ---------------------------------------------------------------------------
@@ -1403,8 +1435,7 @@ class NotificationDispatcher:
                     continue
                 if gf.vin and gf.vin != vin:
                     continue
-                dist = haversine_distance_m(gf.latitude, gf.longitude, lat, lon)
-                if dist <= gf.radius_m:
+                if _geofence_contains(gf, lat, lon):
                     current_inside.add(gf.id)
 
             prev_inside = self._inside_geofences.get(vin, set())

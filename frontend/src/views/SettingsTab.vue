@@ -148,7 +148,7 @@
 
       <SectionCard title="Geofences" :icon="Navigation">
         <p class="rate-limit-hint" style="margin-bottom:12px">
-          Configure geographic zones to receive notifications when the vehicle enters or exits. Click on the map to set coordinates for a new zone.
+          Configure geographic zones to receive notifications when the vehicle enters or exits. Choose a circular or a polygon zone — click the map to place a circle, or draw the polygon vertices directly on it.
         </p>
 
         <!-- Map -->
@@ -167,7 +167,8 @@
             </button>
           </div>
           <div class="geofence-details">
-            <span>{{ gf.latitude.toFixed(5) }}, {{ gf.longitude.toFixed(5) }} · {{ gf.radius_m }}m</span>
+            <span v-if="gf.shape_type === 'polygon'">Polygon · {{ gf.points ? gf.points.length : 0 }} points</span>
+            <span v-else>{{ gf.latitude.toFixed(5) }}, {{ gf.longitude.toFixed(5) }} · {{ gf.radius_m }}m</span>
           </div>
           <div class="geofence-toggles">
             <label class="geofence-toggle-label">
@@ -191,24 +192,62 @@
           <label>Name</label>
           <input v-model="newGeofence.name" type="text" placeholder="Home, Work, ..." />
         </div>
-        <div style="display:flex;gap:8px;align-items:flex-end">
-          <div class="form-group" style="flex:1">
-            <label>Latitude</label>
-            <input v-model.number="newGeofence.latitude" type="number" step="0.00001" placeholder="45.12345" />
-          </div>
-          <div class="form-group" style="flex:1">
-            <label>Longitude</label>
-            <input v-model.number="newGeofence.longitude" type="number" step="0.00001" placeholder="9.12345" />
-          </div>
-          <button class="locate-btn" :disabled="geolocating" @click="useCurrentLocation" title="Use current location">
-            <Locate :size="15" :class="{ spinning: geolocating }" />
-          </button>
-        </div>
+
+        <!-- Shape selector -->
         <div class="form-group">
-          <label>Radius (m)</label>
-          <input v-model.number="newGeofence.radius_m" type="number" min="10" max="5000" step="10" />
+          <label>Shape</label>
+          <div class="pricing-mode-toggle">
+            <button
+              class="theme-btn"
+              :class="{ active: newGeofence.shape_type === 'circle' }"
+              @click="setGeofenceShape('circle')"
+            >Circle</button>
+            <button
+              class="theme-btn"
+              :class="{ active: newGeofence.shape_type === 'polygon' }"
+              @click="setGeofenceShape('polygon')"
+            >Polygon</button>
+          </div>
         </div>
-        <button class="save-btn" :disabled="notifSaving || !newGeofence.name || !newGeofence.latitude" @click="addGeofence">
+
+        <!-- Circle inputs -->
+        <template v-if="newGeofence.shape_type === 'circle'">
+          <div style="display:flex;gap:8px;align-items:flex-end">
+            <div class="form-group" style="flex:1">
+              <label>Latitude</label>
+              <input v-model.number="newGeofence.latitude" type="number" step="0.00001" placeholder="45.12345" />
+            </div>
+            <div class="form-group" style="flex:1">
+              <label>Longitude</label>
+              <input v-model.number="newGeofence.longitude" type="number" step="0.00001" placeholder="9.12345" />
+            </div>
+            <button class="locate-btn" :disabled="geolocating" @click="useCurrentLocation" title="Use current location">
+              <Locate :size="15" :class="{ spinning: geolocating }" />
+            </button>
+          </div>
+          <div class="form-group">
+            <label>Radius (m)</label>
+            <input v-model.number="newGeofence.radius_m" type="number" min="10" max="5000" step="10" />
+          </div>
+        </template>
+
+        <!-- Polygon draw controls -->
+        <template v-else>
+          <div class="form-group">
+            <label>Polygon</label>
+            <div class="polygon-controls">
+              <button class="save-btn save-btn-sm" :disabled="drawingPolygon" @click="startPolygonDraw">
+                {{ drawingPolygon ? 'Drawing…' : (newGeofence.points.length ? 'Redraw' : 'Draw on map') }}
+              </button>
+              <button v-if="newGeofence.points.length" class="service-btn btn-stop" @click="clearPolygon">Clear</button>
+              <span class="polygon-status">
+                {{ drawingPolygon ? 'Click to add vertices, double-click to finish' : `${newGeofence.points.length} point(s)` }}
+              </span>
+            </div>
+          </div>
+        </template>
+
+        <button class="save-btn" :disabled="notifSaving || !canAddGeofence" @click="addGeofence">
           {{ notifSaving ? 'Saving…' : 'Add geofence' }}
         </button>
       </SectionCard>
@@ -1265,6 +1304,8 @@
 import { ref, reactive, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
+import '@geoman-io/leaflet-geoman-free'
+import '@geoman-io/leaflet-geoman-free/dist/leaflet-geoman.css'
 import SectionCard from '../components/SectionCard.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import InfoRow from '../components/InfoRow.vue'
@@ -2092,8 +2133,9 @@ const eventsSuccess = ref('')
 const eventSearch = ref('')
 const collapsedCategories = ref(new Set())
 const geofences = ref([])
-const newGeofence = reactive({ name: '', latitude: null, longitude: null, radius_m: 200 })
+const newGeofence = reactive({ name: '', shape_type: 'circle', latitude: null, longitude: null, radius_m: 200, points: [] })
 const geolocating = ref(false)
+const drawingPolygon = ref(false)
 const botToggling = ref(false)
 const geofenceMapEl = ref(null)
 
@@ -2110,6 +2152,13 @@ let geofenceMap = null
 let geofenceMapLayers = []
 let newGeofenceMarker = null
 let newGeofenceCircle = null
+let draftPolygonLayer = null
+
+const canAddGeofence = computed(() => {
+  if (!newGeofence.name) return false
+  if (newGeofence.shape_type === 'polygon') return newGeofence.points.length >= 3
+  return newGeofence.latitude != null && newGeofence.longitude != null
+})
 
 const telegramBotActive = computed(() => {
   return telegramChannel.value?.config?.bot_enabled !== false
@@ -2183,12 +2232,63 @@ function initGeofenceMap() {
   })
   L.tileLayer(getGeofenceTileUrl(), { maxZoom: 19, subdomains: 'abcd' }).addTo(geofenceMap)
   geofenceMap.on('click', onGeofenceMapClick)
+  // Polygon drawing via leaflet-geoman (toolbar hidden; driven by our buttons)
+  geofenceMap.pm.setGlobalOptions({ continueDrawing: false })
+  geofenceMap.on('pm:create', onPolygonCreated)
   renderGeofencesOnMap()
 }
 
 function onGeofenceMapClick(e) {
+  // Clicking the map only sets the center for circle zones (not while drawing).
+  if (newGeofence.shape_type !== 'circle' || drawingPolygon.value) return
   newGeofence.latitude = parseFloat(e.latlng.lat.toFixed(5))
   newGeofence.longitude = parseFloat(e.latlng.lng.toFixed(5))
+}
+
+// ── Polygon drawing ──
+function layerToPoints(layer) {
+  const ring = layer.getLatLngs()[0] || []
+  return ring.map(ll => [parseFloat(ll.lat.toFixed(5)), parseFloat(ll.lng.toFixed(5))])
+}
+
+function setGeofenceShape(shape) {
+  if (newGeofence.shape_type === shape) return
+  newGeofence.shape_type = shape
+  if (shape === 'circle') clearPolygon()
+}
+
+function startPolygonDraw() {
+  if (!geofenceMap) return
+  removeDraftPolygon()
+  newGeofence.points = []
+  drawingPolygon.value = true
+  geofenceMap.pm.enableDraw('Polygon', { finishOn: 'dblclick' })
+}
+
+function onPolygonCreated(e) {
+  // Disable draw mode and keep the layer as an editable draft.
+  geofenceMap.pm.disableDraw()
+  drawingPolygon.value = false
+  removeDraftPolygon()
+  draftPolygonLayer = e.layer
+  draftPolygonLayer.setStyle?.({ color: '#ff9800', fillColor: '#ff9800', fillOpacity: 0.15, weight: 2 })
+  newGeofence.points = layerToPoints(draftPolygonLayer)
+  draftPolygonLayer.pm.enable({ allowSelfIntersection: false })
+  draftPolygonLayer.on('pm:edit', () => { newGeofence.points = layerToPoints(draftPolygonLayer) })
+}
+
+function removeDraftPolygon() {
+  if (draftPolygonLayer && geofenceMap) {
+    geofenceMap.removeLayer(draftPolygonLayer)
+  }
+  draftPolygonLayer = null
+}
+
+function clearPolygon() {
+  if (drawingPolygon.value && geofenceMap) geofenceMap.pm.disableDraw()
+  drawingPolygon.value = false
+  removeDraftPolygon()
+  newGeofence.points = []
 }
 
 function renderGeofencesOnMap() {
@@ -2198,6 +2298,17 @@ function renderGeofencesOnMap() {
   geofenceMapLayers = []
   // Draw existing geofences
   geofences.value.forEach(gf => {
+    if (gf.shape_type === 'polygon' && gf.points && gf.points.length >= 3) {
+      const polygon = L.polygon(gf.points, {
+        color: '#00d4ff',
+        fillColor: '#00d4ff',
+        fillOpacity: 0.12,
+        weight: 2,
+      }).addTo(geofenceMap)
+      polygon.bindTooltip(gf.name, { permanent: false, direction: 'top', offset: [0, -8] })
+      geofenceMapLayers.push(polygon)
+      return
+    }
     const circle = L.circle([gf.latitude, gf.longitude], {
       radius: gf.radius_m,
       color: '#00d4ff',
@@ -2227,6 +2338,8 @@ function updateNewGeofencePreview() {
   // Remove previous preview
   if (newGeofenceMarker) { geofenceMap.removeLayer(newGeofenceMarker); newGeofenceMarker = null }
   if (newGeofenceCircle) { geofenceMap.removeLayer(newGeofenceCircle); newGeofenceCircle = null }
+  // Polygons manage their own draft layer; only circles get a live preview.
+  if (newGeofence.shape_type !== 'circle') return
   if (newGeofence.latitude && newGeofence.longitude) {
     newGeofenceCircle = L.circle([newGeofence.latitude, newGeofence.longitude], {
       radius: newGeofence.radius_m || 200,
@@ -2585,20 +2698,31 @@ async function stopTracking() {
 async function addGeofence() {
   notifSaving.value = true
   try {
-    const gf = await api('POST', '/api/notifications/geofences', {
+    const payload = {
       name: newGeofence.name,
-      latitude: newGeofence.latitude,
-      longitude: newGeofence.longitude,
-      radius_m: newGeofence.radius_m,
+      shape_type: newGeofence.shape_type,
       notify_on_enter: true,
       notify_on_exit: true,
       enabled: true,
-    })
+    }
+    if (newGeofence.shape_type === 'polygon') {
+      payload.points = newGeofence.points
+      // backend computes the centroid; send placeholder coords
+      payload.latitude = newGeofence.points[0][0]
+      payload.longitude = newGeofence.points[0][1]
+    } else {
+      payload.latitude = newGeofence.latitude
+      payload.longitude = newGeofence.longitude
+      payload.radius_m = newGeofence.radius_m
+    }
+    const gf = await api('POST', '/api/notifications/geofences', payload)
     geofences.value.push(gf)
     newGeofence.name = ''
     newGeofence.latitude = null
     newGeofence.longitude = null
     newGeofence.radius_m = 200
+    clearPolygon()
+    newGeofence.shape_type = 'circle'
   } catch (e) {
     notifError.value = e.message || 'Failed to add geofence'
   } finally {
@@ -3627,6 +3751,16 @@ function stopTelegramUsersPolling() {
   align-items: center;
   gap: 4px;
   cursor: pointer;
+}
+.polygon-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.polygon-status {
+  font-size: 12px;
+  color: var(--text-secondary);
 }
 
 /* Telegram Linked Users */

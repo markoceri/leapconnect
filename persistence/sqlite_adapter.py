@@ -159,9 +159,11 @@ class GeofenceRow(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     vin = Column(String(20), nullable=True, index=True)
     name = Column(String(128), nullable=False)
+    shape_type = Column(String(16), nullable=False, default="circle")
     latitude = Column(Float, nullable=False)
     longitude = Column(Float, nullable=False)
     radius_m = Column(Float, nullable=False, default=200.0)
+    points_json = Column(Text, nullable=True)  # [[lat, lon], ...] for polygons
     notify_on_enter = Column(Boolean, nullable=False, default=True)
     notify_on_exit = Column(Boolean, nullable=False, default=True)
     enabled = Column(Boolean, nullable=False, default=True)
@@ -470,6 +472,25 @@ class SQLAlchemyVehicleHistoryRepository(VehicleHistoryRepository):
                         "CREATE UNIQUE INDEX IF NOT EXISTS uq_vin_service_type "
                         "ON maintenance_plan_items (vin, service_type)"
                     )
+                )
+
+        # Self-healing for geofences: migration 0011 (ALTER TABLE adding
+        # shape_type/points_json) is skipped when the create_all + "stamp to
+        # head" path runs, leaving the DB marked up-to-date but missing the
+        # columns. Add them idempotently.
+        geo_inspect = sqlalchemy.inspect(sync_conn)
+        if geo_inspect.has_table("geofences"):
+            geo_cols = {c["name"] for c in geo_inspect.get_columns("geofences")}
+            if "shape_type" not in geo_cols:
+                sync_conn.execute(
+                    text(
+                        "ALTER TABLE geofences "
+                        "ADD COLUMN shape_type VARCHAR(16) NOT NULL DEFAULT 'circle'"
+                    )
+                )
+            if "points_json" not in geo_cols:
+                sync_conn.execute(
+                    text("ALTER TABLE geofences ADD COLUMN points_json TEXT")
                 )
 
     async def close(self) -> None:
@@ -1114,9 +1135,11 @@ class SQLAlchemyVehicleHistoryRepository(VehicleHistoryRepository):
                 id=r.id,
                 vin=r.vin,
                 name=r.name,
+                shape_type=r.shape_type or "circle",
                 latitude=r.latitude,
                 longitude=r.longitude,
                 radius_m=r.radius_m,
+                points=json.loads(r.points_json) if r.points_json else None,
                 notify_on_enter=r.notify_on_enter,
                 notify_on_exit=r.notify_on_exit,
                 enabled=r.enabled,
@@ -1132,9 +1155,13 @@ class SQLAlchemyVehicleHistoryRepository(VehicleHistoryRepository):
                 if row:
                     row.vin = geofence.vin
                     row.name = geofence.name
+                    row.shape_type = geofence.shape_type
                     row.latitude = geofence.latitude
                     row.longitude = geofence.longitude
                     row.radius_m = geofence.radius_m
+                    row.points_json = (
+                        json.dumps(geofence.points) if geofence.points else None
+                    )
                     row.notify_on_enter = geofence.notify_on_enter
                     row.notify_on_exit = geofence.notify_on_exit
                     row.enabled = geofence.enabled
@@ -1144,9 +1171,11 @@ class SQLAlchemyVehicleHistoryRepository(VehicleHistoryRepository):
             row = GeofenceRow(
                 vin=geofence.vin,
                 name=geofence.name,
+                shape_type=geofence.shape_type,
                 latitude=geofence.latitude,
                 longitude=geofence.longitude,
                 radius_m=geofence.radius_m,
+                points_json=json.dumps(geofence.points) if geofence.points else None,
                 notify_on_enter=geofence.notify_on_enter,
                 notify_on_exit=geofence.notify_on_exit,
                 enabled=geofence.enabled,

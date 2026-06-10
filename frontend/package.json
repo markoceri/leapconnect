@@ -9,6 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@geoman-io/leaflet-geoman-free": "^2.19.3",
     "chart.js": "^4.5.1",
     "leaflet": "^1.9.4",
     "lucide-vue-next": "^1.0.0",
