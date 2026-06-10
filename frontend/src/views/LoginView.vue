@@ -28,18 +28,6 @@
           <div v-if="error" class="login-error visible">{{ error }}</div>
         </form>
       </div>
-      <div class="theme-row">
-        <div class="theme-pills">
-          <button class="theme-pill" :class="{ active: store.theme === 'dark' }" @click="store.setTheme('dark')">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
-            Dark
-          </button>
-          <button class="theme-pill" :class="{ active: store.theme === 'light' }" @click="store.setTheme('light')">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
-            Light
-          </button>
-        </div>
-      </div>
     </div>
   </div>
 </template>
@@ -93,51 +81,6 @@ async function handleLogin() {
   animation: lm-slideup 0.5s ease both;
 }
 
-/* ─── Theme row ─── */
-.theme-row {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  margin-top: 1rem;
-}
-.theme-label {
-  font-size: 12px;
-  color: var(--muted);
-  font-weight: 500;
-}
-.theme-pills {
-  display: flex;
-  gap: 4px;
-}
-.theme-pill {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  padding: 5px 12px;
-  border-radius: 8px;
-  font-size: 12px;
-  font-weight: 600;
-  background: var(--input);
-  border: 1px solid var(--border);
-  color: var(--label);
-  cursor: pointer;
-  transition: all 0.2s;
-}
-.theme-pill:hover:not(.active) {
-  border-color: var(--muted);
-  color: var(--text);
-}
-.theme-pill.active {
-  background: #7c6aff22;
-  border-color: #7c6aff66;
-  color: #7c6aff;
-}
-.theme-pill svg {
-  width: 14px;
-  height: 14px;
-  flex-shrink: 0;
-}
 @media (min-width: 640px) {
   .login-container { padding: 2rem; }
 }
