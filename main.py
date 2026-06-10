@@ -66,6 +66,7 @@ from schemas import (
     ConsumptionLastWeekResponse,
     ConsumptionWeeklyRankResponse,
     DailySummaryResponse,
+    DatabaseSizeResponse,
     FullVehicleDataResponse,
     GeofenceCreate,
     GeofenceResponse,
@@ -3610,6 +3611,35 @@ async def update_scheduler_settings(request: Request) -> SchedulerStatusResponse
     await _history_repo.save_scheduler_settings(settings)
 
     return _scheduler.status_dict()
+
+
+# ---------------------------------------------------------------------------
+# Routes — System
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/system/database-size", response_model=DatabaseSizeResponse)
+async def get_database_size() -> DatabaseSizeResponse:
+    """Return the current size of the SQLite database file."""
+    db_path = os.environ.get(
+        "HISTORY_DB_PATH", str(Path(__file__).parent / "history.db")
+    )
+    try:
+        size_bytes = os.path.getsize(db_path)
+    except OSError as exc:
+        raise HTTPException(status_code=404, detail="Database file not found") from exc
+
+    # Human-readable size
+    if size_bytes < 1024:
+        size_human = f"{size_bytes} B"
+    elif size_bytes < 1024 * 1024:
+        size_human = f"{size_bytes / 1024:.1f} KB"
+    elif size_bytes < 1024 * 1024 * 1024:
+        size_human = f"{size_bytes / (1024 * 1024):.1f} MB"
+    else:
+        size_human = f"{size_bytes / (1024 * 1024 * 1024):.1f} GB"
+
+    return DatabaseSizeResponse(size_bytes=size_bytes, size_human=size_human)
 
 
 # ---------------------------------------------------------------------------

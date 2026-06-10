@@ -663,6 +663,13 @@ class SchedulerStatusResponse(BaseModel):
     total_errors: int
 
 
+class DatabaseSizeResponse(BaseModel):
+    """Response for the database size endpoint."""
+
+    size_bytes: int
+    size_human: str
+
+
 class LiveRefreshStatusResponse(BaseModel):
     """Response for the live refresh status endpoint."""
 

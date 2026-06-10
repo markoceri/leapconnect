@@ -135,6 +135,17 @@
         <InfoRow label="Language" value="English" color="#e2e6f0" />
       </SectionCard>
 
+      <SectionCard title="Database" :icon="Database">
+        <InfoRow label="Size" :value="databaseSize.size_human" color="#e2e6f0" />
+        <div v-if="databaseSize.error" class="field-error">{{ databaseSize.error }}</div>
+        <button
+          class="save-btn"
+          style="margin-top:10px"
+          :disabled="databaseSize.loading"
+          @click="loadDatabaseSize"
+        >{{ databaseSize.loading ? 'Refreshing…' : 'Refresh' }}</button>
+      </SectionCard>
+
       <SectionCard title="Energy & Charging Costs" :icon="Zap">
         <!-- Solar panels toggle -->
         <div class="pref-row">
@@ -1260,7 +1271,7 @@ import ToggleSwitch from '../components/ToggleSwitch.vue'
 import LogViewer from '../components/LogViewer.vue'
 import { api } from '../composables/useApi'
 import { useAppStore } from '../stores/appStore'
-import { User, Car, Bell, SlidersHorizontal, BarChart3, Code, KeyRound, ShieldCheck, Wifi, Wrench, Settings, Github, Info, Star, AlertTriangle, ExternalLink, Moon, Sun, RefreshCw, Terminal, Navigation, Activity, Eye, EyeOff, Send, ChevronDown, ChevronRight, Search, MapPin, Locate, Zap, CarFront, Lock, X, Trash2, Link2, Copy, Check, Home, Plug, Clock, Plus } from 'lucide-vue-next'
+import { User, Car, Bell, SlidersHorizontal, BarChart3, Code, KeyRound, ShieldCheck, Wifi, Wrench, Settings, Github, Info, Star, AlertTriangle, ExternalLink, Moon, Sun, RefreshCw, Terminal, Navigation, Activity, Eye, EyeOff, Send, ChevronDown, ChevronRight, Search, MapPin, Locate, Zap, CarFront, Lock, X, Trash2, Link2, Copy, Check, Home, Plug, Clock, Plus, Database } from 'lucide-vue-next'
 
 const store = useAppStore()
 
@@ -1351,6 +1362,27 @@ const pendingRateLimit = ref(10)
 const pendingTransitionPoll = ref(10)
 const pendingTransitionDedup = ref(10)
 const schedulerUpdating = ref(false)
+
+// -- Database Size -----------------------------------------------------------
+const databaseSize = reactive({
+  size_human: '...',
+  loading: false,
+  error: '',
+})
+
+async function loadDatabaseSize() {
+  databaseSize.loading = true
+  databaseSize.error = ''
+  try {
+    const data = await api('GET', '/api/system/database-size')
+    databaseSize.size_human = data.size_human
+  } catch (e) {
+    databaseSize.error = e.message || 'Failed to load database size'
+    databaseSize.size_human = 'unknown'
+  } finally {
+    databaseSize.loading = false
+  }
+}
 
 async function loadScheduler() {
   try {
@@ -2599,6 +2631,7 @@ onMounted(() => {
   loadPreferences()
   loadChargingTiers()
   loadDownsamplingSettings()
+  loadDatabaseSize()
   loadMqtt()
   loadAbrp()
   loadVehiclePin()

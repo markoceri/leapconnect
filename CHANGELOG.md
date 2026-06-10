@@ -24,6 +24,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Notifications toggle to enable/disable alerts through the channel (enabled by default)
   - Channel is automatically created on save
 - **Theme toggle in setup wizard** — dark/light theme switcher available on all setup screens
+- **Database size display** — view the current SQLite database size from the Settings page:
+  - New `GET /api/system/database-size` endpoint returning size in bytes and human-readable format (KB/MB/GB)
+  - Dedicated **Database** card in **Settings → General** showing current size with a Refresh button
 
 ### Changed
 - **Services Setup defaults**: Data Recording interval changed from 15 min to 1 min; Home Assistant MQTT polling interval changed from 60 sec to 10 sec
