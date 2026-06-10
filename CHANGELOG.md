@@ -30,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - **Services Setup defaults**: Data Recording interval changed from 15 min to 1 min; Home Assistant MQTT polling interval changed from 60 sec to 10 sec
+- **Database renamed** from `history.db` to `leapconnect.db` — all references updated across the codebase (default path, Docker, Alembic). Existing `history.db` files are automatically migrated on startup via `os.rename`.
 
 ## [0.9.0] - 2026-06-07
 

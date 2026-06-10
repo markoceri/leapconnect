@@ -151,6 +151,19 @@ logging.basicConfig(level=logging.INFO)
 _LOGGER = logging.getLogger(__name__)
 
 
+def _migrate_legacy_db(target_path: str) -> None:
+    """Auto-rename legacy history.db → leapconnect.db if needed."""
+    if os.path.isfile(target_path):
+        return  # Target already exists, nothing to do
+
+    parent = os.path.dirname(target_path)
+    legacy_path = os.path.join(parent, "history.db")
+    if os.path.isfile(legacy_path):
+        _LOGGER.info("Migrating legacy DB: %s → %s", legacy_path, target_path)
+        os.rename(legacy_path, target_path)
+        _LOGGER.info("Legacy DB migrated successfully")
+
+
 # ---------------------------------------------------------------------------
 # In-memory ring-buffer log handler for frontend log viewer
 # ---------------------------------------------------------------------------
@@ -476,8 +489,12 @@ async def lifespan(app: FastAPI):
     _log_handler.set_loop(asyncio.get_running_loop())
 
     db_path = os.environ.get(
-        "HISTORY_DB_PATH", str(Path(__file__).parent / "history.db")
+        "HISTORY_DB_PATH", str(Path(__file__).parent / "leapconnect.db")
     )
+
+    # Auto-migrate from legacy history.db to leapconnect.db
+    _migrate_legacy_db(db_path)
+
     db_url = f"sqlite+aiosqlite:///{db_path}"
     _history_repo = SQLAlchemyVehicleHistoryRepository(db_url)
     await _history_repo.init_db()
@@ -3622,7 +3639,7 @@ async def update_scheduler_settings(request: Request) -> SchedulerStatusResponse
 async def get_database_size() -> DatabaseSizeResponse:
     """Return the current size of the SQLite database file."""
     db_path = os.environ.get(
-        "HISTORY_DB_PATH", str(Path(__file__).parent / "history.db")
+        "HISTORY_DB_PATH", str(Path(__file__).parent / "leapconnect.db")
     )
     try:
         size_bytes = os.path.getsize(db_path)
@@ -6161,7 +6178,7 @@ def _cli_reset_password(new_password: str) -> None:
         raise SystemExit(1)
 
     db_path = os.environ.get(
-        "HISTORY_DB_PATH", str(Path(__file__).parent / "history.db")
+        "HISTORY_DB_PATH", str(Path(__file__).parent / "leapconnect.db")
     )
     db_url = f"sqlite+aiosqlite:///{db_path}"
 

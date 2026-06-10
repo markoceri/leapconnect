@@ -38,7 +38,7 @@ COPY --from=frontend-build /app/frontend/dist ./frontend/dist
 
 # Data volume for SQLite database
 VOLUME ["/app/data"]
-ENV HISTORY_DB_PATH=/app/data/history.db
+ENV HISTORY_DB_PATH=/app/data/leapconnect.db
 
 EXPOSE 8099
 

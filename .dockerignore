@@ -14,5 +14,5 @@ venv/
 .env
 node_modules/
 frontend/dist/
-history.db
+leapconnect.db
 server.log
