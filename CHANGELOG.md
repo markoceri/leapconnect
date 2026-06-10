@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Bot commands toggle (enable/disable `/status`, `/lock`, `/climate`, etc.)
   - Notifications toggle to enable/disable alerts through the channel (enabled by default)
   - Channel is automatically created on save
+- **Theme toggle in setup wizard** — dark/light theme switcher available on all setup/login screens
 
 ### Changed
 - **Services Setup defaults**: Data Recording interval changed from 15 min to 1 min; Home Assistant MQTT polling interval changed from 60 sec to 10 sec
