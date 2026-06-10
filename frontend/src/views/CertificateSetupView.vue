@@ -31,6 +31,22 @@
           <div class="certs-found-divider"><span>or upload new ones</span></div>
         </div>
 
+        <div v-if="!certsOnDisk" class="certs-found-banner" style="border-color:#00d4ff44">
+          <div class="certs-found-icon" style="background:#00d4ff18;border-color:#00d4ff44">
+            <Download :size="18" style="color:#00d4ff" />
+          </div>
+          <div class="certs-found-text">
+            <strong>Download from GitHub</strong>
+            <span>Automatically fetch the latest Leapmotor certificates from:</span>
+            <a href="https://github.com/markoceri/leapmotor-certs" target="_blank" rel="noopener" class="cert-repo-link">github.com/markoceri/leapmotor-certs</a>
+          </div>
+          <button class="btn-adopt" style="background:#00d4ff22;border-color:#00d4ff44;color:#00d4ff" :disabled="downloadFromGH" @click="handleGitHubDownload">
+            {{ downloadFromGH ? 'Downloading…' : 'Download from GitHub' }}
+          </button>
+          <div v-if="ghError" class="setup-error">{{ ghError }}</div>
+          <div class="certs-found-divider"><span>or upload manually</span></div>
+        </div>
+
         <p class="setup-description">
           To communicate with Leapmotor servers, TLS certificates are required.
           Upload your certificate and private key files below.
@@ -89,6 +105,7 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
+import { Download } from 'lucide-vue-next'
 import { useAppStore } from '../stores/appStore'
 import { api } from '../composables/useApi'
 
@@ -102,6 +119,8 @@ const keyDragover = ref(false)
 const certsOnDisk = ref(false)
 const adopting = ref(false)
 const adoptError = ref('')
+const downloadFromGH = ref(false)
+const ghError = ref('')
 
 onMounted(async () => {
   try {
@@ -122,6 +141,19 @@ async function handleAdopt() {
     adoptError.value = err.message
   } finally {
     adopting.value = false
+  }
+}
+
+async function handleGitHubDownload() {
+  downloadFromGH.value = true
+  ghError.value = ''
+  try {
+    await api('POST', '/api/setup/certificates/fetch')
+    store.screen = 'setup-account'
+  } catch (err) {
+    ghError.value = err.message
+  } finally {
+    downloadFromGH.value = false
   }
 }
 
@@ -376,5 +408,19 @@ async function handleSubmit() {
   flex: 1;
   height: 1px;
   background: var(--border);
+}
+
+.cert-repo-link {
+  display: block;
+  color: #00d4ff;
+  text-decoration: none;
+  font-family: var(--mono);
+  font-size: 12px;
+  transition: color 0.15s;
+  word-break: break-all;
+}
+.cert-repo-link:hover {
+  color: #4de0ff;
+  text-decoration: underline;
 }
 </style>

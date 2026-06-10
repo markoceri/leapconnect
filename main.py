@@ -22,6 +22,7 @@ from contextlib import asynccontextmanager, suppress
 from datetime import UTC, datetime
 from pathlib import Path
 
+import httpx
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response
@@ -47,6 +48,7 @@ from schemas import (
     AbrpStatusResponse,
     AccountSetupResponse,
     AuthLoginResponse,
+    CertificateFetchResponse,
     CertificateStatusResponse,
     CertificateUploadResponse,
     ChargingHistoryResponse,
@@ -800,6 +802,120 @@ async def get_certificates() -> CertificateStatusResponse:
         cert_exists=bool(cert_path) and Path(cert_path).is_file(),
         key_exists=bool(key_path) and Path(key_path).is_file(),
     )
+
+
+GITHUB_CERTS_REPO = "markoceri/leapmotor-certs"
+GITHUB_CERTS_URL = f"https://github.com/{GITHUB_CERTS_REPO}"
+GITHUB_CERTS_API = f"https://api.github.com/repos/{GITHUB_CERTS_REPO}/releases/latest"
+GITHUB_UA = "LeapConnect"
+GITHUB_ACCEPT_JSON = "application/vnd.github+json"
+
+# Expected certificate filenames in the GitHub release assets
+_CERT_ASSET_NAMES = {
+    "app_cert.pem",
+    "app.crt",
+    "app_cert.crt",
+}
+_KEY_ASSET_NAMES = {
+    "app_key.pem",
+    "app.key",
+    "app_key.key",
+}
+
+
+@app.post(
+    "/api/setup/certificates/fetch",
+    response_model=CertificateFetchResponse,
+)
+async def fetch_certificates_from_github() -> CertificateFetchResponse:
+    """Download certificates from the leapmotor-certs GitHub release."""
+    if not _history_repo:
+        raise HTTPException(status_code=503, detail="DB not ready")
+
+    CERTS_DIR.mkdir(parents=True, exist_ok=True)
+
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(30.0)) as client:
+            # Fetch the latest release metadata
+            release_resp = await client.get(
+                GITHUB_CERTS_API,
+                headers={
+                    "User-Agent": GITHUB_UA,
+                    "Accept": GITHUB_ACCEPT_JSON,
+                },
+            )
+            release_resp.raise_for_status()
+            release = release_resp.json()
+
+            tag = release.get("tag_name", "unknown")
+            assets = release.get("assets", [])
+            if not assets:
+                raise HTTPException(
+                    status_code=502,
+                    detail="No assets found in GitHub release",
+                )
+
+            # Find cert and key assets by filename
+            cert_url = None
+            key_url = None
+            for asset in assets:
+                name = asset.get("name", "").lower()
+                url = asset.get("browser_download_url")
+                if name in _CERT_ASSET_NAMES and not cert_url:
+                    cert_url = url
+                elif name in _KEY_ASSET_NAMES and not key_url:
+                    key_url = url
+
+            if not cert_url:
+                raise HTTPException(
+                    status_code=502,
+                    detail=(
+                        "Certificate asset not found in release. "
+                        f"Expected one of: {', '.join(sorted(_CERT_ASSET_NAMES))}"
+                    ),
+                )
+            if not key_url:
+                raise HTTPException(
+                    status_code=502,
+                    detail=(
+                        "Private key asset not found in release. "
+                        f"Expected one of: {', '.join(sorted(_KEY_ASSET_NAMES))}"
+                    ),
+                )
+
+            # Download both files (GitHub redirects to SAS URLs)
+            cert_resp = await client.get(cert_url, follow_redirects=True)
+            cert_resp.raise_for_status()
+
+            key_resp = await client.get(key_url, follow_redirects=True)
+            key_resp.raise_for_status()
+
+            cert_dest = CERTS_DIR / "app.crt"
+            key_dest = CERTS_DIR / "app.key"
+
+            cert_dest.write_bytes(cert_resp.content)
+            key_dest.write_bytes(key_resp.content)
+            key_dest.chmod(0o600)
+
+            await _history_repo.save_setting("cert_path", str(cert_dest))
+            await _history_repo.save_setting("key_path", str(key_dest))
+
+            _LOGGER.info(
+                "Certificates fetched from GitHub release %s",
+                tag,
+            )
+            return CertificateFetchResponse(
+                status="ok",
+                cert_path=str(cert_dest),
+                key_path=str(key_dest),
+                source=f"{GITHUB_CERTS_URL}/releases/tag/{tag}",
+            )
+
+    except httpx.HTTPError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"GitHub request failed: {exc}",
+        ) from exc
 
 
 # ---------------------------------------------------------------------------

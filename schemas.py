@@ -507,6 +507,13 @@ class CertificateStatusResponse(BaseModel):
     key_exists: bool
 
 
+class CertificateFetchResponse(BaseModel):
+    status: str = "ok"
+    cert_path: str | None = None
+    key_path: str | None = None
+    source: str | None = None
+
+
 class AccountSetupResponse(BaseModel):
     status: str = "ok"
     connected: bool

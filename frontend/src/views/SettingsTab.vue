@@ -80,9 +80,23 @@
         <SectionCard title="Certificates" :icon="ShieldCheck">
           <InfoRow label="App Certificate" :value="certsStatus.cert_exists ? 'Installed' : 'Missing'" :color="certsStatus.cert_exists ? '#00e676' : '#ff5252'" :dot="true" />
           <InfoRow label="Private Key" :value="certsStatus.key_exists ? 'Installed' : 'Missing'" :color="certsStatus.key_exists ? '#00e676' : '#ff5252'" :dot="true" />
-          <button class="save-btn" style="margin-top:12px" @click="showCertEdit = true">
-            Update Certificates
-          </button>
+          <div v-if="certDownloadError" class="field-error" style="margin-top:8px">{{ certDownloadError }}</div>
+          <div v-if="certDownloadSuccess" class="field-success" style="margin-top:8px">{{ certDownloadSuccess }}</div>
+          <p class="cert-repo-hint">
+            <Github :size="13" />
+            <span>Certificates are sourced from</span>
+            <a href="https://github.com/markoceri/leapmotor-certs" target="_blank" rel="noopener" class="cert-repo-link">github.com/markoceri/leapmotor-certs</a>
+            <ExternalLink :size="10" />
+          </p>
+          <div style="display:flex;gap:8px;margin-top:8px">
+            <button class="save-btn" @click="showCertEdit = true">
+              Update Certificates
+            </button>
+            <button class="save-btn" :disabled="certDownloading" @click="fetchCertsFromGitHub">
+              <RefreshCw v-if="certDownloading" :size="13" style="animation:spin 1s linear infinite" />
+              {{ certDownloading ? 'Downloading…' : 'Download from GitHub' }}
+            </button>
+          </div>
         </SectionCard>
       </div>
     </template>
@@ -1296,6 +1310,9 @@ const certSuccess = ref('')
 const certFile = ref(null)
 const keyFile = ref(null)
 const certsStatus = reactive({ cert_exists: false, key_exists: false })
+const certDownloading = ref(false)
+const certDownloadError = ref('')
+const certDownloadSuccess = ref('')
 
 function closeCertModal() {
   showCertEdit.value = false
@@ -1715,6 +1732,23 @@ async function saveCertificates() {
     certError.value = err.message
   } finally {
     certSaving.value = false
+  }
+}
+
+async function fetchCertsFromGitHub() {
+  certDownloadError.value = ''
+  certDownloadSuccess.value = ''
+  certDownloading.value = true
+  try {
+    const res = await fetch('./api/setup/certificates/fetch', { method: 'POST', credentials: 'include' })
+    const data = await res.json()
+    if (!res.ok) throw new Error(data.detail || 'Download failed')
+    certDownloadSuccess.value = 'Certificates downloaded from GitHub' + (data.source ? ` (${data.source})` : '')
+    await loadCertsStatus()
+  } catch (err) {
+    certDownloadError.value = err.message
+  } finally {
+    certDownloading.value = false
   }
 }
 
@@ -3735,5 +3769,29 @@ function stopTelegramUsersPolling() {
 .add-slot-btn:hover, .add-band-btn:hover {
   background: #00d4ff11;
   border-color: #00d4ff;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.cert-repo-hint {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.cert-repo-link {
+  color: #00d4ff;
+  text-decoration: none;
+  font-family: var(--mono);
+  transition: color 0.15s;
+}
+.cert-repo-link:hover {
+  color: #4de0ff;
+  text-decoration: underline;
 }
 </style>

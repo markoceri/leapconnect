@@ -84,7 +84,7 @@ LeapConnect is an independent, community-driven project (see the [disclaimer](#d
 
 - Docker & Docker Compose (for production)
 - [uv](https://docs.astral.sh/uv/) (for local development)
-- Leapmotor app certificate files (`.pem`) — [download here](https://github.com/markoceri/leapmotor-certs/archive/refs/tags/v1.0.0.zip)
+- Leapmotor app certificate files (`.pem`) — [download here](https://github.com/markoceri/leapmotor-certs/archive/refs/tags/v1.0.0.zip) or use the built-in **Download from GitHub** button in the Certificate Setup screen / Settings → Account → Certificates
 - A valid Leapmotor account
 
 > **⚠️ Strongly recommended:** Create a separate Leapmotor account and share your vehicle with it, rather than using your primary account. This way, if anything goes wrong (e.g. account suspension), your main account remains unaffected.
@@ -203,6 +203,18 @@ rm traefik/certs/traefik.crt traefik/certs/traefik.key
 ./generate-traefik-certs.sh 192.168.1.100       # add extra IP
 ./generate-traefik-certs.sh myhost.local        # add extra hostname
 ```
+
+### Leapmotor API Certificates
+
+The Leapmotor cloud API requires mTLS client certificates (`app.crt` + `app.key`), stored in `data/certs/`. You can obtain them in two ways:
+
+1. **Automatic download (recommended):** Use the **Download from GitHub** button available in:
+   - The initial Certificate Setup wizard (first run)
+   - Settings → Account → Certificates
+
+   This fetches the latest certificates from the [leapmotor-certs](https://github.com/markoceri/leapmotor-certs) repository automatically.
+
+2. **Manual upload:** Download the `.pem` files manually from the [latest release](https://github.com/markoceri/leapmotor-certs/releases/latest) and upload them via the Certificate Setup screen.
 
 ## Contributing
 

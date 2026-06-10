@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Automatic certificate download** — one-click fetch of Leapmotor API mTLS certificates from GitHub:
+  - New `POST /api/setup/certificates/fetch` endpoint downloads the latest `app_cert.pem` and `app_key.pem` directly from the [leapmotor-certs](https://github.com/markoceri/leapmotor-certs) GitHub release
+  - **Certificate Setup screen**: new "Download from GitHub" banner with link to the certs repository, available when no certs are on disk
+  - **Settings → Account → Certificates**: new "Download from GitHub" button next to "Update Certificates", with repo link always visible
+  - Uses GitHub Releases API to automatically resolve the latest release tag and asset download URLs
+
 ## [0.9.0] - 2026-06-07
 
 ### Added
