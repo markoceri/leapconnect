@@ -52,7 +52,8 @@ Enforced by `tests/test_architecture.py`.
 
 - `ports/` — interfaces implemented by infrastructure:
   `repositories.py` (segregated per context, combined as
-  `VehicleHistoryRepository`) and `notifier.py` (`BaseNotifier`).
+  `AppRepository`; `VehicleHistoryRepository` kept as deprecated alias) and
+  `notifier.py` (`BaseNotifier`).
 - `scheduler.py` — background polling loops (history, MQTT, transitions).
 - `notification_dispatcher.py` — event → notification pipeline.
 - `vehicle_cache.py` — rate-limited, single-flight status cache.

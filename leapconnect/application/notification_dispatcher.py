@@ -41,7 +41,7 @@ if TYPE_CHECKING:
     from leapmotor_api.models import Vehicle, VehicleStatus
 
     from leapconnect.infrastructure.persistence.sqlite_adapter import (
-        SQLAlchemyVehicleHistoryRepository,
+        SqlAlchemyRepository,
     )
 
 _LOGGER = logging.getLogger(__name__)
@@ -56,7 +56,7 @@ class NotificationDispatcher:
 
     def __init__(
         self,
-        repo: SQLAlchemyVehicleHistoryRepository,
+        repo: SqlAlchemyRepository,
         image_composer: Callable | None = None,
         vehicle_cache: object | None = None,
         command_executor: Callable | None = None,

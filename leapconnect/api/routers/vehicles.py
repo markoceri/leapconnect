@@ -125,7 +125,7 @@ def snapshot_from_status(vin: str, status: VehicleStatus) -> VehicleSnapshot:
 async def _save_snapshot_safe(snapshot: VehicleSnapshot) -> None:
     """Fire-and-forget snapshot save; errors are logged, never raised."""
     try:
-        await container.history_repo.save_snapshot(snapshot)
+        await container.repo.save_snapshot(snapshot)
     except Exception:
         _LOGGER.exception("Failed to save vehicle snapshot")
 
@@ -143,7 +143,7 @@ async def get_vehicle_status(vin: str) -> VehicleStatusResponse:
         status = await client.get_vehicle_status(vehicle)
 
     # Persist snapshot for historical tracking
-    if container.history_repo and isinstance(status, VehicleStatus):
+    if container.repo and isinstance(status, VehicleStatus):
         snapshot = snapshot_from_status(vin, status)
         asyncio.create_task(_save_snapshot_safe(snapshot))
 
@@ -423,10 +423,8 @@ async def update_live_refresh(request: Request) -> LiveRefreshStatusResponse:
 
     container.live_refresh_interval = interval
     # Persist
-    if container.history_repo:
-        await container.history_repo.save_setting(
-            "live_refresh_interval", str(interval)
-        )
+    if container.repo:
+        await container.repo.save_setting("live_refresh_interval", str(interval))
 
     # (Re)start or stop the loop
     if interval > 0 and container.connected:

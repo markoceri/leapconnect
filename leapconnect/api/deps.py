@@ -6,7 +6,7 @@ from datetime import datetime
 
 from fastapi import HTTPException
 
-from leapconnect.application.ports.repositories import VehicleHistoryRepository
+from leapconnect.application.ports.repositories import AppRepository
 from leapconnect.container import container
 
 SESSION_COOKIE_NAME = "leapconnect_session"
@@ -19,18 +19,18 @@ PUBLIC_PATHS: set[str] = {
 }
 
 
-def get_repo() -> VehicleHistoryRepository:
+def get_repo() -> AppRepository:
     """Return the history repository or fail with 503 if not initialised."""
-    if not container.history_repo:
+    if not container.repo:
         raise HTTPException(status_code=503, detail="DB not ready")
-    return container.history_repo
+    return container.repo
 
 
-def get_repo_or_503(detail: str) -> VehicleHistoryRepository:
+def get_repo_or_503(detail: str) -> AppRepository:
     """Like get_repo() but with an endpoint-specific 503 message."""
-    if not container.history_repo:
+    if not container.repo:
         raise HTTPException(status_code=503, detail=detail)
-    return container.history_repo
+    return container.repo
 
 
 def parse_range_date(value: str | None) -> str | None:

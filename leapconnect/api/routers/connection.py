@@ -26,8 +26,8 @@ router = APIRouter()
 
 async def _save_vehicle_pin(pin: str) -> None:
     """Persist the vehicle operation PIN for MQTT commands."""
-    if container.history_repo:
-        await container.history_repo.save_setting("mqtt_vehicle_pin", pin)
+    if container.repo:
+        await container.repo.save_setting("mqtt_vehicle_pin", pin)
 
 
 @router.post("/api/reconnect", response_model=ReconnectResponse)
@@ -142,8 +142,8 @@ async def set_pin(request: Request) -> SetPinResponse:
 async def get_vehicle_pin() -> dict:
     """Get the saved vehicle PIN status and masked value."""
     saved_pin = None
-    if container.history_repo:
-        saved_pin = await container.history_repo.get_setting("mqtt_vehicle_pin")
+    if container.repo:
+        saved_pin = await container.repo.get_setting("mqtt_vehicle_pin")
     runtime_pin = (
         container.sync_client.operation_password if container.sync_client else None
     )
@@ -179,11 +179,11 @@ async def connection_status() -> ConnectionStatusResponse:
     has_user = False
     display_name = None
     leapmotor_email = None
-    if container.history_repo:
-        account = await container.history_repo.get_account()
+    if container.repo:
+        account = await container.repo.get_account()
         has_account = account is not None
         leapmotor_email = account["username"] if account else None
-        user = await container.history_repo.get_user()
+        user = await container.repo.get_user()
         has_user = user is not None
         display_name = user["display_name"] if user else None
     return ConnectionStatusResponse(

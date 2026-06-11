@@ -24,7 +24,7 @@ if TYPE_CHECKING:
     from leapmotor_api.models import Vehicle
 
     from leapconnect.application.notification_dispatcher import NotificationDispatcher
-    from leapconnect.application.ports.repositories import VehicleHistoryRepository
+    from leapconnect.application.ports.repositories import AppRepository
     from leapconnect.application.vehicle_cache import VehicleStatusCache
 
 _LOGGER = logging.getLogger(__name__)
@@ -42,7 +42,7 @@ class VehicleDataScheduler:
 
     def __init__(
         self,
-        repo: VehicleHistoryRepository,
+        repo: AppRepository,
         cache: VehicleStatusCache | None = None,
         notification_dispatcher: NotificationDispatcher | None = None,
     ) -> None:

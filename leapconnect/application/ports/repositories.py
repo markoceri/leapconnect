@@ -2,7 +2,7 @@
 
 Concrete adapters (e.g. ``leapconnect.infrastructure.persistence``) implement
 these. The interfaces are segregated per bounded context; the combined
-``VehicleHistoryRepository`` is what the composition root wires today.
+``AppRepository`` is what the composition root wires today.
 """
 
 from __future__ import annotations
@@ -332,7 +332,7 @@ class MaintenanceRepository(abc.ABC):
     async def delete_maintenance_pack(self, pack_id: int) -> None: ...
 
 
-class VehicleHistoryRepository(
+class AppRepository(
     TelemetryRepository,
     SettingsRepository,
     AccountRepository,
@@ -341,3 +341,7 @@ class VehicleHistoryRepository(
     MaintenanceRepository,
 ):
     """Combined persistence port implemented by the SQLite adapter."""
+
+
+# Deprecated alias — the port was historically named after its first use case.
+VehicleHistoryRepository = AppRepository

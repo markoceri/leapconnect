@@ -160,7 +160,7 @@ async def get_scheduler_status() -> SchedulerStatusResponse:
 @router.put("/api/scheduler", response_model=SchedulerStatusResponse)
 async def update_scheduler_settings(request: Request) -> SchedulerStatusResponse:
     """Enable/disable or change the interval of background data collection."""
-    if not container.scheduler or not container.history_repo:
+    if not container.scheduler or not container.repo:
         raise HTTPException(status_code=503, detail="Scheduler not available")
 
     body = await request.json()
@@ -214,7 +214,7 @@ async def update_scheduler_settings(request: Request) -> SchedulerStatusResponse
     )
 
     # Persist to DB
-    await container.history_repo.save_scheduler_settings(settings)
+    await container.repo.save_scheduler_settings(settings)
 
     return container.scheduler.status_dict()
 
@@ -278,7 +278,7 @@ async def get_mqtt_status() -> MqttStatusResponse:
 @router.put("/api/mqtt", response_model=MqttStatusResponse)
 async def update_mqtt_settings(request: Request) -> MqttStatusResponse:
     """Update MQTT connection settings and reconnect."""
-    if not container.mqtt_service or not container.history_repo:
+    if not container.mqtt_service or not container.repo:
         raise HTTPException(status_code=503, detail="MQTT service not available")
 
     body = await request.json()
@@ -304,7 +304,7 @@ async def update_mqtt_settings(request: Request) -> MqttStatusResponse:
     )
 
     # Persist MQTT settings
-    await save_mqtt_settings(container.history_repo, container.mqtt_service.settings)
+    await save_mqtt_settings(container.repo, container.mqtt_service.settings)
 
     return _mqtt_status_response()
 
@@ -355,7 +355,7 @@ async def get_abrp_status() -> AbrpStatusResponse:
 @router.put("/api/abrp", response_model=AbrpStatusResponse)
 async def update_abrp_settings(request: Request) -> AbrpStatusResponse:
     """Update ABRP settings."""
-    if not container.abrp_service or not container.history_repo:
+    if not container.abrp_service or not container.repo:
         raise HTTPException(status_code=503, detail="ABRP service not available")
 
     body = await request.json()
@@ -369,7 +369,7 @@ async def update_abrp_settings(request: Request) -> AbrpStatusResponse:
     if container.abrp_service.settings.enabled and container.vehicles:
         container.abrp_service.set_vehicles(container.vehicles, container.vehicle_cache)
 
-    await save_abrp_settings(container.history_repo, container.abrp_service.settings)
+    await save_abrp_settings(container.repo, container.abrp_service.settings)
 
     return AbrpStatusResponse(**container.abrp_service.status_dict())
 

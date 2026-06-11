@@ -18,10 +18,10 @@ from leapconnect.domain.settings.models import (
 if TYPE_CHECKING:
     from datetime import datetime
 
-    from leapconnect.application.ports.repositories import VehicleHistoryRepository
+    from leapconnect.application.ports.repositories import AppRepository
 
 
-async def load_preferences(repo: VehicleHistoryRepository) -> UserPreferences:
+async def load_preferences(repo: AppRepository) -> UserPreferences:
     """Load user preferences from DB, falling back to defaults."""
     raw = await repo.get_setting("electricity_price_kwh")
     theme_raw = await repo.get_setting("theme")
@@ -42,7 +42,7 @@ async def load_preferences(repo: VehicleHistoryRepository) -> UserPreferences:
 
 
 async def calculate_session_cost(
-    repo: VehicleHistoryRepository,
+    repo: AppRepository,
     tier_id: str,
     energy_kwh: float,
     start_ts: datetime | None,
@@ -71,7 +71,7 @@ async def calculate_session_cost(
     return flat_cost(energy_kwh, tier.price_kwh)
 
 
-async def load_mqtt_settings(repo: VehicleHistoryRepository | None) -> MqttSettings:
+async def load_mqtt_settings(repo: AppRepository | None) -> MqttSettings:
     """Load MQTT settings from the database."""
     if not repo:
         return MqttSettings()
@@ -93,7 +93,7 @@ async def load_mqtt_settings(repo: VehicleHistoryRepository | None) -> MqttSetti
 
 
 async def save_mqtt_settings(
-    repo: VehicleHistoryRepository | None, settings: MqttSettings
+    repo: AppRepository | None, settings: MqttSettings
 ) -> None:
     """Persist MQTT settings to the database."""
     if not repo:
@@ -108,7 +108,7 @@ async def save_mqtt_settings(
     await repo.save_setting("mqtt_topic_prefix", settings.topic_prefix)
 
 
-async def load_abrp_settings(repo: VehicleHistoryRepository | None) -> AbrpSettings:
+async def load_abrp_settings(repo: AppRepository | None) -> AbrpSettings:
     """Load ABRP settings from the database."""
     if not repo:
         return AbrpSettings()
@@ -120,7 +120,7 @@ async def load_abrp_settings(repo: VehicleHistoryRepository | None) -> AbrpSetti
 
 
 async def save_abrp_settings(
-    repo: VehicleHistoryRepository | None, settings: AbrpSettings
+    repo: AppRepository | None, settings: AbrpSettings
 ) -> None:
     """Persist ABRP settings to the database."""
     if not repo:

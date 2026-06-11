@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from leapconnect.application.ports.repositories import VehicleHistoryRepository
+from leapconnect.application.ports.repositories import AppRepository
 from leapconnect.domain.maintenance.models import MaintenancePlanItem
 
 
 async def ensure_plan_generated(
-    repo: VehicleHistoryRepository, vin: str, factory_items: list[dict]
+    repo: AppRepository, vin: str, factory_items: list[dict]
 ) -> list:
     """Return the vehicle's plan, auto-generating it from ``factory_items`` if empty."""
     plan = await repo.get_maintenance_plan(vin)

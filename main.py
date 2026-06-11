@@ -20,7 +20,7 @@ def _cli_reset_password(new_password: str) -> None:
 
     from leapconnect.config import database_url
     from leapconnect.infrastructure.persistence.sqlite_adapter import (
-        SQLAlchemyVehicleHistoryRepository,
+        SqlAlchemyRepository,
     )
 
     if len(new_password) < 4:
@@ -28,7 +28,7 @@ def _cli_reset_password(new_password: str) -> None:
         raise SystemExit(1)
 
     async def _reset():
-        repo = SQLAlchemyVehicleHistoryRepository(database_url())
+        repo = SqlAlchemyRepository(database_url())
         await repo.init_db()
         user = await repo.get_user()
         if not user:

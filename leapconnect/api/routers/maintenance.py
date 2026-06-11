@@ -76,8 +76,8 @@ _REPO_UNAVAILABLE = "Persistence not available"
 async def _resolve_maintenance_model(vin: str, vehicle) -> dict:
     """Resolve the vehicle model, applying any persisted C10 variant override."""
     model_info = resolve_model(vehicle)
-    if model_info.get("needs_confirmation") and container.history_repo:
-        override = await container.history_repo.get_setting(f"c10_variant_{vin}")
+    if model_info.get("needs_confirmation") and container.repo:
+        override = await container.repo.get_setting(f"c10_variant_{vin}")
         if override in ("bev", "reev"):
             model_info["model_key"] = "C10_REEV" if override == "reev" else "C10"
             model_info["variant"] = override
@@ -117,7 +117,7 @@ async def _cache_repo_packs(repo_entity) -> int:
             model_compat=payload.get("model_compat"),
             payload=payload,
         )
-        await container.history_repo.save_maintenance_pack(pack)
+        await container.repo.save_maintenance_pack(pack)
         count += 1
     return count
 
@@ -130,9 +130,9 @@ async def _ensure_official_packs() -> list:
     it logs and returns whatever is cached (possibly empty) so the app degrades
     gracefully instead of erroring.
     """
-    if not container.history_repo:
+    if not container.repo:
         return []
-    repo = await container.history_repo.get_maintenance_repo_by_url(OFFICIAL_REPO_URL)
+    repo = await container.repo.get_maintenance_repo_by_url(OFFICIAL_REPO_URL)
     if repo is None:
         try:
             discovered = await discover_repo(OFFICIAL_REPO_URL)
@@ -151,9 +151,9 @@ async def _ensure_official_packs() -> list:
             status="ok",
             manifest=discovered["packs"],
         )
-        repo = await container.history_repo.save_maintenance_repo(repo)
+        repo = await container.repo.save_maintenance_repo(repo)
         await _cache_repo_packs(repo)
-    return await container.history_repo.list_maintenance_packs(repo.id)
+    return await container.repo.list_maintenance_packs(repo.id)
 
 
 async def _factory_items(model_key: str) -> list[dict]:
@@ -190,8 +190,8 @@ async def set_vehicle_maintenance_model(vin: str, body: dict) -> dict:
 
     vehicle = container.find_vehicle(vin)
     # Persist the override
-    if container.history_repo:
-        await container.history_repo.save_setting(f"c10_variant_{vin}", variant)
+    if container.repo:
+        await container.repo.save_setting(f"c10_variant_{vin}", variant)
 
     # Re-resolve with the override applied
     base = resolve_model(vehicle)
@@ -342,7 +342,7 @@ async def _recalc_plan_last_done(vin: str, service_type: str) -> None:
     Uses ``set_plan_item_last_done`` (not upsert) so last_done is cleared to
     NULL when no records remain.
     """
-    repo = container.history_repo
+    repo = container.repo
     remaining = await repo.get_maintenance_records(
         vin, service_type=service_type, limit=1
     )

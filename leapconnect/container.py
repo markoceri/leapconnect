@@ -38,7 +38,7 @@ from leapconnect.infrastructure.abrp.service import AbrpService
 from leapconnect.infrastructure.logbuffer import RingBufferHandler
 from leapconnect.infrastructure.mqtt.home_assistant import HomeAssistantMqttService
 from leapconnect.infrastructure.persistence.sqlite_adapter import (
-    SQLAlchemyVehicleHistoryRepository,
+    SqlAlchemyRepository,
 )
 
 if TYPE_CHECKING:
@@ -58,7 +58,7 @@ class AppContainer:
         self.connected: bool = False
 
         # Services (created in startup())
-        self.history_repo: SQLAlchemyVehicleHistoryRepository | None = None
+        self.repo: SqlAlchemyRepository | None = None
         self.scheduler: VehicleDataScheduler | None = None
         self.mqtt_service: HomeAssistantMqttService | None = None
         self.abrp_service: AbrpService | None = None
@@ -92,6 +92,11 @@ class AppContainer:
         self._saved_pin: str | None = None
 
     # -- accessors ------------------------------------------------------------
+
+    @property
+    def history_repo(self) -> SqlAlchemyRepository | None:
+        """Deprecated alias for :attr:`repo` (pre-rename name)."""
+        return self.repo
 
     def get_client(self) -> AsyncLeapmotorApiClient:
         if self.client is None:
@@ -246,10 +251,10 @@ class AppContainer:
 
     async def auto_connect(self) -> None:
         """Try to connect using saved credentials at startup."""
-        if not self.history_repo:
+        if not self.repo:
             return
 
-        account = await self.history_repo.get_account()
+        account = await self.repo.get_account()
         if not account:
             _LOGGER.info("Auto-connect: no saved account, skipping")
             return
@@ -271,7 +276,7 @@ class AppContainer:
             _LOGGER.info("Auto-connect: success, %d vehicle(s)", len(self.vehicles))
 
             # Restore saved vehicle PIN for MQTT commands
-            saved_pin = await self.history_repo.get_setting("mqtt_vehicle_pin")
+            saved_pin = await self.repo.get_setting("mqtt_vehicle_pin")
             if saved_pin and self.sync_client:
                 self.sync_client.operation_password = saved_pin
                 _LOGGER.info("Auto-connect: vehicle PIN restored from DB")
@@ -409,13 +414,13 @@ class AppContainer:
 
     async def handle_mqtt_settings(self, key: str, value: int) -> None:
         """Handle a polling-interval/limit change received from HA via MQTT."""
-        if not self.scheduler or not self.history_repo:
+        if not self.scheduler or not self.repo:
             _LOGGER.warning("MQTT settings change ignored: scheduler not available")
             return
 
         if key == "polling_interval":
             settings = self.scheduler.update_settings(mqtt_interval_seconds=value)
-            await self.history_repo.save_scheduler_settings(settings)
+            await self.repo.save_scheduler_settings(settings)
             _LOGGER.info("MQTT settings applied: %s = %d", key, value)
             if self.mqtt_service and self.mqtt_service.is_connected:
                 for v in self.vehicles:
@@ -495,12 +500,12 @@ class AppContainer:
         db_path = config.database_path()
         config.migrate_legacy_db(db_path)
 
-        self.history_repo = SQLAlchemyVehicleHistoryRepository(config.database_url())
-        await self.history_repo.init_db()
+        self.repo = SqlAlchemyRepository(config.database_url())
+        await self.repo.init_db()
         _LOGGER.info("History DB initialised at %s", db_path)
 
         # Restore scheduler settings from DB
-        saved = await self.history_repo.load_scheduler_settings()
+        saved = await self.repo.load_scheduler_settings()
 
         # Initialize shared vehicle status cache
         self.vehicle_cache = VehicleStatusCache(
@@ -510,7 +515,7 @@ class AppContainer:
 
         # Initialize notification dispatcher
         self.notification_dispatcher = NotificationDispatcher(
-            repo=self.history_repo,
+            repo=self.repo,
             image_composer=self.compose_notification_image,
             vehicle_cache=self.vehicle_cache,
             command_executor=self.execute_command,
@@ -523,7 +528,7 @@ class AppContainer:
         await self.notification_dispatcher.reload_config()
 
         self.scheduler = VehicleDataScheduler(
-            self.history_repo,
+            self.repo,
             cache=self.vehicle_cache,
             notification_dispatcher=self.notification_dispatcher,
         )
@@ -554,7 +559,7 @@ class AppContainer:
         self.mqtt_service = HomeAssistantMqttService()
         self.mqtt_service.set_command_callback(self.handle_mqtt_command)
         self.mqtt_service.set_settings_callback(self.handle_mqtt_settings)
-        mqtt_settings = await settings_store.load_mqtt_settings(self.history_repo)
+        mqtt_settings = await settings_store.load_mqtt_settings(self.repo)
         self.mqtt_service.update_settings(
             enabled=mqtt_settings.enabled,
             broker=mqtt_settings.broker,
@@ -575,7 +580,7 @@ class AppContainer:
 
         # Initialize ABRP telemetry service
         self.abrp_service = AbrpService()
-        abrp_settings = await settings_store.load_abrp_settings(self.history_repo)
+        abrp_settings = await settings_store.load_abrp_settings(self.repo)
         self.abrp_service.update_settings(
             enabled=abrp_settings.enabled,
             user_token=abrp_settings.user_token,
@@ -583,7 +588,7 @@ class AppContainer:
         _LOGGER.info("ABRP service initialised: enabled=%s", abrp_settings.enabled)
 
         # Initialize live refresh from saved setting
-        live_raw = await self.history_repo.get_setting("live_refresh_interval")
+        live_raw = await self.repo.get_setting("live_refresh_interval")
         self.live_refresh_interval = int(live_raw) if live_raw else 30
         _LOGGER.info("Live refresh interval: %d sec", self.live_refresh_interval)
 
@@ -602,8 +607,8 @@ class AppContainer:
             await self.mqtt_service.stop()
         if self.scheduler:
             await self.scheduler.stop()
-        if self.history_repo:
-            await self.history_repo.close()
+        if self.repo:
+            await self.repo.close()
         self._close_sync_client()
 
 

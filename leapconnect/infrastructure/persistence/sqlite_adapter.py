@@ -24,7 +24,7 @@ from sqlalchemy import (
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
-from leapconnect.application.ports.repositories import VehicleHistoryRepository
+from leapconnect.application.ports.repositories import AppRepository
 from leapconnect.domain.charging.models import (
     ChargingPriceTier,
     ChargingSessionCost,
@@ -325,7 +325,7 @@ class MaintenancePackRow(Base):
 # ---------------------------------------------------------------------------
 
 
-class SQLAlchemyVehicleHistoryRepository(VehicleHistoryRepository):
+class SqlAlchemyRepository(AppRepository):
     """Concrete adapter backed by an async SQLAlchemy engine (SQLite)."""
 
     def __init__(self, database_url: str) -> None:
@@ -1939,3 +1939,7 @@ class SQLAlchemyVehicleHistoryRepository(VehicleHistoryRepository):
             if row:
                 await session.delete(row)
                 await session.commit()
+
+
+# Deprecated alias for the pre-rename class name.
+SQLAlchemyVehicleHistoryRepository = SqlAlchemyRepository
