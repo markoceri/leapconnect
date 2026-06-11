@@ -32,6 +32,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Geofence model/API extended with `shape_type` and `points` (`[[lat, lon], ...]`); polygon center is derived from the vertices
   - Containment detection uses a ray-casting point-in-polygon test for polygon zones, haversine radius for circles
   - DB migration `0011` adds `shape_type` and `points_json` columns to the `geofences` table, with a startup self-healing fallback that adds the columns idempotently if the create_all + stamp-to-head path skipped the ALTER (which otherwise left the DB marked up-to-date but missing the columns, crashing geofence reads)
+- **Installable as a PWA** — the web app can now be installed as a standalone app (desktop "Install app" / mobile "Add to Home Screen"):
+  - Web App Manifest (`manifest.webmanifest`) with app name, theme/background colors and dedicated icons (192px, 512px, plus a maskable 512px and an Apple touch icon), generated via `vite-plugin-pwa`
+  - Service worker (`autoUpdate`) that precaches the built app shell for faster loads and offline availability of the UI; API requests and WebSocket traffic always go to the network
+  - `start_url` and `scope` are **relative**, so installation/loading also works when the app is served under a dynamic prefix such as a **Home Assistant ingress** path
 
 ### Changed
 - **Geofences moved to Settings → General** (above Energy & Charging Costs) into a dedicated section; **Notifications** now only covers channels, events and location tracking
