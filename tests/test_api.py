@@ -64,7 +64,7 @@ def test_similar_trips_gpskey_not_found(auth_client):
 
 def test_scoring_haversine():
     """Haversine distance between same point is 0."""
-    from main import _haversine_km
+    from leapconnect.domain.trips.analysis import haversine_km as _haversine_km
 
     d = _haversine_km(45.0, 9.0, 45.0, 9.0)
     assert d == 0.0
@@ -72,7 +72,7 @@ def test_scoring_haversine():
 
 def test_scoring_haversine_known():
     """Haversine returns known approximate distance Milan-Rome."""
-    from main import _haversine_km
+    from leapconnect.domain.trips.analysis import haversine_km as _haversine_km
 
     d = _haversine_km(45.464, 9.190, 41.903, 12.496)
     assert 470 < d < 490  # ~480 km
@@ -80,7 +80,7 @@ def test_scoring_haversine_known():
 
 def test_point_in_polygon_inside():
     """A point well within a square polygon is detected as inside."""
-    from services.notification_dispatcher import point_in_polygon
+    from leapconnect.domain.notifications.geofencing import point_in_polygon
 
     square = [[45.0, 9.0], [45.0, 9.1], [45.1, 9.1], [45.1, 9.0]]
     assert point_in_polygon(45.05, 9.05, square) is True
@@ -88,7 +88,7 @@ def test_point_in_polygon_inside():
 
 def test_point_in_polygon_outside():
     """A point beyond the polygon bounds is detected as outside."""
-    from services.notification_dispatcher import point_in_polygon
+    from leapconnect.domain.notifications.geofencing import point_in_polygon
 
     square = [[45.0, 9.0], [45.0, 9.1], [45.1, 9.1], [45.1, 9.0]]
     assert point_in_polygon(45.2, 9.05, square) is False
@@ -96,15 +96,17 @@ def test_point_in_polygon_outside():
 
 def test_point_in_polygon_too_few_points():
     """A degenerate polygon (fewer than 3 points) never contains anything."""
-    from services.notification_dispatcher import point_in_polygon
+    from leapconnect.domain.notifications.geofencing import point_in_polygon
 
     assert point_in_polygon(45.0, 9.0, [[45.0, 9.0], [45.1, 9.1]]) is False
 
 
 def test_geofence_contains_circle_and_polygon():
     """_geofence_contains dispatches on shape_type."""
+    from leapconnect.domain.notifications.geofencing import (
+        geofence_contains as _geofence_contains,
+    )
     from models import Geofence
-    from services.notification_dispatcher import _geofence_contains
 
     circle = Geofence(shape_type="circle", latitude=45.0, longitude=9.0, radius_m=200.0)
     assert _geofence_contains(circle, 45.0, 9.0) is True
@@ -120,7 +122,9 @@ def test_geofence_contains_circle_and_polygon():
 
 def test_similarity_identical_trip():
     """Breakdown for identical trips scores 1.0."""
-    from main import _trip_similarity_breakdown
+    from leapconnect.domain.trips.analysis import (
+        trip_similarity_breakdown as _trip_similarity_breakdown,
+    )
 
     trip = {
         "beginTime": "2026-06-01 08:30:00",
@@ -147,7 +151,9 @@ def test_similarity_identical_trip():
 
 def test_similarity_different_trips():
     """Breakdown for very different trips returns low score."""
-    from main import _trip_similarity_breakdown
+    from leapconnect.domain.trips.analysis import (
+        trip_similarity_breakdown as _trip_similarity_breakdown,
+    )
 
     ref = {
         "beginTime": "2026-06-01 08:30:00",
@@ -191,7 +197,9 @@ def test_similarity_different_trips():
 
 def test_compare_metrics_structure():
     """Compare metrics returns expected keys."""
-    from main import _trip_compare_metrics
+    from leapconnect.domain.trips.analysis import (
+        trip_compare_metrics as _trip_compare_metrics,
+    )
 
     ref = {
         "beginTime": "2026-06-01 08:30:00",

@@ -13,7 +13,10 @@ def client(tmp_path):
     db_file = str(tmp_path / "test.db")
     with (
         patch.dict(os.environ, {"HISTORY_DB_PATH": db_file}),
-        patch("main._auto_connect", new_callable=AsyncMock),
+        patch(
+            "leapconnect.container.AppContainer.auto_connect",
+            new_callable=AsyncMock,
+        ),
     ):
         from main import app
 
