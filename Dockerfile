@@ -28,6 +28,7 @@ RUN uv sync --frozen --no-dev --no-editable
 
 # Copy application code
 COPY main.py models.py schemas.py ./
+COPY leapconnect/ ./leapconnect/
 COPY persistence/ ./persistence/
 COPY services/ ./services/
 COPY alembic.ini ./
