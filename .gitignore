@@ -46,3 +46,6 @@ traefik/certs/
 # Ignore folders
 logs/
 ignore/
+
+# Ignore AI assistant files
+CLAUDE.md
