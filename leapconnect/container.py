@@ -30,7 +30,7 @@ from leapconnect.application.commands import (
     execute_mqtt_command,
     execute_vehicle_command,
 )
-from leapconnect.application.notification_dispatcher import NotificationDispatcher
+from leapconnect.application.notifications import NotificationDispatcher
 from leapconnect.application.scheduler import VehicleDataScheduler
 from leapconnect.application.vehicle_cache import VehicleStatusCache
 from leapconnect.domain.identity.sessions import SessionStore

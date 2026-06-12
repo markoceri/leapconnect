@@ -23,7 +23,7 @@ if TYPE_CHECKING:
     from leapmotor_api.async_client import AsyncLeapmotorApiClient
     from leapmotor_api.models import Vehicle
 
-    from leapconnect.application.notification_dispatcher import NotificationDispatcher
+    from leapconnect.application.notifications import NotificationDispatcher
     from leapconnect.application.ports.repositories import AppRepository
     from leapconnect.application.vehicle_cache import VehicleStatusCache
 

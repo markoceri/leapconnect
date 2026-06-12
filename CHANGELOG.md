@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **New entry points** — the ASGI app is now `leapconnect.api.app:app` (uvicorn target, Docker CMD) and the password-reset CLI is `python -m leapconnect --reset-password <pw>`.
 
 - **SQLite adapter split per bounded context** — the monolithic 1.9k-line `sqlite_adapter.py` is now a thin facade composing one repository class per context (telemetry, settings, account, notifications, charging, maintenance), with ORM tables and the startup migration logic in dedicated modules. No behavior change.
+- **Notification dispatcher split into policy modules** — the monolithic dispatcher is now an orchestrator plus dedicated modules: detection policies (movement alert, unlocked timeout, SOC thresholds with 0%-glitch filter, charge interrupted, range low, tire pressure, geofence watcher), location tracking, and Telegram user-administration messages. Each policy is now covered by unit tests. No behavior change.
 
 ### Removed
 - **Old top-level modules** — `main.py`, `models.py`, `schemas.py`, `services/*` and `persistence/*` have been deleted; all imports go through `leapconnect.*`.

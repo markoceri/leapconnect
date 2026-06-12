@@ -55,7 +55,12 @@ Enforced by `tests/test_architecture.py`.
   `AppRepository`; `VehicleHistoryRepository` kept as deprecated alias) and
   `notifier.py` (`BaseNotifier`).
 - `scheduler.py` — background polling loops (history, MQTT, transitions).
-- `notification_dispatcher.py` — event → notification pipeline.
+- `notifications/` — event → notification pipeline: `dispatcher.py`
+  (orchestrator: channels, preferences, cooldowns, mute), `policies.py`
+  (stateful custom-event detectors: movement alert, unlocked timeout, SOC
+  thresholds, charge interrupted, range low, tire pressure, geofence watcher),
+  `tracking.py` (periodic location tracking), `telegram_admin.py` (user
+  approve/decline messages).
 - `vehicle_cache.py` — rate-limited, single-flight status cache.
 - `commands.py` — remote-command rights checks and execution maps.
 - `settings_store.py` — typed settings ↔ key/value settings table.

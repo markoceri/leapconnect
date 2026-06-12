@@ -22,7 +22,7 @@ from leapconnect.api.schemas import (
     TelegramLinkTokenResponse,
     TelegramUserResponse,
 )
-from leapconnect.application.notification_dispatcher import NotificationDispatcher
+from leapconnect.application.notifications import NotificationDispatcher
 from leapconnect.container import container
 from leapconnect.domain.notifications.event_catalog import EVENT_CATALOG
 from leapconnect.domain.notifications.geofencing import polygon_centroid
