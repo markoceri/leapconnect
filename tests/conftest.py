@@ -18,7 +18,7 @@ def client(tmp_path):
             new_callable=AsyncMock,
         ),
     ):
-        from main import app
+        from leapconnect.api.app import app
 
         with TestClient(app) as c:
             yield c

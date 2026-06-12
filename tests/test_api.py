@@ -103,11 +103,10 @@ def test_point_in_polygon_too_few_points():
 
 def test_geofence_contains_circle_and_polygon():
     """_geofence_contains dispatches on shape_type."""
-    from models import Geofence
-
     from leapconnect.domain.notifications.geofencing import (
         geofence_contains as _geofence_contains,
     )
+    from leapconnect.domain.notifications.models import Geofence
 
     circle = Geofence(shape_type="circle", latitude=45.0, longitude=9.0, radius_m=200.0)
     assert _geofence_contains(circle, 45.0, 9.0) is True

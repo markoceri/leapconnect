@@ -27,10 +27,7 @@ COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-editable
 
 # Copy application code
-COPY main.py models.py schemas.py ./
 COPY leapconnect/ ./leapconnect/
-COPY persistence/ ./persistence/
-COPY services/ ./services/
 COPY alembic.ini ./
 COPY migrations/ ./migrations/
 
@@ -43,4 +40,4 @@ ENV HISTORY_DB_PATH=/app/data/leapconnect.db
 
 EXPOSE 8099
 
-CMD ["uv", "run", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8099"]
+CMD ["uv", "run", "uvicorn", "leapconnect.api.app:app", "--host", "0.0.0.0", "--port", "8099"]

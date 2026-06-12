@@ -93,27 +93,20 @@ the only place where every layer may be imported together.
 
 ## Entry points
 
-- `main.py` — thin shim: re-exports `app` (uvicorn target `main:app`) and the
-  `--reset-password` CLI.
+- ASGI app: `leapconnect.api.app:app` (uvicorn target, used by the Dockerfile
+  and the `serve` script).
+- CLI: `python -m leapconnect` runs the server; `python -m leapconnect
+  --reset-password <pw>` resets the local dashboard password.
 - Alembic migrations live in `migrations/`; `migrations/env.py` imports the ORM
   `Base` from the infrastructure adapter.
 
-## Legacy compatibility shims
-
-The historical module paths still work and simply re-export from the new
-locations (kept until the next major release; enforced by tests):
-
-`models.py`, `schemas.py`, `persistence/repository.py`,
-`persistence/sqlite_adapter.py`, `services/*` (scheduler, vehicle_cache,
-notification_dispatcher, telegram_bot, telegram_config, notifiers,
-maintenance_service, maintenance_resolver, maintenance_community, mqtt_ha,
-abrp, transition_detector).
-
-New code must import from `leapconnect.*` directly.
+The pre-refactoring top-level modules (`main.py`, `models.py`, `schemas.py`,
+`services/*`, `persistence/*`) have been removed; all imports go through
+`leapconnect.*`.
 
 ## Testing
 
 - `tests/test_architecture.py` — layering rules (domain purity, application
-  must not import the API layer) and shim re-exports.
+  must not import the API layer).
 - The rest of the suite exercises the API via `TestClient` with a temp DB
   (`tests/conftest.py` patches `AppContainer.auto_connect`).

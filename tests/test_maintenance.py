@@ -59,7 +59,7 @@ def test_model_override_no_vehicle(auth_client):
 
 
 class TestModelResolver:
-    """Unit tests for services/maintenance_resolver.py."""
+    """Unit tests for leapconnect.domain.maintenance.resolver."""
 
     def test_resolve_t03(self):
         from leapconnect.domain.maintenance.resolver import resolve_model
@@ -164,10 +164,10 @@ class TestModelResolver:
 
 
 class TestMaintenanceService:
-    """Unit tests for services/maintenance_service.py."""
+    """Unit tests for leapconnect.domain.maintenance.engine."""
 
     def _item(self, **kw):
-        from models import MaintenancePlanItem
+        from leapconnect.domain.maintenance.models import MaintenancePlanItem
 
         defaults = dict(
             id=1,
@@ -301,7 +301,7 @@ class TestPackNormalization:
 
 
 class TestGithubUrlParsing:
-    """Unit tests for services/maintenance_community.py URL parsing."""
+    """Unit tests for leapconnect.infrastructure.community URL parsing."""
 
     def test_parse_full_url(self):
         from leapconnect.infrastructure.community import parse_github_url
@@ -366,7 +366,7 @@ class TestOfficialPacks:
     """Unit tests for official factory-pack selection (replaces embedded catalog)."""
 
     def _packs(self):
-        from models import MaintenancePack
+        from leapconnect.domain.maintenance.models import MaintenancePack
 
         def mk(model, sts):
             return MaintenancePack(
@@ -412,7 +412,10 @@ class TestCostSummary:
     def _data(self):
         from datetime import datetime
 
-        from models import MaintenancePlanItem, MaintenanceRecord
+        from leapconnect.domain.maintenance.models import (
+            MaintenancePlanItem,
+            MaintenanceRecord,
+        )
 
         plan = [
             MaintenancePlanItem(service_type="brake_fluid_replace", category="brakes"),

@@ -3,8 +3,7 @@
 These tests keep the layering honest as the codebase evolves:
 
 - the domain layer may import only the stdlib and other domain modules;
-- the application layer must not import the API layer;
-- legacy compatibility shims keep re-exporting their historical names.
+- the application layer must not import the API layer.
 """
 
 from __future__ import annotations
@@ -94,29 +93,4 @@ class TestDomainPurity:
                     violations.append(str(path.relative_to(ROOT)))
         assert not violations, "Application layer imports API layer:\n" + "\n".join(
             violations
-        )
-
-
-class TestLegacyShims:
-    """The old import paths must keep working until the next major release."""
-
-    def test_models_shim(self):
-        from models import UserPreferences, VehicleSnapshot  # noqa: F401
-
-    def test_schemas_shim(self):
-        from schemas import StatusResponse, VehicleSchema  # noqa: F401
-
-    def test_services_shims(self):
-        from services.maintenance_service import compute_alert  # noqa: F401
-        from services.notification_dispatcher import (  # noqa: F401
-            EVENT_CATALOG,
-            point_in_polygon,
-        )
-        from services.scheduler import VehicleDataScheduler  # noqa: F401
-        from services.transition_detector import TransitionDetector  # noqa: F401
-
-    def test_persistence_shims(self):
-        from persistence.repository import VehicleHistoryRepository  # noqa: F401
-        from persistence.sqlite_adapter import (  # noqa: F401
-            SQLAlchemyVehicleHistoryRepository,
         )

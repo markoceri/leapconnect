@@ -241,10 +241,10 @@ If you are locked out of your **LeapConnect local account** (the app login passw
 
 ```bash
 # Direct
-python main.py --reset-password "new_password"
+python -m leapconnect --reset-password "new_password"
 
 # Docker
-docker compose exec app uv run python main.py --reset-password "new_password"
+docker compose exec app uv run python -m leapconnect --reset-password "new_password"
 ```
 
 > **Note:** Quote the password to prevent shell interpretation of special characters (`$`, `&`, `!`, etc.).

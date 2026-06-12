@@ -1,17 +1,12 @@
-"""LeapConnect entrypoint.
+"""LeapConnect CLI entrypoint (``python -m leapconnect``).
 
-The application now lives in the ``leapconnect`` package (hexagonal layout):
+Runs the uvicorn server by default; ``--reset-password <new_password>``
+resets the local dashboard user password.
 
-- ``leapconnect.api.app``  — FastAPI app factory and routers
-- ``leapconnect.container`` — composition root (state + service wiring)
-- ``leapconnect.domain`` / ``leapconnect.application`` / ``leapconnect.infrastructure``
-
-This module remains the uvicorn target (``main:app``) and the CLI entrypoint.
+The ASGI app itself lives at ``leapconnect.api.app:app``.
 """
 
 from __future__ import annotations
-
-from leapconnect.api.app import app  # noqa: F401  (uvicorn target: main:app)
 
 
 def _cli_reset_password(new_password: str) -> None:
@@ -45,12 +40,14 @@ def _cli_reset_password(new_password: str) -> None:
 if __name__ == "__main__":
     import sys
 
-    import uvicorn
-
     if len(sys.argv) >= 2 and sys.argv[1] == "--reset-password":
         if len(sys.argv) < 3:
-            print("Usage: python main.py --reset-password <new_password>")
+            print("Usage: python -m leapconnect --reset-password <new_password>")
             raise SystemExit(1)
         _cli_reset_password(sys.argv[2])
     else:
+        import uvicorn
+
+        from leapconnect.api.app import app
+
         uvicorn.run(app, host="0.0.0.0", port=8099)
