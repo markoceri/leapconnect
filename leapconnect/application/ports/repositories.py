@@ -33,12 +33,6 @@ class TelemetryRepository(abc.ABC):
     """Telemetry persistence: snapshots, events, history queries."""
 
     @abc.abstractmethod
-    async def init_db(self) -> None: ...
-
-    @abc.abstractmethod
-    async def close(self) -> None: ...
-
-    @abc.abstractmethod
     async def save_snapshot(self, snapshot: VehicleSnapshot) -> None: ...
 
     @abc.abstractmethod
@@ -340,4 +334,13 @@ class AppRepository(
     ChargingRepository,
     MaintenanceRepository,
 ):
-    """Combined persistence port implemented by the SQLite adapter."""
+    """Combined persistence port implemented by the SQLite adapter.
+
+    Owns the storage lifecycle on top of the per-context interfaces.
+    """
+
+    @abc.abstractmethod
+    async def init_db(self) -> None: ...
+
+    @abc.abstractmethod
+    async def close(self) -> None: ...

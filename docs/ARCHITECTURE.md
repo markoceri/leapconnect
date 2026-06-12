@@ -63,8 +63,14 @@ Enforced by `tests/test_architecture.py`.
 
 ### `leapconnect.infrastructure` — driven adapters
 
-- `persistence/sqlite_adapter.py` — SQLAlchemy/aiosqlite implementation of the
-  repository port; runs Alembic migrations at startup.
+- `persistence/` — SQLAlchemy/aiosqlite implementation of the repository port,
+  split per bounded context: `tables.py` (ORM rows + Alembic `Base`),
+  `migration.py` (startup Alembic upgrade + self-healing ALTER fallbacks),
+  one repository class per context (`telemetry.py`, `settings.py`,
+  `account.py`, `notifications.py`, `charging.py`, `maintenance.py`) sharing a
+  session factory via `base.py`, and `sqlite_adapter.py` — the thin
+  `SqlAlchemyRepository` facade composing them into `AppRepository` and owning
+  the engine lifecycle.
 - `mqtt/home_assistant.py` — Home Assistant MQTT discovery bridge.
 - `telegram/` — bot polling (`bot.py`), notifier (`notifier.py`), config.
 - `abrp/service.py` — A Better Route Planner telemetry.

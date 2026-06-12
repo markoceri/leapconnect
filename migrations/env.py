@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 # Import our models so metadata is populated
-from leapconnect.infrastructure.persistence.sqlite_adapter import Base  # noqa: E402
+from leapconnect.infrastructure.persistence.tables import Base  # noqa: E402
 
 # Alembic Config object
 config = context.config

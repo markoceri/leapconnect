@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Backend restructured into a hexagonal architecture** — the code moved from a monolithic `main.py` into the `leapconnect/` package, split into `domain` (pure business logic), `application` (use cases and ports), `infrastructure` (SQLite, MQTT, Telegram, ABRP adapters) and `api` (FastAPI routers per bounded context) layers, wired together by the `leapconnect/container.py` composition root. This is a passive refactoring: URL paths and behavior are unchanged, and the layering rules are enforced by a dedicated architecture test suite. See `docs/ARCHITECTURE.md` for the overview.
 - **New entry points** — the ASGI app is now `leapconnect.api.app:app` (uvicorn target, Docker CMD) and the password-reset CLI is `python -m leapconnect --reset-password <pw>`.
 
+- **SQLite adapter split per bounded context** — the monolithic 1.9k-line `sqlite_adapter.py` is now a thin facade composing one repository class per context (telemetry, settings, account, notifications, charging, maintenance), with ORM tables and the startup migration logic in dedicated modules. No behavior change.
+
 ### Removed
 - **Old top-level modules** — `main.py`, `models.py`, `schemas.py`, `services/*` and `persistence/*` have been deleted; all imports go through `leapconnect.*`.
 
