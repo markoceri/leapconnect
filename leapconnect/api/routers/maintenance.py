@@ -10,7 +10,6 @@ from typing import Annotated
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
 from fastapi.responses import Response
-from leapmotor_api.exceptions import LeapmotorApiError
 
 from leapconnect.api.deps import (
     ClientDep,
@@ -469,11 +468,8 @@ async def get_maintenance_overview(
 async def get_current_mileage(vin: str, client: ClientDep, vehicle: VehicleDep) -> dict:
     """Return the vehicle's current odometer reading (km), fetched fresh."""
 
-    try:
-        status = await client.get_vehicle_status(vehicle)
-        mileage = status.driving.total_mileage if (status and status.driving) else None
-    except LeapmotorApiError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    status = await client.get_vehicle_status(vehicle)
+    mileage = status.driving.total_mileage if (status and status.driving) else None
 
     return {"vin": vin, "mileage_km": mileage}
 

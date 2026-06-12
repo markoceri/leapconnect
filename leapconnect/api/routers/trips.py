@@ -105,8 +105,8 @@ async def get_trip_gps(vin: str, gpskey: str, repo: HistoryRepo, vehicle: Vehicl
     """Get trip GPS trace from local history snapshots."""
     try:
         start_raw, end_raw = gpskey.split("_", 1)
-        start_dt = datetime.utcfromtimestamp(int(start_raw))
-        end_dt = datetime.utcfromtimestamp(int(end_raw))
+        start_dt = datetime.fromtimestamp(int(start_raw), tz=UTC).replace(tzinfo=None)
+        end_dt = datetime.fromtimestamp(int(end_raw), tz=UTC).replace(tzinfo=None)
     except ValueError as exc:
         raise HTTPException(
             status_code=422, detail=f"Invalid gpskey: {gpskey}"

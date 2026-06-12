@@ -15,6 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Notification dispatcher split into policy modules** — the monolithic dispatcher is now an orchestrator plus dedicated modules: detection policies (movement alert, unlocked timeout, SOC thresholds with 0%-glitch filter, charge interrupted, range low, tire pressure, geofence watcher), location tracking, and Telegram user-administration messages. Each policy is now covered by unit tests. No behavior change.
 - **API routers use FastAPI dependency injection** — endpoints receive the repository, cloud client, vehicle and composition root via `Depends` providers in `api/deps.py` instead of importing the `container` singleton, making them overridable in tests. URL paths, status codes and behavior unchanged (route parity re-verified).
 
+### Fixed
+- **Background tasks can no longer be garbage-collected mid-flight** — fire-and-forget jobs (snapshot saves, MQTT publishes, notification sends, MQTT command handlers) now go through a `spawn()` helper that keeps a strong reference until completion.
+- **Deprecated `datetime.utcnow()`/`utcfromtimestamp()` removed** — replaced with timezone-aware equivalents (stored values remain naive UTC for database compatibility).
+- Removed 12 redundant per-endpoint `LeapmotorApiError → 502` handlers (the global exception handler returns the same response and also logs the failure), and the composition root now uses a public setter for the MQTT polling interval instead of poking a private attribute.
+
 ### Removed
 - **Old top-level modules** — `main.py`, `models.py`, `schemas.py`, `services/*` and `persistence/*` have been deleted; all imports go through `leapconnect.*`.
 

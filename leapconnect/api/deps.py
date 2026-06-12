@@ -7,7 +7,7 @@ them with ``app.dependency_overrides[get_container]``.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import Depends, HTTPException
@@ -86,7 +86,7 @@ def parse_range_date(value: str | None) -> str | None:
         ts = int(raw)
         if ts > 10_000_000_000:
             ts = ts / 1000
-        return datetime.utcfromtimestamp(ts).date().isoformat()
+        return datetime.fromtimestamp(ts, tz=UTC).date().isoformat()
 
     try:
         return datetime.fromisoformat(raw.replace("Z", "+00:00")).date().isoformat()

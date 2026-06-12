@@ -7,11 +7,10 @@ import base64
 import io
 import logging
 import zipfile
-from datetime import datetime
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, HTTPException, Request, WebSocket
 from fastapi.responses import Response
-from leapmotor_api.exceptions import LeapmotorApiError
 from leapmotor_api.models import VehicleStatus
 from starlette.websockets import WebSocketDisconnect
 
@@ -29,6 +28,7 @@ from leapconnect.api.schemas import (
     VehicleStatusResponse,
     VehicleStatusSchema,
 )
+from leapconnect.asyncutils import spawn
 from leapconnect.config import IMAGE_MEDIA_TYPES, VEHICLE_IMAGE_DIR
 from leapconnect.container import AppContainer
 from leapconnect.domain.telemetry.models import VehicleSnapshot
@@ -92,7 +92,7 @@ def snapshot_from_status(vin: str, status: VehicleStatus) -> VehicleSnapshot:
     """Map a cloud VehicleStatus to a persistence snapshot."""
     return VehicleSnapshot(
         vin=vin,
-        timestamp=status.collect_time or datetime.utcnow(),
+        timestamp=status.collect_time or datetime.now(UTC).replace(tzinfo=None),
         battery_soc=status.battery.soc,
         battery_current=status.battery.battery_current,
         battery_voltage=status.battery.battery_voltage,
@@ -153,7 +153,7 @@ async def get_vehicle_status(
     # Persist snapshot for historical tracking
     if container.repo and isinstance(status, VehicleStatus):
         snapshot = snapshot_from_status(vin, status)
-        asyncio.create_task(_save_snapshot_safe(container, snapshot))
+        spawn(_save_snapshot_safe(container, snapshot))
 
     # Publish to MQTT / Home Assistant
     if (
@@ -161,7 +161,7 @@ async def get_vehicle_status(
         and container.mqtt_service.is_connected
         and isinstance(status, VehicleStatus)
     ):
-        asyncio.create_task(container.mqtt_publish_status(vin, status))
+        spawn(container.mqtt_publish_status(vin, status))
 
     return VehicleStatusResponse(status=VehicleStatusSchema.from_model(status))
 
@@ -327,19 +327,16 @@ async def get_dynamic_picture(
 ) -> Response:
     """Compose a dynamic car image reflecting current vehicle status."""
 
-    try:
-        if container.vehicle_cache:
-            pkg, status_raw = await asyncio.gather(
-                container.get_image_package(vin),
-                container.vehicle_cache.get(vehicle),
-            )
-        else:
-            pkg, status_raw = await asyncio.gather(
-                container.get_image_package(vin),
-                client.get_vehicle_status(vehicle),
-            )
-    except LeapmotorApiError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    if container.vehicle_cache:
+        pkg, status_raw = await asyncio.gather(
+            container.get_image_package(vin),
+            container.vehicle_cache.get(vehicle),
+        )
+    else:
+        pkg, status_raw = await asyncio.gather(
+            container.get_image_package(vin),
+            client.get_vehicle_status(vehicle),
+        )
 
     status = status_raw if isinstance(status_raw, VehicleStatus) else None
     img_bytes = await asyncio.to_thread(

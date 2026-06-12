@@ -9,7 +9,6 @@ messages in ``telegram_admin.py``.
 
 from __future__ import annotations
 
-import asyncio
 import contextlib
 import logging
 import time
@@ -25,6 +24,7 @@ from leapconnect.application.notifications.policies import (
 )
 from leapconnect.application.notifications.tracking import LocationTracker
 from leapconnect.application.ports.notifier import BaseNotifier, Notification
+from leapconnect.asyncutils import spawn
 from leapconnect.domain.notifications.event_catalog import (
     EVENT_CATALOG_MAP,
     IMAGE_ENABLED_BY_DEFAULT_EVENTS,
@@ -370,7 +370,7 @@ class NotificationDispatcher:
                     continue
 
                 # Send (with or without image)
-                asyncio.create_task(
+                spawn(
                     self._send_notification(
                         notifier, notification, event_type, vin, cooldown_key
                     )

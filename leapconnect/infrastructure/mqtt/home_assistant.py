@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any
 
 import aiomqtt
 
+from leapconnect.asyncutils import spawn
 from leapconnect.domain.settings.models import MqttSettings
 
 if TYPE_CHECKING:
@@ -40,6 +41,15 @@ class HomeAssistantMqttService:
     @property
     def settings(self) -> MqttSettings:
         return self._settings
+
+    @property
+    def mqtt_interval_seconds(self) -> int:
+        """Polling interval published to the Home Assistant number entity."""
+        return self._mqtt_interval_seconds
+
+    @mqtt_interval_seconds.setter
+    def mqtt_interval_seconds(self, value: int) -> None:
+        self._mqtt_interval_seconds = value
 
     @property
     def is_connected(self) -> bool:
@@ -1322,9 +1332,7 @@ class HomeAssistantMqttService:
                                     "MQTT command received: %s for %s", cmd, vin
                                 )
                                 if self._command_callback:
-                                    asyncio.create_task(
-                                        self._handle_command_safe(vin, cmd)
-                                    )
+                                    spawn(self._handle_command_safe(vin, cmd))
 
                         # Handle number set messages (e.g. .../vin/polling_interval/set)
                         # and switch set messages (e.g. .../vin/ac/set)
@@ -1348,9 +1356,7 @@ class HomeAssistantMqttService:
                                         "MQTT switch command: %s for %s", cmd, vin
                                     )
                                     if self._command_callback:
-                                        asyncio.create_task(
-                                            self._handle_command_safe(vin, cmd)
-                                        )
+                                        spawn(self._handle_command_safe(vin, cmd))
                                 # Number entities send numeric values
                                 elif key in (
                                     "polling_interval",
@@ -1363,7 +1369,7 @@ class HomeAssistantMqttService:
                                             "MQTT setting change: %s = %d", key, value
                                         )
                                         if self._settings_callback:
-                                            asyncio.create_task(
+                                            spawn(
                                                 self._handle_settings_safe(key, value)
                                             )
                                     except (ValueError, TypeError):

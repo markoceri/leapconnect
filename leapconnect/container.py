@@ -568,7 +568,7 @@ class AppContainer:
         _LOGGER.info("MQTT HA service initialised: enabled=%s", mqtt_settings.enabled)
 
         # Sync the MQTT polling interval so discovery publishes the right value
-        self.mqtt_service._mqtt_interval_seconds = saved.mqtt_interval_seconds
+        self.mqtt_service.mqtt_interval_seconds = saved.mqtt_interval_seconds
 
         # Wire scheduler → MQTT publishing
         self.scheduler.set_on_status_callback(self._on_scheduler_status)

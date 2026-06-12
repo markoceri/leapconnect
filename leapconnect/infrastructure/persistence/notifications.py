@@ -354,7 +354,7 @@ class SqlNotificationRepository(SqlRepositoryBase, NotificationRepository):
     async def create_link_token(self, expires_minutes: int = 10) -> str:
         """Generate a new deep-link token. Returns the token string."""
         token = secrets.token_urlsafe(24)
-        now = datetime.utcnow()
+        now = datetime.now(UTC).replace(tzinfo=None)
         row = TelegramLinkTokenRow(
             token=token,
             created_at=now,
@@ -378,7 +378,7 @@ class SqlNotificationRepository(SqlRepositoryBase, NotificationRepository):
                 return False
             if row.used:
                 return False
-            if row.expires_at < datetime.utcnow():
+            if row.expires_at < datetime.now(UTC).replace(tzinfo=None):
                 return False
             row.used = True
             await session.commit()

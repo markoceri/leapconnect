@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from leapmotor_api.exceptions import LeapmotorApiError
@@ -283,7 +283,7 @@ class VehicleDataScheduler:
             "Scheduler: polling %d vehicle(s) for history", len(self._vehicles)
         )
         self._total_runs += 1
-        self._last_run = datetime.utcnow()
+        self._last_run = datetime.now(UTC).replace(tzinfo=None)
         self._last_error = None
 
         for vehicle in self._vehicles:
@@ -300,7 +300,8 @@ class VehicleDataScheduler:
 
                 snapshot = VehicleSnapshot(
                     vin=vehicle.vin,
-                    timestamp=status.collect_time or datetime.utcnow(),
+                    timestamp=status.collect_time
+                    or datetime.now(UTC).replace(tzinfo=None),
                     battery_soc=status.battery.soc if status.battery else None,
                     battery_current=status.battery.battery_current
                     if status.battery
@@ -479,7 +480,8 @@ class VehicleDataScheduler:
 
                 snapshot = VehicleSnapshot(
                     vin=vehicle.vin,
-                    timestamp=status.collect_time or datetime.utcnow(),
+                    timestamp=status.collect_time
+                    or datetime.now(UTC).replace(tzinfo=None),
                     battery_soc=status.battery.soc if status.battery else None,
                     battery_current=status.battery.battery_current
                     if status.battery

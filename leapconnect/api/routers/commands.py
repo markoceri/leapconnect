@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Request
-from leapmotor_api.exceptions import LeapmotorApiError
 from pydantic import BaseModel
 
 from leapconnect.api.deps import ClientDep
@@ -172,10 +171,7 @@ async def set_charge_limit(vin: str, request: Request, client: ClientDep) -> dic
         raise HTTPException(
             status_code=422, detail="Charge limit must be between 20 and 100"
         )
-    try:
-        return await client.set_charge_limit(vin, int(limit))
-    except LeapmotorApiError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return await client.set_charge_limit(vin, int(limit))
 
 
 class ChargeScheduleRequest(BaseModel):
@@ -191,10 +187,7 @@ class ChargeScheduleRequest(BaseModel):
 @router.get("/api/vehicles/{vin}/charge-schedule")
 async def get_charge_schedule(vin: str, client: ClientDep) -> dict:
     """Retrieve the current charge schedule from the cloud."""
-    try:
-        return await client.get_charge_schedule(vin)
-    except LeapmotorApiError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return await client.get_charge_schedule(vin)
 
 
 @router.post("/api/vehicles/{vin}/charge-schedule")
@@ -240,10 +233,7 @@ class ClimateScheduleRequest(BaseModel):
 @router.get("/api/vehicles/{vin}/ac-schedule")
 async def get_climate_schedule(vin: str, client: ClientDep) -> list[dict]:
     """Retrieve active climate schedules from the cloud."""
-    try:
-        return await client.get_climate_schedule(vin)
-    except LeapmotorApiError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return await client.get_climate_schedule(vin)
 
 
 @router.post("/api/vehicles/{vin}/ac-schedule")
@@ -252,19 +242,13 @@ async def set_climate_schedule(
 ) -> dict:
     """Set climate schedules via cloud (cmd_id=171, full-state replacement)."""
     controls = [entry.model_dump() for entry in body.controls]
-    try:
-        return await client.set_climate_schedule(vin, controls=controls)
-    except LeapmotorApiError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return await client.set_climate_schedule(vin, controls=controls)
 
 
 @router.delete("/api/vehicles/{vin}/ac-schedule")
 async def cancel_climate_schedule(vin: str, client: ClientDep) -> dict:
     """Cancel all climate schedules (sends empty controls array)."""
-    try:
-        return await client.cancel_climate_schedule(vin)
-    except LeapmotorApiError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return await client.cancel_climate_schedule(vin)
 
 
 @router.post("/api/vehicles/{vin}/send-destination")
@@ -470,19 +454,13 @@ async def video(vin: str, body: MediaRequest, client: ClientDep) -> dict:
 @router.get("/api/vehicles/{vin}/ptc-heating-schedule")
 async def get_ptc_heating_schedule(vin: str, client: ClientDep) -> list[dict]:
     """Retrieve PTC battery heating schedules from the cloud."""
-    try:
-        return await client.get_ptc_heating_schedule(vin)
-    except LeapmotorApiError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return await client.get_ptc_heating_schedule(vin)
 
 
 @router.get("/api/vehicles/{vin}/prepare-car-schedule")
 async def get_prepare_car_schedule(vin: str, client: ClientDep) -> list[dict]:
     """Retrieve prepare-car pre-conditioning schedules from the cloud."""
-    try:
-        return await client.get_prepare_car_schedule(vin)
-    except LeapmotorApiError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return await client.get_prepare_car_schedule(vin)
 
 
 class FotaRequest(BaseModel):
@@ -509,10 +487,7 @@ class FotaScheduleRequest(BaseModel):
 @router.get("/api/vehicles/{vin}/fota/schedule")
 async def get_fota_schedule(vin: str, client: ClientDep) -> list[dict]:
     """Retrieve active FOTA install schedules from the cloud."""
-    try:
-        return await client.get_fota_schedule(vin)
-    except LeapmotorApiError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return await client.get_fota_schedule(vin)
 
 
 @router.post("/api/vehicles/{vin}/fota/schedule")

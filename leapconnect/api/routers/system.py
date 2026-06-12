@@ -6,7 +6,6 @@ import logging
 import os
 
 from fastapi import APIRouter, HTTPException, Request
-from leapmotor_api.exceptions import LeapmotorApiError
 from leapmotor_api.models import MessageList
 from pydantic import BaseModel
 
@@ -388,12 +387,9 @@ async def get_messages(
     client: ClientDep, page_no: int = 1, page_size: int = 20
 ) -> MessageListResponse:
     """Get paginated notification messages from the account."""
-    try:
-        msg_list: MessageList = await client.get_message_list(
-            page_no=page_no, page_size=page_size
-        )
-    except LeapmotorApiError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    msg_list: MessageList = await client.get_message_list(
+        page_no=page_no, page_size=page_size
+    )
     return MessageListResponse(
         count=msg_list.count,
         page_no=page_no,
@@ -405,10 +401,7 @@ async def get_messages(
 @router.get("/api/messages/unread-count", response_model=UnreadCountResponse)
 async def get_unread_message_count(client: ClientDep) -> UnreadCountResponse:
     """Get the number of unread notification messages."""
-    try:
-        count = await client.get_unread_message_count()
-    except LeapmotorApiError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    count = await client.get_unread_message_count()
     return UnreadCountResponse(unread=count)
 
 
