@@ -11,7 +11,7 @@ from leapmotor_api.models import MessageList
 from pydantic import BaseModel
 
 from leapconnect import config
-from leapconnect.api.deps import get_repo
+from leapconnect.api.deps import ClientDep, ContainerDep, RepoDep
 from leapconnect.api.schemas import (
     AbrpStatusResponse,
     DatabaseSizeResponse,
@@ -28,7 +28,7 @@ from leapconnect.application.settings_store import (
     save_abrp_settings,
     save_mqtt_settings,
 )
-from leapconnect.container import container
+from leapconnect.container import AppContainer
 from leapconnect.domain.charging.models import ChargingPriceTier
 
 _LOGGER = logging.getLogger(__name__)
@@ -53,16 +53,14 @@ def _prefs_response(prefs) -> PreferencesResponse:
 
 
 @router.get("/api/preferences", response_model=PreferencesResponse)
-async def get_preferences() -> PreferencesResponse:
+async def get_preferences(repo: RepoDep) -> PreferencesResponse:
     """Get user preferences (electricity price, etc.)."""
-    repo = get_repo()
     return _prefs_response(await load_preferences(repo))
 
 
 @router.put("/api/preferences", response_model=PreferencesResponse)
-async def update_preferences(request: Request) -> PreferencesResponse:
+async def update_preferences(request: Request, repo: RepoDep) -> PreferencesResponse:
     """Update user preferences."""
-    repo = get_repo()
     body = await request.json()
     price = body.get("electricity_price_kwh")
     if price is not None:
@@ -150,7 +148,7 @@ async def update_preferences(request: Request) -> PreferencesResponse:
 
 
 @router.get("/api/scheduler", response_model=SchedulerStatusResponse)
-async def get_scheduler_status() -> SchedulerStatusResponse:
+async def get_scheduler_status(container: ContainerDep) -> SchedulerStatusResponse:
     """Get current background data collection scheduler status."""
     if not container.scheduler:
         raise HTTPException(status_code=503, detail="Scheduler not available")
@@ -158,7 +156,9 @@ async def get_scheduler_status() -> SchedulerStatusResponse:
 
 
 @router.put("/api/scheduler", response_model=SchedulerStatusResponse)
-async def update_scheduler_settings(request: Request) -> SchedulerStatusResponse:
+async def update_scheduler_settings(
+    request: Request, container: ContainerDep
+) -> SchedulerStatusResponse:
     """Enable/disable or change the interval of background data collection."""
     if not container.scheduler or not container.repo:
         raise HTTPException(status_code=503, detail="Scheduler not available")
@@ -251,7 +251,7 @@ async def get_database_size() -> DatabaseSizeResponse:
 # ---------------------------------------------------------------------------
 
 
-def _mqtt_status_response() -> MqttStatusResponse:
+def _mqtt_status_response(container: AppContainer) -> MqttStatusResponse:
     """Build a MqttStatusResponse from the service's settings + runtime state."""
     s = container.mqtt_service.settings
     return MqttStatusResponse(
@@ -268,15 +268,17 @@ def _mqtt_status_response() -> MqttStatusResponse:
 
 
 @router.get("/api/mqtt", response_model=MqttStatusResponse)
-async def get_mqtt_status() -> MqttStatusResponse:
+async def get_mqtt_status(container: ContainerDep) -> MqttStatusResponse:
     """Get current MQTT / Home Assistant integration status."""
     if not container.mqtt_service:
         return MqttStatusResponse()
-    return _mqtt_status_response()
+    return _mqtt_status_response(container)
 
 
 @router.put("/api/mqtt", response_model=MqttStatusResponse)
-async def update_mqtt_settings(request: Request) -> MqttStatusResponse:
+async def update_mqtt_settings(
+    request: Request, container: ContainerDep
+) -> MqttStatusResponse:
     """Update MQTT connection settings and reconnect."""
     if not container.mqtt_service or not container.repo:
         raise HTTPException(status_code=503, detail="MQTT service not available")
@@ -306,7 +308,7 @@ async def update_mqtt_settings(request: Request) -> MqttStatusResponse:
     # Persist MQTT settings
     await save_mqtt_settings(container.repo, container.mqtt_service.settings)
 
-    return _mqtt_status_response()
+    return _mqtt_status_response(container)
 
 
 @router.post("/api/mqtt/test", response_model=MqttTestResponse)
@@ -345,7 +347,7 @@ async def test_mqtt_connection(request: Request) -> MqttTestResponse:
 
 
 @router.get("/api/abrp", response_model=AbrpStatusResponse)
-async def get_abrp_status() -> AbrpStatusResponse:
+async def get_abrp_status(container: ContainerDep) -> AbrpStatusResponse:
     """Get current ABRP integration status."""
     if not container.abrp_service:
         return AbrpStatusResponse()
@@ -353,7 +355,9 @@ async def get_abrp_status() -> AbrpStatusResponse:
 
 
 @router.put("/api/abrp", response_model=AbrpStatusResponse)
-async def update_abrp_settings(request: Request) -> AbrpStatusResponse:
+async def update_abrp_settings(
+    request: Request, container: ContainerDep
+) -> AbrpStatusResponse:
     """Update ABRP settings."""
     if not container.abrp_service or not container.repo:
         raise HTTPException(status_code=503, detail="ABRP service not available")
@@ -380,9 +384,10 @@ async def update_abrp_settings(request: Request) -> AbrpStatusResponse:
 
 
 @router.get("/api/messages", response_model=MessageListResponse)
-async def get_messages(page_no: int = 1, page_size: int = 20) -> MessageListResponse:
+async def get_messages(
+    client: ClientDep, page_no: int = 1, page_size: int = 20
+) -> MessageListResponse:
     """Get paginated notification messages from the account."""
-    client = container.get_client()
     try:
         msg_list: MessageList = await client.get_message_list(
             page_no=page_no, page_size=page_size
@@ -398,9 +403,8 @@ async def get_messages(page_no: int = 1, page_size: int = 20) -> MessageListResp
 
 
 @router.get("/api/messages/unread-count", response_model=UnreadCountResponse)
-async def get_unread_message_count() -> UnreadCountResponse:
+async def get_unread_message_count(client: ClientDep) -> UnreadCountResponse:
     """Get the number of unread notification messages."""
-    client = container.get_client()
     try:
         count = await client.get_unread_message_count()
     except LeapmotorApiError as exc:
@@ -452,7 +456,7 @@ async def set_log_levels(body: _LogLevelBody):
 
 
 @router.get("/api/logs/entries")
-async def get_log_entries(limit: int = 200):
+async def get_log_entries(container: ContainerDep, limit: int = 200):
     """Return recent log entries from the in-memory buffer."""
     if limit < 1:
         limit = 1

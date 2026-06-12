@@ -2,28 +2,33 @@
 
 from __future__ import annotations
 
+from typing import Annotated
+
 from fastapi import APIRouter
 
-from leapconnect.api.deps import get_repo_or_503
+from leapconnect.api.deps import repo_required
 from leapconnect.api.schemas import (
     DailySummaryResponse,
     VehicleHistoryResponse,
     VehicleSnapshotSchema,
 )
+from leapconnect.application.ports.repositories import AppRepository
 
 router = APIRouter()
+
+HistoryRepo = Annotated[AppRepository, repo_required("History not available")]
 
 
 @router.get("/api/vehicles/{vin}/history", response_model=VehicleHistoryResponse)
 async def get_vehicle_history(
     vin: str,
+    repo: HistoryRepo,
     days: int = 30,
     from_date: str | None = None,
     to_date: str | None = None,
     max_points: int | None = None,
 ) -> VehicleHistoryResponse:
     """Get historical vehicle snapshots for a given time period."""
-    repo = get_repo_or_503("History not available")
     snapshots = await repo.get_history(
         vin, days=days, from_date=from_date, to_date=to_date, max_points=max_points
     )
@@ -68,9 +73,10 @@ async def get_vehicle_history(
 
 
 @router.get("/api/vehicles/{vin}/history/daily", response_model=DailySummaryResponse)
-async def get_vehicle_daily_summary(vin: str, days: int = 30) -> DailySummaryResponse:
+async def get_vehicle_daily_summary(
+    vin: str, repo: HistoryRepo, days: int = 30
+) -> DailySummaryResponse:
     """Get aggregated daily summaries for charts and statistics."""
-    repo = get_repo_or_503("History not available")
     summaries = await repo.get_daily_summary(vin, days=days)
     return DailySummaryResponse(
         vin=vin,
@@ -81,9 +87,10 @@ async def get_vehicle_daily_summary(vin: str, days: int = 30) -> DailySummaryRes
 
 
 @router.get("/api/vehicles/{vin}/events")
-async def get_vehicle_events(vin: str, days: int = 30, event_type: str | None = None):
+async def get_vehicle_events(
+    vin: str, repo: HistoryRepo, days: int = 30, event_type: str | None = None
+):
     """Get state-transition events for analytics and duration tracking."""
-    repo = get_repo_or_503("History not available")
     events = await repo.get_events(vin, days=days, event_type=event_type)
     return {
         "vin": vin,

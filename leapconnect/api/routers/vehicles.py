@@ -15,7 +15,12 @@ from leapmotor_api.exceptions import LeapmotorApiError
 from leapmotor_api.models import VehicleStatus
 from starlette.websockets import WebSocketDisconnect
 
-from leapconnect.api.deps import SESSION_COOKIE_NAME
+from leapconnect.api.deps import (
+    SESSION_COOKIE_NAME,
+    ClientDep,
+    ContainerDep,
+    VehicleDep,
+)
 from leapconnect.api.schemas import (
     FullVehicleDataResponse,
     LiveRefreshStatusResponse,
@@ -25,7 +30,7 @@ from leapconnect.api.schemas import (
     VehicleStatusSchema,
 )
 from leapconnect.config import IMAGE_MEDIA_TYPES, VEHICLE_IMAGE_DIR
-from leapconnect.container import container
+from leapconnect.container import AppContainer
 from leapconnect.domain.telemetry.models import VehicleSnapshot
 
 _LOGGER = logging.getLogger(__name__)
@@ -39,7 +44,9 @@ router = APIRouter()
 
 
 @router.websocket("/ws/vehicle/{vin}")
-async def ws_vehicle_status(websocket: WebSocket, vin: str) -> None:
+async def ws_vehicle_status(
+    websocket: WebSocket, vin: str, container: ContainerDep
+) -> None:
     """Push real-time status updates to the frontend for a vehicle."""
     # Validate session from query param or cookie
     token = websocket.query_params.get(
@@ -74,8 +81,7 @@ async def ws_vehicle_status(websocket: WebSocket, vin: str) -> None:
 
 
 @router.get("/api/vehicles")
-async def get_vehicles():
-    client = container.get_client()
+async def get_vehicles(client: ClientDep, container: ContainerDep):
     container.vehicles = await client.get_vehicle_list()
     return VehicleListResponse(
         vehicles=[VehicleSchema.from_model(v) for v in container.vehicles]
@@ -122,7 +128,9 @@ def snapshot_from_status(vin: str, status: VehicleStatus) -> VehicleSnapshot:
     )
 
 
-async def _save_snapshot_safe(snapshot: VehicleSnapshot) -> None:
+async def _save_snapshot_safe(
+    container: AppContainer, snapshot: VehicleSnapshot
+) -> None:
     """Fire-and-forget snapshot save; errors are logged, never raised."""
     try:
         await container.repo.save_snapshot(snapshot)
@@ -131,10 +139,10 @@ async def _save_snapshot_safe(snapshot: VehicleSnapshot) -> None:
 
 
 @router.get("/api/vehicles/{vin}/status", response_model=VehicleStatusResponse)
-async def get_vehicle_status(vin: str) -> VehicleStatusResponse:
+async def get_vehicle_status(
+    vin: str, client: ClientDep, vehicle: VehicleDep, container: ContainerDep
+) -> VehicleStatusResponse:
     """Get the current real-time status of a vehicle."""
-    client = container.get_client()
-    vehicle = container.find_vehicle(vin)
 
     # Use shared cache if available (respects rate limit + single-flight)
     if container.vehicle_cache:
@@ -145,7 +153,7 @@ async def get_vehicle_status(vin: str) -> VehicleStatusResponse:
     # Persist snapshot for historical tracking
     if container.repo and isinstance(status, VehicleStatus):
         snapshot = snapshot_from_status(vin, status)
-        asyncio.create_task(_save_snapshot_safe(snapshot))
+        asyncio.create_task(_save_snapshot_safe(container, snapshot))
 
     # Publish to MQTT / Home Assistant
     if (
@@ -159,19 +167,17 @@ async def get_vehicle_status(vin: str) -> VehicleStatusResponse:
 
 
 @router.get("/api/vehicles/{vin}/raw-status")
-async def get_vehicle_raw_status(vin: str) -> dict:
+async def get_vehicle_raw_status(
+    vin: str, client: ClientDep, vehicle: VehicleDep
+) -> dict:
     """Get the raw unprocessed status data from the API."""
-    client = container.get_client()
-    vehicle = container.find_vehicle(vin)
     raw = await client.get_vehicle_raw_status(vehicle)
     return raw
 
 
 @router.get("/api/vehicles/{vin}/mileage")
-async def get_mileage(vin: str) -> dict:
+async def get_mileage(vin: str, client: ClientDep, vehicle: VehicleDep) -> dict:
     """Get mileage and energy consumption details."""
-    client = container.get_client()
-    vehicle = container.find_vehicle(vin)
     data = await client.get_mileage_energy_detail(vehicle)
     return data
 
@@ -182,31 +188,33 @@ async def get_mileage(vin: str) -> dict:
 
 
 @router.get("/api/vehicles/{vin}/picture")
-async def get_picture(vin: str) -> dict:
+async def get_picture(vin: str, client: ClientDep, vehicle: VehicleDep) -> dict:
     """Get the car picture metadata and download key."""
-    client = container.get_client()
-    vehicle = container.find_vehicle(vin)
     data = await client.get_car_picture(vehicle)
     return data
 
 
 @router.get("/api/vehicles/{vin}/picture/download")
-async def download_picture(vin: str, key: str) -> Response:
+async def download_picture(vin: str, key: str, client: ClientDep) -> Response:
     """Download the raw car picture ZIP package."""
-    client = container.get_client()
     data = await client.download_car_picture_package(picture_key=key)
     return Response(content=data, media_type="application/zip")
 
 
 @router.get("/api/vehicles/{vin}/picture/image")
-async def get_picture_image(vin: str, refresh: bool = False) -> Response:
+async def get_picture_image(
+    vin: str,
+    client: ClientDep,
+    vehicle: VehicleDep,
+    container: ContainerDep,
+    refresh: bool = False,
+) -> Response:
     """Serve the main car image, caching it on the server's local disk.
 
     The image is downloaded from the Leapmotor cloud only on the first request
     per vehicle (or when ``refresh=1``); afterwards it is served from local
     storage without contacting the cloud.
     """
-    vehicle = container.find_vehicle(vin)
 
     # Serve from local disk if already cached.
     if not refresh:
@@ -222,7 +230,6 @@ async def get_picture_image(vin: str, refresh: bool = False) -> Response:
             )
 
     # Cache miss — fetch from the cloud once.
-    client = container.get_client()
     picture_data = await client.get_car_picture(vehicle)
     key = (picture_data.get("data") or {}).get("key")
     if not key:
@@ -274,13 +281,13 @@ async def get_picture_image(vin: str, refresh: bool = False) -> Response:
 
 
 @router.get("/api/vehicles/{vin}/picture/package")
-async def get_picture_package(vin: str) -> dict[str, str]:
+async def get_picture_package(
+    vin: str, client: ClientDep, vehicle: VehicleDep, container: ContainerDep
+) -> dict[str, str]:
     """Extract all images from the picture ZIP and return as data URIs."""
     if vin in container.picture_cache:
         return container.picture_cache[vin]
 
-    client = container.get_client()
-    vehicle = container.find_vehicle(vin)
     picture_data = await client.get_car_picture(vehicle)
     key = (picture_data.get("data") or {}).get("key")
     if not key:
@@ -311,10 +318,14 @@ async def get_picture_package(vin: str) -> dict[str, str]:
 
 
 @router.get("/api/vehicles/{vin}/picture/dynamic")
-async def get_dynamic_picture(vin: str, charge_frame: int = 0) -> Response:
+async def get_dynamic_picture(
+    vin: str,
+    client: ClientDep,
+    vehicle: VehicleDep,
+    container: ContainerDep,
+    charge_frame: int = 0,
+) -> Response:
     """Compose a dynamic car image reflecting current vehicle status."""
-    client = container.get_client()
-    vehicle = container.find_vehicle(vin)
 
     try:
         if container.vehicle_cache:
@@ -343,10 +354,10 @@ async def get_dynamic_picture(vin: str, charge_frame: int = 0) -> Response:
 
 
 @router.get("/api/vehicles/{vin}/full", response_model=FullVehicleDataResponse)
-async def get_full_vehicle_data(vin: str) -> FullVehicleDataResponse:
+async def get_full_vehicle_data(
+    vin: str, client: ClientDep, vehicle: VehicleDep, container: ContainerDep
+) -> FullVehicleDataResponse:
     """Fetch status, mileage, and picture data for a vehicle in one call."""
-    client = container.get_client()
-    vehicle = container.find_vehicle(vin)
 
     status_task = (
         container.vehicle_cache.get(vehicle)
@@ -391,7 +402,7 @@ async def get_full_vehicle_data(vin: str) -> FullVehicleDataResponse:
 
 
 @router.get("/api/live-refresh", response_model=LiveRefreshStatusResponse)
-async def get_live_refresh() -> LiveRefreshStatusResponse:
+async def get_live_refresh(container: ContainerDep) -> LiveRefreshStatusResponse:
     """Get live refresh status and current interval."""
     return LiveRefreshStatusResponse(
         interval_seconds=container.live_refresh_interval,
@@ -400,7 +411,9 @@ async def get_live_refresh() -> LiveRefreshStatusResponse:
 
 
 @router.put("/api/live-refresh", response_model=LiveRefreshStatusResponse)
-async def update_live_refresh(request: Request) -> LiveRefreshStatusResponse:
+async def update_live_refresh(
+    request: Request, container: ContainerDep
+) -> LiveRefreshStatusResponse:
     """Enable/disable live refresh or change its interval.
 
     Set interval_seconds to 0 to disable. Valid range: 10–600 seconds.

@@ -8,7 +8,7 @@ from datetime import UTC, datetime, timedelta
 from fastapi import APIRouter, HTTPException, Request, WebSocket
 from starlette.websockets import WebSocketDisconnect
 
-from leapconnect.api.deps import SESSION_COOKIE_NAME, get_repo
+from leapconnect.api.deps import SESSION_COOKIE_NAME, ContainerDep, RepoDep
 from leapconnect.api.schemas import (
     GeofenceCreate,
     GeofenceResponse,
@@ -23,7 +23,7 @@ from leapconnect.api.schemas import (
     TelegramUserResponse,
 )
 from leapconnect.application.notifications import NotificationDispatcher
-from leapconnect.container import container
+from leapconnect.container import AppContainer
 from leapconnect.domain.notifications.event_catalog import EVENT_CATALOG
 from leapconnect.domain.notifications.geofencing import polygon_centroid
 from leapconnect.domain.notifications.models import (
@@ -47,7 +47,7 @@ def _channel_response(ch: NotificationChannel) -> NotificationChannelResponse:
     )
 
 
-async def _reload_dispatcher() -> None:
+async def _reload_dispatcher(container: AppContainer) -> None:
     if container.notification_dispatcher:
         await container.notification_dispatcher.reload_config()
 
@@ -59,36 +59,40 @@ async def _reload_dispatcher() -> None:
 
 @router.get("/api/notifications/channels")
 async def get_notification_channels(
-    request: Request,
+    request: Request, repo: RepoDep
 ) -> list[NotificationChannelResponse]:
     """List all configured notification channels."""
-    repo = get_repo()
     channels = await repo.get_notification_channels()
     return [_channel_response(ch) for ch in channels]
 
 
 @router.post("/api/notifications/channels")
 async def create_notification_channel(
-    request: Request, body: NotificationChannelCreate
+    request: Request,
+    body: NotificationChannelCreate,
+    repo: RepoDep,
+    container: ContainerDep,
 ) -> NotificationChannelResponse:
     """Create a new notification channel."""
-    repo = get_repo()
     channel = NotificationChannel(
         channel_type=body.channel_type,
         config=body.config,
         enabled=body.enabled,
     )
     saved = await repo.save_notification_channel(channel)
-    await _reload_dispatcher()
+    await _reload_dispatcher(container)
     return _channel_response(saved)
 
 
 @router.put("/api/notifications/channels/{channel_id}")
 async def update_notification_channel(
-    request: Request, channel_id: int, body: NotificationChannelUpdate
+    request: Request,
+    channel_id: int,
+    body: NotificationChannelUpdate,
+    repo: RepoDep,
+    container: ContainerDep,
 ) -> NotificationChannelResponse:
     """Update a notification channel."""
-    repo = get_repo()
     existing = await repo.get_notification_channel(channel_id)
     if not existing:
         raise HTTPException(status_code=404, detail="Channel not found")
@@ -97,27 +101,27 @@ async def update_notification_channel(
     if body.enabled is not None:
         existing.enabled = body.enabled
     saved = await repo.save_notification_channel(existing)
-    await _reload_dispatcher()
+    await _reload_dispatcher(container)
     return _channel_response(saved)
 
 
 @router.delete("/api/notifications/channels/{channel_id}")
 async def delete_notification_channel(
-    request: Request, channel_id: int
+    request: Request, channel_id: int, repo: RepoDep, container: ContainerDep
 ) -> StatusResponse:
     """Delete a notification channel."""
-    repo = get_repo()
     deleted = await repo.delete_notification_channel(channel_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Channel not found")
-    await _reload_dispatcher()
+    await _reload_dispatcher(container)
     return StatusResponse(status="ok")
 
 
 @router.post("/api/notifications/channels/{channel_id}/test")
-async def test_notification_channel(request: Request, channel_id: int) -> dict:
+async def test_notification_channel(
+    request: Request, channel_id: int, repo: RepoDep
+) -> dict:
     """Send a test notification via the specified channel."""
-    repo = get_repo()
     channel = await repo.get_notification_channel(channel_id)
     if not channel:
         raise HTTPException(status_code=404, detail="Channel not found")
@@ -129,7 +133,9 @@ async def test_notification_channel(request: Request, channel_id: int) -> dict:
 
 
 @router.post("/api/notifications/channels/{channel_id}/test-event")
-async def test_notification_event(request: Request, channel_id: int) -> dict:
+async def test_notification_event(
+    request: Request, channel_id: int, container: ContainerDep
+) -> dict:
     """Send a test notification for a specific event type."""
     if not container.notification_dispatcher:
         raise HTTPException(
@@ -152,17 +158,17 @@ async def test_notification_event(request: Request, channel_id: int) -> dict:
 
 
 @router.get("/api/notifications/cooldown")
-async def get_notification_cooldown() -> dict:
+async def get_notification_cooldown(repo: RepoDep) -> dict:
     """Get the notification cooldown duration in seconds."""
-    repo = get_repo()
     raw = await repo.get_setting("notification_cooldown_seconds")
     return {"cooldown_seconds": int(float(raw)) if raw else 300}
 
 
 @router.put("/api/notifications/cooldown")
-async def update_notification_cooldown(request: Request) -> dict:
+async def update_notification_cooldown(
+    request: Request, repo: RepoDep, container: ContainerDep
+) -> dict:
     """Set the notification cooldown duration in seconds."""
-    repo = get_repo()
     body = await request.json()
     value = body.get("cooldown_seconds")
     if value is None:
@@ -178,7 +184,7 @@ async def update_notification_cooldown(request: Request) -> dict:
             status_code=422, detail="'cooldown_seconds' must be between 0 and 86400"
         )
     await repo.save_setting("notification_cooldown_seconds", str(value))
-    await _reload_dispatcher()
+    await _reload_dispatcher(container)
     return {"cooldown_seconds": value}
 
 
@@ -188,7 +194,7 @@ async def update_notification_cooldown(request: Request) -> dict:
 
 
 @router.post("/api/tracking/{vin}/start")
-async def start_tracking(request: Request, vin: str) -> dict:
+async def start_tracking(request: Request, vin: str, container: ContainerDep) -> dict:
     """Start periodic location tracking for a vehicle."""
     if not container.notification_dispatcher:
         raise HTTPException(
@@ -213,7 +219,9 @@ async def start_tracking(request: Request, vin: str) -> dict:
 
 
 @router.post("/api/tracking/{vin}/stop")
-async def stop_tracking_post(request: Request, vin: str) -> dict:
+async def stop_tracking_post(
+    request: Request, vin: str, container: ContainerDep
+) -> dict:
     """Stop location tracking for a vehicle (POST)."""
     if not container.notification_dispatcher:
         raise HTTPException(
@@ -224,7 +232,7 @@ async def stop_tracking_post(request: Request, vin: str) -> dict:
 
 
 @router.get("/api/tracking/{vin}")
-async def get_tracking_status(vin: str) -> dict:
+async def get_tracking_status(vin: str, container: ContainerDep) -> dict:
     """Get tracking status for a vehicle."""
     if not container.notification_dispatcher:
         return {"tracking": False, "vin": vin}
@@ -241,10 +249,9 @@ async def get_tracking_status(vin: str) -> dict:
 
 @router.get("/api/notifications/events")
 async def get_notification_events(
-    request: Request, channel_id: int | None = None
+    request: Request, repo: RepoDep, channel_id: int | None = None
 ) -> list[NotificationEventStatus]:
     """List all available notification events with their current status."""
-    repo = get_repo()
 
     # Get preferences for the specified channel (or first channel)
     prefs_map: dict[str, NotificationPreference] = {}
@@ -278,10 +285,12 @@ async def get_notification_events(
 
 @router.put("/api/notifications/events")
 async def update_notification_events(
-    request: Request, body: NotificationPreferencesUpdate
+    request: Request,
+    body: NotificationPreferencesUpdate,
+    repo: RepoDep,
+    container: ContainerDep,
 ) -> StatusResponse:
     """Bulk update notification preferences for a channel."""
-    repo = get_repo()
     channel = await repo.get_notification_channel(body.channel_id)
     if not channel:
         raise HTTPException(status_code=404, detail="Channel not found")
@@ -295,7 +304,7 @@ async def update_notification_events(
         for item in body.preferences
     ]
     await repo.save_notification_preferences(body.channel_id, prefs)
-    await _reload_dispatcher()
+    await _reload_dispatcher(container)
     return StatusResponse(status="ok")
 
 
@@ -322,18 +331,18 @@ def _geofence_to_response(gf: Geofence) -> GeofenceResponse:
 
 @router.get("/api/notifications/geofences")
 async def get_geofences(
-    request: Request, vin: str | None = None
+    request: Request, repo: RepoDep, vin: str | None = None
 ) -> list[GeofenceResponse]:
     """List geofences, optionally filtered by VIN."""
-    repo = get_repo()
     geofences = await repo.get_geofences(vin=vin)
     return [_geofence_to_response(gf) for gf in geofences]
 
 
 @router.post("/api/notifications/geofences")
-async def create_geofence(request: Request, body: GeofenceCreate) -> GeofenceResponse:
+async def create_geofence(
+    request: Request, body: GeofenceCreate, repo: RepoDep, container: ContainerDep
+) -> GeofenceResponse:
     """Create a new geofence."""
-    repo = get_repo()
     latitude, longitude = body.latitude, body.longitude
     points = body.points
     if body.shape_type == "polygon":
@@ -357,16 +366,19 @@ async def create_geofence(request: Request, body: GeofenceCreate) -> GeofenceRes
         enabled=body.enabled,
     )
     saved = await repo.save_geofence(gf)
-    await _reload_dispatcher()
+    await _reload_dispatcher(container)
     return _geofence_to_response(saved)
 
 
 @router.put("/api/notifications/geofences/{geofence_id}")
 async def update_geofence(
-    request: Request, geofence_id: int, body: GeofenceUpdate
+    request: Request,
+    geofence_id: int,
+    body: GeofenceUpdate,
+    repo: RepoDep,
+    container: ContainerDep,
 ) -> GeofenceResponse:
     """Update a geofence."""
-    repo = get_repo()
     geofences = await repo.get_geofences()
     existing = next((gf for gf in geofences if gf.id == geofence_id), None)
     if not existing:
@@ -399,20 +411,19 @@ async def update_geofence(
         if body.longitude is not None:
             existing.longitude = body.longitude
     saved = await repo.save_geofence(existing)
-    await _reload_dispatcher()
+    await _reload_dispatcher(container)
     return _geofence_to_response(saved)
 
 
 @router.delete("/api/notifications/geofences/{geofence_id}")
 async def delete_geofence_endpoint(
-    request: Request, geofence_id: int
+    request: Request, geofence_id: int, repo: RepoDep, container: ContainerDep
 ) -> StatusResponse:
     """Delete a geofence."""
-    repo = get_repo()
     deleted = await repo.delete_geofence(geofence_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Geofence not found")
-    await _reload_dispatcher()
+    await _reload_dispatcher(container)
     return StatusResponse(status="ok")
 
 
@@ -422,7 +433,7 @@ async def delete_geofence_endpoint(
 
 
 @router.websocket("/ws/logs")
-async def ws_logs(websocket: WebSocket) -> None:
+async def ws_logs(websocket: WebSocket, container: ContainerDep) -> None:
     """Stream live log entries to connected clients via WebSocket."""
     token = websocket.query_params.get(
         "token",
@@ -451,10 +462,9 @@ async def ws_logs(websocket: WebSocket) -> None:
 
 @router.get("/api/notifications/channels/telegram/users")
 async def get_telegram_users(
-    request: Request, status: str | None = None
+    request: Request, repo: RepoDep, status: str | None = None
 ) -> list[TelegramUserResponse]:
     """List all Telegram users, optionally filtered by status."""
-    repo = get_repo()
     users = await repo.get_telegram_users(status=status)
     return [
         TelegramUserResponse(
@@ -472,9 +482,10 @@ async def get_telegram_users(
 
 
 @router.put("/api/notifications/channels/telegram/users/{chat_id}/approve")
-async def approve_telegram_user(request: Request, chat_id: str) -> StatusResponse:
+async def approve_telegram_user(
+    request: Request, chat_id: str, repo: RepoDep, container: ContainerDep
+) -> StatusResponse:
     """Approve a pending Telegram user."""
-    repo = get_repo()
     updated = await repo.update_telegram_user_status(chat_id, "approved")
     if not updated:
         raise HTTPException(status_code=404, detail="User not found")
@@ -487,9 +498,10 @@ async def approve_telegram_user(request: Request, chat_id: str) -> StatusRespons
 
 
 @router.put("/api/notifications/channels/telegram/users/{chat_id}/reject")
-async def reject_telegram_user(request: Request, chat_id: str) -> StatusResponse:
+async def reject_telegram_user(
+    request: Request, chat_id: str, repo: RepoDep, container: ContainerDep
+) -> StatusResponse:
     """Reject a pending Telegram user."""
-    repo = get_repo()
     updated = await repo.update_telegram_user_status(chat_id, "rejected")
     if not updated:
         raise HTTPException(status_code=404, detail="User not found")
@@ -502,9 +514,10 @@ async def reject_telegram_user(request: Request, chat_id: str) -> StatusResponse
 
 
 @router.delete("/api/notifications/channels/telegram/users/{chat_id}")
-async def delete_telegram_user(request: Request, chat_id: str) -> StatusResponse:
+async def delete_telegram_user(
+    request: Request, chat_id: str, repo: RepoDep, container: ContainerDep
+) -> StatusResponse:
     """Remove a Telegram user entirely."""
-    repo = get_repo()
     deleted = await repo.delete_telegram_user(chat_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="User not found")
@@ -514,9 +527,10 @@ async def delete_telegram_user(request: Request, chat_id: str) -> StatusResponse
 
 
 @router.post("/api/notifications/channels/telegram/link-token")
-async def create_telegram_link_token(request: Request) -> TelegramLinkTokenResponse:
+async def create_telegram_link_token(
+    request: Request, repo: RepoDep, container: ContainerDep
+) -> TelegramLinkTokenResponse:
     """Generate a deep-link token for Telegram account linking."""
-    repo = get_repo()
     token = await repo.create_link_token()
     # Get bot username for the link
     bot_username = None

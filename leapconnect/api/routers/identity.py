@@ -10,7 +10,7 @@ import httpx
 from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse, Response
 
-from leapconnect.api.deps import SESSION_COOKIE_NAME, get_repo
+from leapconnect.api.deps import SESSION_COOKIE_NAME, ContainerDep, RepoDep
 from leapconnect.api.schemas import (
     AccountSetupResponse,
     AccountTestResponse,
@@ -26,7 +26,6 @@ from leapconnect.api.schemas import (
     VehicleSchema,
 )
 from leapconnect.config import CERTS_DIR
-from leapconnect.container import container
 from leapconnect.domain.identity.sessions import SESSION_MAX_AGE
 
 _LOGGER = logging.getLogger(__name__)
@@ -45,9 +44,10 @@ def _set_session_cookie(resp: Response, token: str) -> None:
 
 
 @router.get("/api/setup/status", response_model=SetupStatusResponse)
-async def setup_status(request: Request) -> SetupStatusResponse:
+async def setup_status(
+    request: Request, repo: RepoDep, container: ContainerDep
+) -> SetupStatusResponse:
     """Check if the app is configured (user + certificates + credentials)."""
-    repo = get_repo()
 
     user = await repo.get_user()
     has_user = user is not None
@@ -98,11 +98,11 @@ async def setup_status(request: Request) -> SetupStatusResponse:
 
 @router.post("/api/setup/certificates", response_model=CertificateUploadResponse)
 async def upload_certificates(
+    repo: RepoDep,
     cert_file: UploadFile = File(...),  # noqa: B008
     key_file: UploadFile = File(...),  # noqa: B008
 ) -> CertificateUploadResponse:
     """Upload certificate files (cert + key) for API authentication."""
-    repo = get_repo()
 
     CERTS_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -131,9 +131,8 @@ async def upload_certificates(
 
 
 @router.post("/api/setup/certificates/adopt", response_model=CertificateUploadResponse)
-async def adopt_certificates() -> CertificateUploadResponse:
+async def adopt_certificates(repo: RepoDep) -> CertificateUploadResponse:
     """Adopt certificate files already present on disk without re-uploading."""
-    repo = get_repo()
 
     cert_dest = CERTS_DIR / "app.crt"
     key_dest = CERTS_DIR / "app.key"
@@ -152,9 +151,8 @@ async def adopt_certificates() -> CertificateUploadResponse:
 
 
 @router.get("/api/setup/certificates", response_model=CertificateStatusResponse)
-async def get_certificates() -> CertificateStatusResponse:
+async def get_certificates(repo: RepoDep) -> CertificateStatusResponse:
     """Check whether certificate files are present."""
-    repo = get_repo()
 
     account = await repo.get_account()
     if account:
@@ -193,9 +191,8 @@ _KEY_ASSET_NAMES = {
     "/api/setup/certificates/fetch",
     response_model=CertificateFetchResponse,
 )
-async def fetch_certificates_from_github() -> CertificateFetchResponse:
+async def fetch_certificates_from_github(repo: RepoDep) -> CertificateFetchResponse:
     """Download certificates from the leapmotor-certs GitHub release."""
-    repo = get_repo()
 
     CERTS_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -286,9 +283,10 @@ async def fetch_certificates_from_github() -> CertificateFetchResponse:
 
 
 @router.post("/api/setup/user", response_model=UserCreateResponse)
-async def create_user(request: Request) -> Response:
+async def create_user(
+    request: Request, repo: RepoDep, container: ContainerDep
+) -> Response:
     """Create a LeapConnect application user."""
-    repo = get_repo()
 
     body = await request.json()
     display_name = body.get("display_name", "").strip()
@@ -321,9 +319,10 @@ async def create_user(request: Request) -> Response:
 
 
 @router.post("/api/auth/login", response_model=AuthLoginResponse)
-async def auth_login(request: Request) -> Response:
+async def auth_login(
+    request: Request, repo: RepoDep, container: ContainerDep
+) -> Response:
     """Authenticate with the LeapConnect user password."""
-    repo = get_repo()
 
     body = await request.json()
     password = body.get("password", "").strip()
@@ -348,7 +347,7 @@ async def auth_login(request: Request) -> Response:
 
 
 @router.post("/api/auth/logout", response_model=StatusResponse)
-async def auth_logout(request: Request) -> Response:
+async def auth_logout(request: Request, container: ContainerDep) -> Response:
     """Logout from the LeapConnect session."""
     token = request.cookies.get(SESSION_COOKIE_NAME)
     container.sessions.invalidate(token)
@@ -358,9 +357,8 @@ async def auth_logout(request: Request) -> Response:
 
 
 @router.get("/api/setup/user", response_model=UserInfoResponse)
-async def get_user_info() -> UserInfoResponse:
+async def get_user_info(repo: RepoDep) -> UserInfoResponse:
     """Get current LeapConnect user info."""
-    repo = get_repo()
 
     user = await repo.get_user()
     return UserInfoResponse(
@@ -370,9 +368,8 @@ async def get_user_info() -> UserInfoResponse:
 
 
 @router.put("/api/setup/user", response_model=UserUpdateResponse)
-async def update_user(request: Request) -> UserUpdateResponse:
+async def update_user(request: Request, repo: RepoDep) -> UserUpdateResponse:
     """Update LeapConnect user display name and/or password."""
-    repo = get_repo()
 
     body = await request.json()
     display_name = body.get("display_name")
@@ -427,9 +424,10 @@ async def _validated_cert_paths(repo) -> tuple[str, str]:
 
 
 @router.post("/api/setup/account", response_model=AccountSetupResponse)
-async def save_account(request: Request) -> AccountSetupResponse:
+async def save_account(
+    request: Request, repo: RepoDep, container: ContainerDep
+) -> AccountSetupResponse:
     """Save account credentials and attempt to connect."""
-    repo = get_repo()
 
     body = await request.json()
     username = body.get("username", "").strip()
@@ -477,14 +475,12 @@ async def save_account(request: Request) -> AccountSetupResponse:
 
 
 @router.post("/api/setup/account/test", response_model=AccountTestResponse)
-async def test_account(request: Request) -> AccountTestResponse:
+async def test_account(request: Request, repo: RepoDep) -> AccountTestResponse:
     """Test Leapmotor credentials without saving them."""
     from contextlib import suppress
 
     from leapmotor_api import LeapmotorApiClient
     from leapmotor_api.async_client import AsyncLeapmotorApiClient
-
-    repo = get_repo()
 
     body = await request.json()
     username = body.get("username", "").strip()

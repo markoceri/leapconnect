@@ -6,12 +6,18 @@ from __future__ import annotations
 import json
 import logging
 from datetime import UTC, datetime
+from typing import Annotated
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
 from fastapi.responses import Response
 from leapmotor_api.exceptions import LeapmotorApiError
 
-from leapconnect.api.deps import get_repo_or_503
+from leapconnect.api.deps import (
+    ClientDep,
+    ContainerDep,
+    VehicleDep,
+    repo_required,
+)
 from leapconnect.api.schemas import (
     MaintenanceAlertResponse,
     MaintenanceCostSummary,
@@ -32,7 +38,8 @@ from leapconnect.api.schemas import (
     MaintenanceRepoResponse,
 )
 from leapconnect.application.maintenance import ensure_plan_generated
-from leapconnect.container import container
+from leapconnect.application.ports.repositories import AppRepository
+from leapconnect.container import AppContainer
 from leapconnect.domain.maintenance.engine import (
     compute_alerts,
     compute_cost_summary,
@@ -66,6 +73,7 @@ _LOGGER = logging.getLogger(__name__)
 router = APIRouter()
 
 _REPO_UNAVAILABLE = "Persistence not available"
+RepoRequired = Annotated[AppRepository, repo_required(_REPO_UNAVAILABLE)]
 
 
 # ---------------------------------------------------------------------------
@@ -73,7 +81,9 @@ _REPO_UNAVAILABLE = "Persistence not available"
 # ---------------------------------------------------------------------------
 
 
-async def _resolve_maintenance_model(vin: str, vehicle) -> dict:
+async def _resolve_maintenance_model(
+    container: AppContainer, vin: str, vehicle
+) -> dict:
     """Resolve the vehicle model, applying any persisted C10 variant override."""
     model_info = resolve_model(vehicle)
     if model_info.get("needs_confirmation") and container.repo:
@@ -86,7 +96,7 @@ async def _resolve_maintenance_model(vin: str, vehicle) -> dict:
     return model_info
 
 
-async def _current_mileage_cached(vehicle) -> int | None:
+async def _current_mileage_cached(container: AppContainer, vehicle) -> int | None:
     """Best-effort current odometer reading from the status cache."""
     if not container.vehicle_cache:
         return None
@@ -97,7 +107,7 @@ async def _current_mileage_cached(vehicle) -> int | None:
         return None
 
 
-async def _cache_repo_packs(repo_entity) -> int:
+async def _cache_repo_packs(container: AppContainer, repo_entity) -> int:
     """Fetch every pack listed in a repo's manifest and cache it. Returns count."""
     count = 0
     for entry in repo_entity.manifest or []:
@@ -122,7 +132,7 @@ async def _cache_repo_packs(repo_entity) -> int:
     return count
 
 
-async def _ensure_official_packs() -> list:
+async def _ensure_official_packs(container: AppContainer) -> list:
     """Return the official factory packs, registering the official repo on first use.
 
     The factory maintenance schedule lives in the community repo (no embedded
@@ -152,13 +162,13 @@ async def _ensure_official_packs() -> list:
             manifest=discovered["packs"],
         )
         repo = await container.repo.save_maintenance_repo(repo)
-        await _cache_repo_packs(repo)
+        await _cache_repo_packs(container, repo)
     return await container.repo.list_maintenance_packs(repo.id)
 
 
-async def _factory_items(model_key: str) -> list[dict]:
+async def _factory_items(container: AppContainer, model_key: str) -> list[dict]:
     """Return the factory service items for a model from the official packs."""
-    return factory_items_for_model(await _ensure_official_packs(), model_key)
+    return factory_items_for_model(await _ensure_official_packs(container), model_key)
 
 
 # ---------------------------------------------------------------------------
@@ -167,18 +177,19 @@ async def _factory_items(model_key: str) -> list[dict]:
 
 
 @router.get("/api/vehicles/{vin}/maintenance/model")
-async def get_vehicle_maintenance_model(vin: str) -> dict:
+async def get_vehicle_maintenance_model(vin: str, vehicle: VehicleDep) -> dict:
     """Resolve the vehicle model for maintenance purposes.
 
     Returns the canonical model key, display name, variant (if C10),
     confidence level, and whether the user needs to confirm the C10 variant.
     """
-    vehicle = container.find_vehicle(vin)
     return resolve_model(vehicle)
 
 
 @router.post("/api/vehicles/{vin}/maintenance/model")
-async def set_vehicle_maintenance_model(vin: str, body: dict) -> dict:
+async def set_vehicle_maintenance_model(
+    vin: str, body: dict, container: ContainerDep
+) -> dict:
     """Override the C10 variant choice for a vehicle.
 
     Accepts JSON body: {"variant": "bev" | "reev"}
@@ -188,6 +199,8 @@ async def set_vehicle_maintenance_model(vin: str, body: dict) -> dict:
     if variant not in ("bev", "reev"):
         raise HTTPException(status_code=400, detail="variant must be 'bev' or 'reev'")
 
+    # The 400 above must win over the 404, so look the vehicle up here
+    # instead of via VehicleDep.
     vehicle = container.find_vehicle(vin)
     # Persist the override
     if container.repo:
@@ -210,13 +223,14 @@ async def set_vehicle_maintenance_model(vin: str, body: dict) -> dict:
 
 
 @router.get("/api/vehicles/{vin}/maintenance/rules")
-async def get_vehicle_maintenance_rules(vin: str) -> dict:
+async def get_vehicle_maintenance_rules(
+    vin: str, vehicle: VehicleDep, container: ContainerDep
+) -> dict:
     """Return the official factory maintenance schedule for this vehicle."""
-    vehicle = container.find_vehicle(vin)
-    model_info = await _resolve_maintenance_model(vin, vehicle)
+    model_info = await _resolve_maintenance_model(container, vin, vehicle)
 
     model_key = model_info.get("model_key", "unknown")
-    pack = official_pack_for_model(await _ensure_official_packs(), model_key)
+    pack = official_pack_for_model(await _ensure_official_packs(container), model_key)
 
     if pack is None:
         raise HTTPException(
@@ -239,14 +253,14 @@ async def get_vehicle_maintenance_rules(vin: str) -> dict:
 
 
 @router.get("/api/vehicles/{vin}/maintenance/plan")
-async def get_maintenance_plan(vin: str) -> list:
+async def get_maintenance_plan(
+    vin: str, repo: RepoRequired, vehicle: VehicleDep, container: ContainerDep
+) -> list:
     """Get the maintenance plan. Auto-generates from the catalog if empty."""
-    repo = get_repo_or_503(_REPO_UNAVAILABLE)
 
-    vehicle = container.find_vehicle(vin)
-    model_info = await _resolve_maintenance_model(vin, vehicle)
+    model_info = await _resolve_maintenance_model(container, vin, vehicle)
     model_key = model_info.get("model_key", "unknown")
-    factory = await _factory_items(model_key)
+    factory = await _factory_items(container, model_key)
     items = await ensure_plan_generated(repo, vin, factory)
 
     return [MaintenancePlanItemResponse(**item.__dict__) for item in items]
@@ -254,10 +268,9 @@ async def get_maintenance_plan(vin: str) -> list:
 
 @router.put("/api/vehicles/{vin}/maintenance/plan/{service_type}")
 async def update_maintenance_plan_item(
-    vin: str, service_type: str, body: MaintenancePlanItemUpdate
+    vin: str, service_type: str, body: MaintenancePlanItemUpdate, repo: RepoRequired
 ):
     """Update a single maintenance plan item."""
-    repo = get_repo_or_503(_REPO_UNAVAILABLE)
 
     item = MaintenancePlanItem(
         vin=vin,
@@ -290,10 +303,9 @@ async def update_maintenance_plan_item(
 
 @router.get("/api/vehicles/{vin}/maintenance/records")
 async def get_maintenance_records(
-    vin: str, service_type: str | None = None, limit: int = 20
+    vin: str, repo: RepoRequired, service_type: str | None = None, limit: int = 20
 ) -> list:
     """Get completed maintenance records for a vehicle."""
-    repo = get_repo_or_503(_REPO_UNAVAILABLE)
 
     records = await repo.get_maintenance_records(
         vin, service_type=service_type, limit=limit
@@ -302,13 +314,14 @@ async def get_maintenance_records(
 
 
 @router.post("/api/vehicles/{vin}/maintenance/records")
-async def create_maintenance_record(vin: str, body: MaintenanceRecordCreate):
+async def create_maintenance_record(
+    vin: str, body: MaintenanceRecordCreate, repo: RepoRequired
+):
     """Log a completed maintenance intervention.
 
     If update_plan_item is True (default), the corresponding plan item's
     last_done_km and last_done_date are updated automatically.
     """
-    repo = get_repo_or_503(_REPO_UNAVAILABLE)
 
     record = MaintenanceRecord(
         vin=vin,
@@ -336,7 +349,9 @@ async def create_maintenance_record(vin: str, body: MaintenanceRecordCreate):
     return MaintenanceRecordResponse(**record.__dict__)
 
 
-async def _recalc_plan_last_done(vin: str, service_type: str) -> None:
+async def _recalc_plan_last_done(
+    container: AppContainer, vin: str, service_type: str
+) -> None:
     """Set the plan item's last_done to its most recent remaining record.
 
     Uses ``set_plan_item_last_done`` (not upsert) so last_done is cleared to
@@ -357,10 +372,13 @@ async def _recalc_plan_last_done(vin: str, service_type: str) -> None:
 
 @router.put("/api/vehicles/{vin}/maintenance/records/{record_id}")
 async def edit_maintenance_record(
-    vin: str, record_id: int, body: MaintenanceRecordUpdate
+    vin: str,
+    record_id: int,
+    body: MaintenanceRecordUpdate,
+    repo: RepoRequired,
+    container: ContainerDep,
 ):
     """Update a maintenance record and recalculate the plan item's last-done."""
-    repo = get_repo_or_503(_REPO_UNAVAILABLE)
 
     existing = await repo.get_maintenance_record(record_id)
     if existing is None or existing.vin != vin:
@@ -374,21 +392,22 @@ async def edit_maintenance_record(
         provider=body.provider,
         notes=body.notes,
     )
-    await _recalc_plan_last_done(vin, existing.service_type)
+    await _recalc_plan_last_done(container, vin, existing.service_type)
     return MaintenanceRecordResponse(**updated.__dict__)
 
 
 @router.delete("/api/vehicles/{vin}/maintenance/records/{record_id}")
-async def delete_maintenance_record(vin: str, record_id: int) -> dict:
+async def delete_maintenance_record(
+    vin: str, record_id: int, repo: RepoRequired, container: ContainerDep
+) -> dict:
     """Delete a maintenance record and recalculate the plan item's last-done."""
-    repo = get_repo_or_503(_REPO_UNAVAILABLE)
 
     existing = await repo.get_maintenance_record(record_id)
     if existing is None or existing.vin != vin:
         raise HTTPException(status_code=404, detail="Record not found")
 
     await repo.delete_maintenance_record(record_id)
-    await _recalc_plan_last_done(vin, existing.service_type)
+    await _recalc_plan_last_done(container, vin, existing.service_type)
     return {"ok": True}
 
 
@@ -398,20 +417,20 @@ async def delete_maintenance_record(vin: str, record_id: int) -> dict:
 
 
 @router.get("/api/vehicles/{vin}/maintenance/overview")
-async def get_maintenance_overview(vin: str):
+async def get_maintenance_overview(
+    vin: str, repo: RepoRequired, vehicle: VehicleDep, container: ContainerDep
+):
     """Get a summary overview: model, plan, upcoming/overdue counts, next action."""
-    repo = get_repo_or_503(_REPO_UNAVAILABLE)
 
-    vehicle = container.find_vehicle(vin)
-    model_info = await _resolve_maintenance_model(vin, vehicle)
+    model_info = await _resolve_maintenance_model(container, vin, vehicle)
     model_key = model_info.get("model_key", "unknown")
-    factory = await _factory_items(model_key)
+    factory = await _factory_items(container, model_key)
     plan = await ensure_plan_generated(repo, vin, factory)
     # All records (newest first): used for cost aggregation; first 5 are "recent".
     records = await repo.get_maintenance_records(vin, limit=None)
 
     now_utc = datetime.now(UTC).replace(tzinfo=None)  # naive UTC for DB comparison
-    current_km = await _current_mileage_cached(vehicle)
+    current_km = await _current_mileage_cached(container, vehicle)
     costs = compute_cost_summary(records, plan, now_utc)
 
     alerts = compute_alerts(plan, current_km, now_utc)
@@ -447,10 +466,8 @@ async def get_maintenance_overview(vin: str):
 
 
 @router.get("/api/vehicles/{vin}/maintenance/current-mileage")
-async def get_current_mileage(vin: str) -> dict:
+async def get_current_mileage(vin: str, client: ClientDep, vehicle: VehicleDep) -> dict:
     """Return the vehicle's current odometer reading (km), fetched fresh."""
-    client = container.get_client()
-    vehicle = container.find_vehicle(vin)
 
     try:
         status = await client.get_vehicle_status(vehicle)
@@ -513,18 +530,18 @@ def _repo_to_response(r: MaintenanceRepo, pack_count: int) -> MaintenanceRepoRes
 
 
 @router.get("/api/vehicles/{vin}/maintenance/library")
-async def get_maintenance_library(vin: str) -> MaintenanceLibraryResponse:
+async def get_maintenance_library(
+    vin: str, repo: RepoRequired, vehicle: VehicleDep, container: ContainerDep
+) -> MaintenanceLibraryResponse:
     """Aggregated browse surface: catalog + local items + community packs.
 
     Each item is flagged ``in_plan`` so the UI knows what's already imported.
     """
-    repo = get_repo_or_503(_REPO_UNAVAILABLE)
 
-    vehicle = container.find_vehicle(vin)
-    model_info = await _resolve_maintenance_model(vin, vehicle)
+    model_info = await _resolve_maintenance_model(container, vin, vehicle)
     model_key = model_info.get("model_key", "unknown")
 
-    factory = await _factory_items(model_key)
+    factory = await _factory_items(container, model_key)
     plan = await ensure_plan_generated(repo, vin, factory)
     in_plan_types = {i.service_type for i in plan}
 
@@ -587,14 +604,13 @@ async def get_maintenance_library(vin: str) -> MaintenanceLibraryResponse:
 
 @router.post("/api/vehicles/{vin}/maintenance/plan/import")
 async def import_maintenance_plan_items(
-    vin: str, body: MaintenancePlanImportRequest
+    vin: str, body: MaintenancePlanImportRequest, repo: RepoRequired
 ) -> MaintenancePlanImportResult:
     """Explicitly import service items into the vehicle's plan.
 
     Honours a per-item or request-level conflict strategy when a
     ``service_type`` already exists: ``update`` | ``variant`` | ``skip``.
     """
-    repo = get_repo_or_503(_REPO_UNAVAILABLE)
 
     existing = {i.service_type for i in await repo.get_maintenance_plan(vin)}
     result = MaintenancePlanImportResult()
@@ -647,10 +663,9 @@ async def import_maintenance_plan_items(
 
 @router.post("/api/vehicles/{vin}/maintenance/plan")
 async def create_maintenance_custom_item(
-    vin: str, body: MaintenanceCustomItemCreate
+    vin: str, body: MaintenanceCustomItemCreate, repo: RepoRequired
 ) -> MaintenancePlanItemResponse:
     """Create a user-defined (local) maintenance item in the plan."""
-    repo = get_repo_or_503(_REPO_UNAVAILABLE)
 
     existing = {i.service_type for i in await repo.get_maintenance_plan(vin)}
     if body.service_type in existing:
@@ -684,21 +699,22 @@ async def create_maintenance_custom_item(
 
 
 @router.delete("/api/vehicles/{vin}/maintenance/plan/{service_type}")
-async def delete_maintenance_plan_item(vin: str, service_type: str) -> dict:
+async def delete_maintenance_plan_item(
+    vin: str, service_type: str, repo: RepoRequired
+) -> dict:
     """Remove a plan item (un-import a community item or delete a custom one)."""
-    repo = get_repo_or_503(_REPO_UNAVAILABLE)
     await repo.delete_maintenance_plan_item(vin, service_type)
     return {"deleted": service_type}
 
 
 @router.get("/api/vehicles/{vin}/maintenance/export")
-async def export_local_maintenance(vin: str) -> Response:
+async def export_local_maintenance(
+    vin: str, repo: RepoRequired, vehicle: VehicleDep, container: ContainerDep
+) -> Response:
     """Export the vehicle's local (user-defined) items as a shareable pack."""
-    repo = get_repo_or_503(_REPO_UNAVAILABLE)
 
     plan = await repo.get_maintenance_plan(vin)
-    vehicle = container.find_vehicle(vin)
-    model_info = await _resolve_maintenance_model(vin, vehicle)
+    model_info = await _resolve_maintenance_model(container, vin, vehicle)
 
     items = [
         {
@@ -738,9 +754,8 @@ async def export_local_maintenance(vin: str) -> Response:
 
 
 @router.get("/api/maintenance/repos")
-async def list_maintenance_repos() -> list[MaintenanceRepoResponse]:
+async def list_maintenance_repos(repo: RepoRequired) -> list[MaintenanceRepoResponse]:
     """List all maintenance repositories, including the official one."""
-    repo = get_repo_or_503(_REPO_UNAVAILABLE)
     repos = await repo.list_maintenance_repos()
     packs = await repo.list_maintenance_packs()
     counts: dict[int | None, int] = {}
@@ -751,10 +766,9 @@ async def list_maintenance_repos() -> list[MaintenanceRepoResponse]:
 
 @router.post("/api/maintenance/repos")
 async def add_maintenance_repo(
-    body: MaintenanceRepoCreate,
+    body: MaintenanceRepoCreate, repo: RepoRequired, container: ContainerDep
 ) -> MaintenanceRepoResponse:
     """Add a community repository: discover and cache its packs."""
-    repo = get_repo_or_503(_REPO_UNAVAILABLE)
 
     try:
         discovered = await discover_repo(body.url)
@@ -778,15 +792,16 @@ async def add_maintenance_repo(
         manifest=discovered["packs"],
     )
     repo_entity = await repo.save_maintenance_repo(repo_entity)
-    count = await _cache_repo_packs(repo_entity)
+    count = await _cache_repo_packs(container, repo_entity)
 
     return _repo_to_response(repo_entity, count)
 
 
 @router.post("/api/maintenance/repos/{repo_id}/refresh")
-async def refresh_maintenance_repo(repo_id: int) -> MaintenanceRepoResponse:
+async def refresh_maintenance_repo(
+    repo_id: int, repo: RepoRequired, container: ContainerDep
+) -> MaintenanceRepoResponse:
     """Re-discover a repository's manifest and re-cache its packs."""
-    repo = get_repo_or_503(_REPO_UNAVAILABLE)
     repo_entity = await repo.get_maintenance_repo(repo_id)
     if not repo_entity:
         raise HTTPException(status_code=404, detail="Repository not found")
@@ -810,15 +825,14 @@ async def refresh_maintenance_repo(repo_id: int) -> MaintenanceRepoResponse:
     # Drop old cached packs for this repo, then re-cache.
     for p in await repo.list_maintenance_packs(repo_id):
         await repo.delete_maintenance_pack(p.id)
-    count = await _cache_repo_packs(repo_entity)
+    count = await _cache_repo_packs(container, repo_entity)
 
     return _repo_to_response(repo_entity, count)
 
 
 @router.delete("/api/maintenance/repos/{repo_id}")
-async def delete_maintenance_repo(repo_id: int) -> dict:
+async def delete_maintenance_repo(repo_id: int, repo: RepoRequired) -> dict:
     """Remove a repository and all packs cached from it."""
-    repo = get_repo_or_503(_REPO_UNAVAILABLE)
     existing = await repo.get_maintenance_repo(repo_id)
     if existing and existing.url == OFFICIAL_REPO_URL:
         raise HTTPException(
@@ -830,22 +844,22 @@ async def delete_maintenance_repo(repo_id: int) -> dict:
 
 
 @router.get("/api/maintenance/repos/{repo_id}/packs")
-async def list_repo_packs(repo_id: int) -> list[MaintenancePackResponse]:
+async def list_repo_packs(
+    repo_id: int, repo: RepoRequired
+) -> list[MaintenancePackResponse]:
     """List the packs cached from a repository."""
-    repo = get_repo_or_503(_REPO_UNAVAILABLE)
     packs = await repo.list_maintenance_packs(repo_id)
     return [_pack_to_response(p, set(), "unknown") for p in packs]
 
 
 @router.post("/api/maintenance/packs/import")
 async def import_maintenance_pack(
-    body: MaintenancePackImportRequest,
+    body: MaintenancePackImportRequest, repo: RepoRequired
 ) -> MaintenancePackResponse:
     """Fetch/cache a standalone pack from a raw URL or inline JSON.
 
     For (repo_id + slug) the already-cached pack is returned.
     """
-    repo = get_repo_or_503(_REPO_UNAVAILABLE)
 
     if body.repo_id is not None and body.slug:
         for p in await repo.list_maintenance_packs(body.repo_id):
@@ -885,10 +899,10 @@ async def import_maintenance_pack(
 
 @router.post("/api/maintenance/upload")
 async def upload_maintenance_pack(
+    repo: RepoRequired,
     file: UploadFile = File(...),  # noqa: B008
 ) -> MaintenancePackResponse:
     """Upload a maintenance pack JSON file and cache it as a standalone pack."""
-    repo = get_repo_or_503(_REPO_UNAVAILABLE)
 
     raw = await file.read()
     try:

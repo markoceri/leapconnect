@@ -7,7 +7,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request
 
-from leapconnect.api.deps import get_repo
+from leapconnect.api.deps import ContainerDep, RepoDep
 from leapconnect.api.schemas import (
     ConnectionStatusResponse,
     LoginResponse,
@@ -17,23 +17,22 @@ from leapconnect.api.schemas import (
     VehicleSchema,
 )
 from leapconnect.config import APP_VERSION
-from leapconnect.container import container
+from leapconnect.container import AppContainer
 
 _LOGGER = logging.getLogger(__name__)
 
 router = APIRouter()
 
 
-async def _save_vehicle_pin(pin: str) -> None:
+async def _save_vehicle_pin(container: AppContainer, pin: str) -> None:
     """Persist the vehicle operation PIN for MQTT commands."""
     if container.repo:
         await container.repo.save_setting("mqtt_vehicle_pin", pin)
 
 
 @router.post("/api/reconnect", response_model=ReconnectResponse)
-async def reconnect() -> ReconnectResponse:
+async def reconnect(repo: RepoDep, container: ContainerDep) -> ReconnectResponse:
     """Reconnect using previously saved credentials."""
-    repo = get_repo()
 
     account = await repo.get_account()
     if not account:
@@ -59,14 +58,16 @@ async def reconnect() -> ReconnectResponse:
 
 
 @router.post("/api/disconnect", response_model=StatusResponse)
-async def disconnect() -> StatusResponse:
+async def disconnect(container: ContainerDep) -> StatusResponse:
     """Disconnect from the Leapmotor cloud without clearing session."""
     container.disconnect()
     return StatusResponse(status="ok")
 
 
 @router.post("/api/login", response_model=LoginResponse)
-async def login(request: Request) -> LoginResponse:
+async def login(
+    request: Request, repo: RepoDep, container: ContainerDep
+) -> LoginResponse:
     """Authenticate with Leapmotor using email and password."""
     body = await request.json()
     username = body.get("username", "").strip()
@@ -74,8 +75,6 @@ async def login(request: Request) -> LoginResponse:
 
     if not all([username, password]):
         raise HTTPException(status_code=422, detail="Missing email or password")
-
-    repo = get_repo()
 
     # Certificate paths from DB (uploaded via /api/setup/certificates)
     account = await repo.get_account()
@@ -124,7 +123,7 @@ async def login(request: Request) -> LoginResponse:
 
 
 @router.post("/api/set-pin", response_model=SetPinResponse)
-async def set_pin(request: Request) -> SetPinResponse:
+async def set_pin(request: Request, container: ContainerDep) -> SetPinResponse:
     """Set the vehicle operation PIN required for remote controls."""
     if not container.sync_client:
         raise HTTPException(status_code=400, detail="Not connected")
@@ -134,12 +133,12 @@ async def set_pin(request: Request) -> SetPinResponse:
         raise HTTPException(status_code=422, detail="PIN is required")
     container.sync_client.operation_password = pin
     # Also persist for HA / auto-connect
-    await _save_vehicle_pin(pin)
+    await _save_vehicle_pin(container, pin)
     return SetPinResponse(status="ok", has_pin=True)
 
 
 @router.get("/api/vehicle-pin")
-async def get_vehicle_pin() -> dict:
+async def get_vehicle_pin(container: ContainerDep) -> dict:
     """Get the saved vehicle PIN status (the PIN itself is write-only)."""
     saved_pin = None
     if container.repo:
@@ -152,25 +151,25 @@ async def get_vehicle_pin() -> dict:
 
 
 @router.put("/api/vehicle-pin")
-async def update_vehicle_pin(request: Request) -> dict:
+async def update_vehicle_pin(request: Request, container: ContainerDep) -> dict:
     """Save or clear the vehicle operation PIN (never echoed back)."""
     body = await request.json()
     pin = str(body.get("pin", "")).strip()
-    await _save_vehicle_pin(pin)
+    await _save_vehicle_pin(container, pin)
     if container.sync_client and pin:
         container.sync_client.operation_password = pin
     return {"has_pin": bool(pin)}
 
 
 @router.post("/api/logout", response_model=StatusResponse)
-async def logout() -> StatusResponse:
+async def logout(container: ContainerDep) -> StatusResponse:
     """Disconnect from the Leapmotor API and clear session data."""
     container.logout()
     return StatusResponse(status="ok")
 
 
 @router.get("/api/status", response_model=ConnectionStatusResponse)
-async def connection_status() -> ConnectionStatusResponse:
+async def connection_status(container: ContainerDep) -> ConnectionStatusResponse:
     """Get current connection status, account info, and vehicle list."""
     has_account = False
     has_user = False

@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 from datetime import UTC, date, datetime, timedelta
+from typing import Annotated
 
 from fastapi import APIRouter, HTTPException
 
-from leapconnect.api.deps import get_repo_or_503, parse_range_date
-from leapconnect.container import container
+from leapconnect.api.deps import VehicleDep, parse_range_date, repo_required
+from leapconnect.application.ports.repositories import AppRepository
 from leapconnect.domain.trips.analysis import (
     build_local_trip_payload,
     calculate_local_regen_energy_kwh,
@@ -21,8 +22,12 @@ from leapconnect.domain.trips.analysis import (
 
 router = APIRouter()
 
+# History repo with the endpoint-specific 503 message
+HistoryRepo = Annotated[AppRepository, repo_required("History not available")]
+
 
 async def _range_snapshots(
+    repo: AppRepository,
     vin: str,
     begin_time: str | None,
     end_time: str | None,
@@ -31,8 +36,6 @@ async def _range_snapshots(
     max_points: int = 10_000,
 ):
     """Load history snapshots for a normalized date range."""
-    repo = get_repo_or_503("History not available")
-    container.find_vehicle(vin)
     today = date.today()
     bt = (
         parse_range_date(begin_time)
@@ -51,22 +54,26 @@ async def _range_snapshots(
 @router.get("/api/vehicles/{vin}/trips")
 async def get_trips(
     vin: str,
+    repo: HistoryRepo,
+    vehicle: VehicleDep,
     begin_time: str | None = None,
     end_time: str | None = None,
 ):
     """Get driving records from locally collected history snapshots."""
-    snapshots, _, _ = await _range_snapshots(vin, begin_time, end_time)
+    snapshots, _, _ = await _range_snapshots(repo, vin, begin_time, end_time)
     return build_local_trip_payload(snapshots)
 
 
 @router.get("/api/vehicles/{vin}/trips/totals")
 async def get_trips_totals(
     vin: str,
+    repo: HistoryRepo,
+    vehicle: VehicleDep,
     begin_time: str | None = None,
     end_time: str | None = None,
 ):
     """Get total driving statistics computed from local history snapshots."""
-    snapshots, _, _ = await _range_snapshots(vin, begin_time, end_time)
+    snapshots, _, _ = await _range_snapshots(repo, vin, begin_time, end_time)
     payload = build_local_trip_payload(snapshots)
 
     # Flatten trip rows for totals.
@@ -94,11 +101,8 @@ async def get_trips_totals(
 
 
 @router.get("/api/vehicles/{vin}/trips/gps/{gpskey}")
-async def get_trip_gps(vin: str, gpskey: str):
+async def get_trip_gps(vin: str, gpskey: str, repo: HistoryRepo, vehicle: VehicleDep):
     """Get trip GPS trace from local history snapshots."""
-    repo = get_repo_or_503("History not available")
-
-    container.find_vehicle(vin)
     try:
         start_raw, end_raw = gpskey.split("_", 1)
         start_dt = datetime.utcfromtimestamp(int(start_raw))
@@ -135,6 +139,8 @@ async def get_trip_gps(vin: str, gpskey: str):
 async def get_similar_trips(
     vin: str,
     gpskey: str,
+    repo: HistoryRepo,
+    vehicle: VehicleDep,
     limit: int = 3,
     begin_time: str | None = None,
     end_time: str | None = None,
@@ -145,7 +151,7 @@ async def get_similar_trips(
     distance (25%).
     """
     snapshots, _, _ = await _range_snapshots(
-        vin, begin_time, end_time, default_days=90, max_points=50_000
+        repo, vin, begin_time, end_time, default_days=90, max_points=50_000
     )
     payload = build_local_trip_payload(snapshots)
     trips = flatten_trip_rows(payload)
@@ -240,11 +246,13 @@ async def get_similar_trips(
 @router.get("/api/vehicles/{vin}/charge-stats/cloud")
 async def get_charge_stats_cloud(
     vin: str,
+    repo: HistoryRepo,
+    vehicle: VehicleDep,
     begin_time: str | None = None,
     end_time: str | None = None,
 ):
     """Get daily charging statistics derived from local history."""
-    snapshots, bt, et = await _range_snapshots(vin, begin_time, end_time)
+    snapshots, bt, et = await _range_snapshots(repo, vin, begin_time, end_time)
     sessions = detect_local_charge_sessions(snapshots)
 
     days: dict[str, dict] = {}
@@ -282,11 +290,10 @@ async def get_charge_stats_cloud(
 
 
 @router.get("/api/vehicles/{vin}/charge-stats/year")
-async def get_charge_stats_year(vin: str, year: str | None = None):
+async def get_charge_stats_year(
+    vin: str, repo: HistoryRepo, vehicle: VehicleDep, year: str | None = None
+):
     """Get annual charging statistics derived from local history."""
-    repo = get_repo_or_503("History not available")
-
-    container.find_vehicle(vin)
     y = year or str(date.today().year)
     if not y.isdigit() or len(y) != 4:
         raise HTTPException(status_code=422, detail="year must be YYYY")

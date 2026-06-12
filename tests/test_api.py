@@ -236,3 +236,19 @@ def test_vehicle_pin_is_write_only(auth_client):
     resp = auth_client.put("/api/vehicle-pin", json={"pin": ""})
     assert resp.status_code == 200
     assert resp.json() == {"has_pin": False}
+
+
+def test_container_dependency_is_overridable(client):
+    """Routers resolve the container via Depends, so tests can swap it."""
+    from leapconnect.api import deps
+
+    class StubContainer:
+        repo = None  # simulates "DB not ready"
+
+    client.app.dependency_overrides[deps.get_container] = StubContainer
+    try:
+        resp = client.get("/api/setup/status")
+        assert resp.status_code == 503
+        assert resp.json()["detail"] == "DB not ready"
+    finally:
+        client.app.dependency_overrides.clear()

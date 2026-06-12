@@ -6,7 +6,7 @@ from datetime import date, datetime
 
 from fastapi import APIRouter, HTTPException
 
-from leapconnect.api.deps import get_repo
+from leapconnect.api.deps import ClientDep, RepoDep, VehicleDep
 from leapconnect.api.schemas import (
     ChargingHistoryResponse,
     ChargingPriceTierResponse,
@@ -25,7 +25,6 @@ from leapconnect.application.settings_store import (
     calculate_session_cost,
     load_preferences,
 )
-from leapconnect.container import container
 from leapconnect.domain.charging.models import ChargingSessionCost, ChargingTimeBand
 
 router = APIRouter()
@@ -41,6 +40,7 @@ router = APIRouter()
 )
 async def get_charging_history(
     vin: str,
+    client: ClientDep,
     start: str | None = None,
     end: str | None = None,
     timezone: str = "GMT+00:00",
@@ -48,7 +48,6 @@ async def get_charging_history(
     size: int = 10,
 ) -> ChargingHistoryResponse:
     """Get paginated charging session history."""
-    client = container.get_client()
     today = date.today()
     start_date = date.fromisoformat(start) if start else today.replace(day=1)
     end_date = date.fromisoformat(end) if end else today
@@ -67,10 +66,10 @@ async def get_charging_history(
     "/api/vehicles/{vin}/consumption/weekly-rank",
     response_model=ConsumptionWeeklyRankResponse,
 )
-async def get_consumption_weekly_rank(vin: str) -> ConsumptionWeeklyRankResponse:
+async def get_consumption_weekly_rank(
+    vin: str, client: ClientDep, vehicle: VehicleDep
+) -> ConsumptionWeeklyRankResponse:
     """Get weekly energy consumption ranking."""
-    client = container.get_client()
-    vehicle = container.find_vehicle(vin)
     result = await client.get_consumption_weekly_rank(vehicle)
     return ConsumptionWeeklyRankResponse.from_model(result)
 
@@ -79,10 +78,10 @@ async def get_consumption_weekly_rank(vin: str) -> ConsumptionWeeklyRankResponse
     "/api/vehicles/{vin}/consumption/last-week",
     response_model=ConsumptionLastWeekResponse,
 )
-async def get_consumption_last_week(vin: str) -> ConsumptionLastWeekResponse:
+async def get_consumption_last_week(
+    vin: str, client: ClientDep, vehicle: VehicleDep
+) -> ConsumptionLastWeekResponse:
     """Get last week energy consumption breakdown."""
-    client = container.get_client()
-    vehicle = container.find_vehicle(vin)
     result = await client.get_consumption_last_week_breakdown(vehicle)
     return ConsumptionLastWeekResponse.from_model(result)
 
@@ -105,9 +104,8 @@ def _band_response(b: ChargingTimeBand) -> ChargingTimeBandResponse:
 
 
 @router.get("/api/charging-tiers", response_model=ChargingTiersFullResponse)
-async def get_charging_tiers() -> ChargingTiersFullResponse:
+async def get_charging_tiers(repo: RepoDep) -> ChargingTiersFullResponse:
     """Get all charging price tiers and time bands."""
-    repo = get_repo()
     prefs = await load_preferences(repo)
     tiers = await repo.get_price_tiers()
     # Hide home_solar if user has no solar panels
@@ -128,10 +126,9 @@ async def get_charging_tiers() -> ChargingTiersFullResponse:
 
 @router.put("/api/charging-tiers/{tier_id}", response_model=ChargingPriceTierResponse)
 async def update_charging_tier(
-    tier_id: str, body: ChargingPriceTierUpdate
+    tier_id: str, body: ChargingPriceTierUpdate, repo: RepoDep
 ) -> ChargingPriceTierResponse:
     """Update a charging price tier."""
-    repo = get_repo()
     tiers = await repo.get_price_tiers()
     tier = next((t for t in tiers if t.id == tier_id), None)
     if not tier:
@@ -153,9 +150,8 @@ async def update_charging_tier(
 @router.get(
     "/api/charging-tiers/time-bands", response_model=list[ChargingTimeBandResponse]
 )
-async def get_time_bands() -> list[ChargingTimeBandResponse]:
+async def get_time_bands(repo: RepoDep) -> list[ChargingTimeBandResponse]:
     """Get all time-of-use bands."""
-    repo = get_repo()
     bands = await repo.get_time_bands("home_grid")
     return [_band_response(b) for b in bands]
 
@@ -165,9 +161,10 @@ async def get_time_bands() -> list[ChargingTimeBandResponse]:
     response_model=ChargingTimeBandResponse,
     status_code=201,
 )
-async def create_time_band(body: ChargingTimeBandCreate) -> ChargingTimeBandResponse:
+async def create_time_band(
+    body: ChargingTimeBandCreate, repo: RepoDep
+) -> ChargingTimeBandResponse:
     """Create a new time-of-use band."""
-    repo = get_repo()
     # Determine position (append at end)
     existing = await repo.get_time_bands("home_grid")
     position = (
@@ -191,10 +188,9 @@ async def create_time_band(body: ChargingTimeBandCreate) -> ChargingTimeBandResp
     "/api/charging-tiers/time-bands/{band_id}", response_model=ChargingTimeBandResponse
 )
 async def update_time_band(
-    band_id: int, body: ChargingTimeBandUpdate
+    band_id: int, body: ChargingTimeBandUpdate, repo: RepoDep
 ) -> ChargingTimeBandResponse:
     """Update a time-of-use band."""
-    repo = get_repo()
     bands = await repo.get_time_bands("home_grid")
     band = next((b for b in bands if b.id == band_id), None)
     if not band:
@@ -216,9 +212,8 @@ async def update_time_band(
 
 
 @router.delete("/api/charging-tiers/time-bands/{band_id}")
-async def delete_time_band_endpoint(band_id: int):
+async def delete_time_band_endpoint(band_id: int, repo: RepoDep):
     """Delete a time-of-use band."""
-    repo = get_repo()
     deleted = await repo.delete_time_band(band_id)
     if not deleted:
         raise HTTPException(status_code=404, detail=f"Time band {band_id} not found")
@@ -257,10 +252,9 @@ def _cost_response(
     response_model=list[ChargingSessionCostResponse],
 )
 async def get_charging_costs(
-    vin: str, start: str | None = None, end: str | None = None
+    vin: str, repo: RepoDep, start: str | None = None, end: str | None = None
 ):
     """Get charging session costs for a vehicle."""
-    repo = get_repo()
     start_dt = datetime.fromisoformat(start) if start else None
     end_dt = datetime.fromisoformat(end) if end else None
     costs = await repo.get_session_costs(vin, start=start_dt, end=end_dt)
@@ -275,9 +269,10 @@ async def get_charging_costs(
     response_model=ChargingSessionCostResponse,
     status_code=201,
 )
-async def create_charging_cost(vin: str, body: ChargingSessionCostCreate):
+async def create_charging_cost(
+    vin: str, body: ChargingSessionCostCreate, repo: RepoDep
+):
     """Assign a cost tier to a charging session."""
-    repo = get_repo()
     start_ts = datetime.fromisoformat(body.start_ts)
     end_ts = datetime.fromisoformat(body.end_ts) if body.end_ts else None
     # Validate tier exists
@@ -308,9 +303,10 @@ async def create_charging_cost(vin: str, body: ChargingSessionCostCreate):
     "/api/vehicles/{vin}/charging-costs/{cost_id}",
     response_model=ChargingSessionCostResponse,
 )
-async def update_charging_cost(vin: str, cost_id: int, body: ChargingSessionCostUpdate):
+async def update_charging_cost(
+    vin: str, cost_id: int, body: ChargingSessionCostUpdate, repo: RepoDep
+):
     """Update a charging session cost (change tier, energy, etc.)."""
-    repo = get_repo()
     costs = await repo.get_session_costs(vin)
     sc = next((c for c in costs if c.id == cost_id), None)
     if not sc:
@@ -340,9 +336,8 @@ async def update_charging_cost(vin: str, cost_id: int, body: ChargingSessionCost
 
 
 @router.delete("/api/vehicles/{vin}/charging-costs/{cost_id}")
-async def delete_charging_cost(vin: str, cost_id: int):
+async def delete_charging_cost(vin: str, cost_id: int, repo: RepoDep):
     """Delete a charging session cost."""
-    repo = get_repo()
     deleted = await repo.delete_session_cost(cost_id)
     if not deleted:
         raise HTTPException(status_code=404, detail=f"Session cost {cost_id} not found")

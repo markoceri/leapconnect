@@ -91,7 +91,11 @@ Enforced by `tests/test_architecture.py`.
   `system`. **URL paths are unchanged** from the pre-refactoring monolith so
   the frontend and PWA clients keep working.
 - `schemas/` — Pydantic DTOs grouped by context.
-- `deps.py` — repository access helpers, session cookie constants, date parsing.
+- `deps.py` — FastAPI dependency providers (`get_container`, `get_repo`,
+  `get_client`, `get_vehicle` and their `Annotated` aliases), session cookie
+  constants, date parsing. Routers receive collaborators via ``Depends``
+  instead of importing the container singleton, so tests can override them
+  with ``app.dependency_overrides[get_container]``.
 
 ### `leapconnect.container` — composition root
 
