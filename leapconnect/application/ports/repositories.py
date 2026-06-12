@@ -341,7 +341,3 @@ class AppRepository(
     MaintenanceRepository,
 ):
     """Combined persistence port implemented by the SQLite adapter."""
-
-
-# Deprecated alias — the port was historically named after its first use case.
-VehicleHistoryRepository = AppRepository

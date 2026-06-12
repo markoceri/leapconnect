@@ -93,11 +93,6 @@ class AppContainer:
 
     # -- accessors ------------------------------------------------------------
 
-    @property
-    def history_repo(self) -> SqlAlchemyRepository | None:
-        """Deprecated alias for :attr:`repo` (pre-rename name)."""
-        return self.repo
-
     def get_client(self) -> AsyncLeapmotorApiClient:
         if self.client is None:
             raise HTTPException(

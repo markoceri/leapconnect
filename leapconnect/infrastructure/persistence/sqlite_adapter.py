@@ -1939,7 +1939,3 @@ class SqlAlchemyRepository(AppRepository):
             if row:
                 await session.delete(row)
                 await session.commit()
-
-
-# Deprecated alias for the pre-rename class name.
-SQLAlchemyVehicleHistoryRepository = SqlAlchemyRepository
