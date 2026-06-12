@@ -23,7 +23,7 @@ SESSION_COOKIE_NAME = "leapconnect_session"
 PUBLIC_PATHS: set[str] = {
     "/api/setup/status",
     "/api/setup/user",
-    "/api/auth/login",
+    "/api/auth/session",
 }
 
 

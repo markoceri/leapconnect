@@ -69,7 +69,7 @@ from leapconnect.infrastructure.community import (
 
 _LOGGER = logging.getLogger(__name__)
 
-router = APIRouter()
+router = APIRouter(tags=["maintenance"])
 
 _REPO_UNAVAILABLE = "Persistence not available"
 RepoRequired = Annotated[AppRepository, repo_required(_REPO_UNAVAILABLE)]

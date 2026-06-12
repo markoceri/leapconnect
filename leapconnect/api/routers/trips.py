@@ -20,7 +20,7 @@ from leapconnect.domain.trips.analysis import (
     trip_start_hour,
 )
 
-router = APIRouter()
+router = APIRouter(tags=["trips"])
 
 # History repo with the endpoint-specific 503 message
 HistoryRepo = Annotated[AppRepository, repo_required("History not available")]
@@ -243,7 +243,7 @@ async def get_similar_trips(
     }
 
 
-@router.get("/api/vehicles/{vin}/charge-stats/cloud")
+@router.get("/api/vehicles/{vin}/charging/stats/daily")
 async def get_charge_stats_cloud(
     vin: str,
     repo: HistoryRepo,
@@ -289,7 +289,7 @@ async def get_charge_stats_cloud(
     }
 
 
-@router.get("/api/vehicles/{vin}/charge-stats/year")
+@router.get("/api/vehicles/{vin}/charging/stats/yearly")
 async def get_charge_stats_year(
     vin: str, repo: HistoryRepo, vehicle: VehicleDep, year: str | None = None
 ):

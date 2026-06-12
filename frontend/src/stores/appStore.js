@@ -58,7 +58,7 @@ export const useAppStore = defineStore('app', () => {
   const currentStatus = computed(() => currentData.value?.status || null)
 
   async function login(credentials) {
-    const result = await api('POST', '/api/login', credentials)
+    const result = await api('POST', '/api/cloud/session', credentials)
     connected.value = true
     vehicles.value = result.vehicles || []
     displayName.value = result.display_name || ''
@@ -75,7 +75,7 @@ export const useAppStore = defineStore('app', () => {
 
   async function reconnect() {
     try {
-      const result = await api('POST', '/api/reconnect')
+      const result = await api('PUT', '/api/cloud/session')
       connected.value = true
       vehicles.value = result.vehicles || []
       return result
@@ -86,7 +86,7 @@ export const useAppStore = defineStore('app', () => {
   }
 
   async function disconnect() {
-    await api('POST', '/api/disconnect')
+    await api('DELETE', '/api/cloud/session')
     disconnectWebSocket()
     connected.value = false
   }
@@ -141,7 +141,7 @@ export const useAppStore = defineStore('app', () => {
   }
 
   async function submitPin(pin, remember = false) {
-    await api('POST', '/api/set-pin', { pin })
+    await api('PUT', '/api/cloud/pin', { pin })
     hasPin.value = true
     if (remember) {
       sessionStorage.setItem('hasPin', 'true')
@@ -150,7 +150,7 @@ export const useAppStore = defineStore('app', () => {
 
   async function logout() {
     try {
-      await api('POST', '/api/auth/logout')
+      await api('DELETE', '/api/auth/session')
     } catch {
       // ignore
     }

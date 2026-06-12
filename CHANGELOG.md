@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **BREAKING: API endpoints renamed in place** (no `/api/v2` namespace, no aliases — the bundled Vue frontend is migrated in the same release; an installed PWA with a stale cached shell recovers on the next service-worker auto-update):
+  - Local auth is session-style: `POST /api/auth/login` → `POST /api/auth/session`, `POST /api/auth/logout` → `DELETE /api/auth/session`
+  - Cloud connection: `POST /api/login` → `POST /api/cloud/session`, `POST /api/reconnect` → `PUT /api/cloud/session`, `POST /api/disconnect` → `DELETE /api/cloud/session`, `GET /api/status` → `GET /api/cloud/status`
+  - Vehicle PIN: `POST /api/set-pin` and `GET/PUT /api/vehicle-pin` merged into `GET/PUT /api/cloud/pin`; the unused `POST /api/logout` was deleted
+  - Charging: `/api/charging-tiers` → `/api/charging/tiers`, `/api/charging-tiers/time-bands` → `/api/charging/time-bands`; the misleading `/api/vehicles/{vin}/charge-stats/cloud` (it serves *local* history) → `/api/vehicles/{vin}/charging/stats/daily`, `/charge-stats/year` → `/charging/stats/yearly`
+  - Telegram administration: `/api/notifications/channels/telegram/users*` → `/api/telegram/users*`, `.../telegram/link-token` → `/api/telegram/link-token`
+  - Location tracking is a REST resource: `POST /api/tracking/{vin}/start` → `POST /api/vehicles/{vin}/tracking`, `POST /api/tracking/{vin}/stop` → `DELETE /api/vehicles/{vin}/tracking`, `GET /api/tracking/{vin}` → `GET /api/vehicles/{vin}/tracking`
+- **OpenAPI tags per router** — `/docs` is now grouped by bounded context (identity, cloud-connection, vehicles, history, commands, trips, charging, maintenance, notifications, system).
 - **Backend restructured into a hexagonal architecture** — the code moved from a monolithic `main.py` into the `leapconnect/` package, split into `domain` (pure business logic), `application` (use cases and ports), `infrastructure` (SQLite, MQTT, Telegram, ABRP adapters) and `api` (FastAPI routers per bounded context) layers, wired together by the `leapconnect/container.py` composition root. This is a passive refactoring: URL paths and behavior are unchanged, and the layering rules are enforced by a dedicated architecture test suite. See `docs/ARCHITECTURE.md` for the overview.
 - **New entry points** — the ASGI app is now `leapconnect.api.app:app` (uvicorn target, Docker CMD) and the password-reset CLI is `python -m leapconnect --reset-password <pw>`.
 

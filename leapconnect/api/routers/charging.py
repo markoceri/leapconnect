@@ -27,7 +27,7 @@ from leapconnect.application.settings_store import (
 )
 from leapconnect.domain.charging.models import ChargingSessionCost, ChargingTimeBand
 
-router = APIRouter()
+router = APIRouter(tags=["charging"])
 
 
 # ---------------------------------------------------------------------------
@@ -103,7 +103,7 @@ def _band_response(b: ChargingTimeBand) -> ChargingTimeBandResponse:
     )
 
 
-@router.get("/api/charging-tiers", response_model=ChargingTiersFullResponse)
+@router.get("/api/charging/tiers", response_model=ChargingTiersFullResponse)
 async def get_charging_tiers(repo: RepoDep) -> ChargingTiersFullResponse:
     """Get all charging price tiers and time bands."""
     prefs = await load_preferences(repo)
@@ -124,7 +124,7 @@ async def get_charging_tiers(repo: RepoDep) -> ChargingTiersFullResponse:
     )
 
 
-@router.put("/api/charging-tiers/{tier_id}", response_model=ChargingPriceTierResponse)
+@router.put("/api/charging/tiers/{tier_id}", response_model=ChargingPriceTierResponse)
 async def update_charging_tier(
     tier_id: str, body: ChargingPriceTierUpdate, repo: RepoDep
 ) -> ChargingPriceTierResponse:
@@ -147,9 +147,7 @@ async def update_charging_tier(
     )
 
 
-@router.get(
-    "/api/charging-tiers/time-bands", response_model=list[ChargingTimeBandResponse]
-)
+@router.get("/api/charging/time-bands", response_model=list[ChargingTimeBandResponse])
 async def get_time_bands(repo: RepoDep) -> list[ChargingTimeBandResponse]:
     """Get all time-of-use bands."""
     bands = await repo.get_time_bands("home_grid")
@@ -157,7 +155,7 @@ async def get_time_bands(repo: RepoDep) -> list[ChargingTimeBandResponse]:
 
 
 @router.post(
-    "/api/charging-tiers/time-bands",
+    "/api/charging/time-bands",
     response_model=ChargingTimeBandResponse,
     status_code=201,
 )
@@ -185,7 +183,7 @@ async def create_time_band(
 
 
 @router.put(
-    "/api/charging-tiers/time-bands/{band_id}", response_model=ChargingTimeBandResponse
+    "/api/charging/time-bands/{band_id}", response_model=ChargingTimeBandResponse
 )
 async def update_time_band(
     band_id: int, body: ChargingTimeBandUpdate, repo: RepoDep
@@ -211,7 +209,7 @@ async def update_time_band(
     return _band_response(band)
 
 
-@router.delete("/api/charging-tiers/time-bands/{band_id}")
+@router.delete("/api/charging/time-bands/{band_id}")
 async def delete_time_band_endpoint(band_id: int, repo: RepoDep):
     """Delete a time-of-use band."""
     deleted = await repo.delete_time_band(band_id)

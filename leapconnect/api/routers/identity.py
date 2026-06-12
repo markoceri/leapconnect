@@ -30,7 +30,7 @@ from leapconnect.domain.identity.sessions import SESSION_MAX_AGE
 
 _LOGGER = logging.getLogger(__name__)
 
-router = APIRouter()
+router = APIRouter(tags=["identity"])
 
 
 def _set_session_cookie(resp: Response, token: str) -> None:
@@ -318,7 +318,7 @@ async def create_user(
     return resp
 
 
-@router.post("/api/auth/login", response_model=AuthLoginResponse)
+@router.post("/api/auth/session", response_model=AuthLoginResponse)
 async def auth_login(
     request: Request, repo: RepoDep, container: ContainerDep
 ) -> Response:
@@ -358,7 +358,7 @@ async def auth_login(
     return resp
 
 
-@router.post("/api/auth/logout", response_model=StatusResponse)
+@router.delete("/api/auth/session", response_model=StatusResponse)
 async def auth_logout(request: Request, container: ContainerDep) -> Response:
     """Logout from the LeapConnect session."""
     token = request.cookies.get(SESSION_COOKIE_NAME)

@@ -20,11 +20,6 @@ class LoginResponse(BaseModel):
     display_name: str | None = None
 
 
-class SetPinResponse(BaseModel):
-    status: str = "ok"
-    has_pin: bool
-
-
 class ConnectionStatusResponse(BaseModel):
     connected: bool
     has_account: bool

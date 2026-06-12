@@ -7,7 +7,7 @@ from pydantic import BaseModel
 
 from leapconnect.api.deps import ClientDep
 
-router = APIRouter()
+router = APIRouter(tags=["commands"])
 
 
 @router.post("/api/vehicles/{vin}/lock")

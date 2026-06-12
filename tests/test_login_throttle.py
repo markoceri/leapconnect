@@ -64,13 +64,13 @@ class TestLoginThrottle:
 def test_login_throttled_after_repeated_failures(auth_client):
     """The 6th wrong password gets a 429 with Retry-After, not another 401."""
     for _ in range(5):
-        resp = auth_client.post("/api/auth/login", json={"password": "wrong"})
+        resp = auth_client.post("/api/auth/session", json={"password": "wrong"})
         assert resp.status_code == 401
 
-    resp = auth_client.post("/api/auth/login", json={"password": "wrong"})
+    resp = auth_client.post("/api/auth/session", json={"password": "wrong"})
     assert resp.status_code == 429
     assert "Retry-After" in resp.headers
 
     # Even the correct password is rejected while locked out
-    resp = auth_client.post("/api/auth/login", json={"password": "testpass"})
+    resp = auth_client.post("/api/auth/session", json={"password": "testpass"})
     assert resp.status_code == 429

@@ -482,7 +482,7 @@ watch(
 // Load charging tiers on mount
 ;(async () => {
   try {
-    const data = await api('GET', '/api/charging-tiers')
+    const data = await api('GET', '/api/charging/tiers')
     availableTiers.value = data.tiers || []
     chargingTiersLoaded.value = true
   } catch { /* ignore */ }

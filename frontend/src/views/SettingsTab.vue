@@ -1716,7 +1716,7 @@ async function saveAbrp() {
 
 async function loadAccount() {
   try {
-    const data = await api('GET', '/api/status')
+    const data = await api('GET', '/api/cloud/status')
     if (data.leapmotor_email) {
       leapmotorEmail.value = data.leapmotor_email
       accountForm.username = data.leapmotor_email
@@ -1894,7 +1894,7 @@ async function loadPreferences() {
 
 async function loadChargingTiers() {
   try {
-    const data = await api('GET', '/api/charging-tiers')
+    const data = await api('GET', '/api/charging/tiers')
     chargingTiers.value = data.tiers || []
     timeBands.value = (data.time_bands || []).map(b => ({
       ...b,
@@ -1930,7 +1930,7 @@ async function saveChargingTiers() {
   chargingTiersSaving.value = true
   try {
     for (const tier of chargingTiers.value) {
-      await api('PUT', `/api/charging-tiers/${tier.id}`, { price_kwh: tier.price_kwh })
+      await api('PUT', `/api/charging/tiers/${tier.id}`, { price_kwh: tier.price_kwh })
     }
     tiersSuccess.value = 'Prices saved'
     setTimeout(() => { tiersSuccess.value = '' }, 3000)
@@ -1947,14 +1947,14 @@ async function saveTimeBands() {
   chargingTiersSaving.value = true
   try {
     // Get current server bands to diff
-    const serverBands = await api('GET', '/api/charging-tiers/time-bands')
+    const serverBands = await api('GET', '/api/charging/time-bands')
     const serverIds = new Set(serverBands.map(b => b.id))
     const localIds = new Set(timeBands.value.filter(b => b.id).map(b => b.id))
 
     // Delete removed bands
     for (const sb of serverBands) {
       if (!localIds.has(sb.id)) {
-        await api('DELETE', `/api/charging-tiers/time-bands/${sb.id}`)
+        await api('DELETE', `/api/charging/time-bands/${sb.id}`)
       }
     }
     // Create/update bands
@@ -1962,9 +1962,9 @@ async function saveTimeBands() {
       const band = timeBands.value[i]
       const payload = { name: band.name, price_kwh: band.price_kwh, schedule: band.schedule, color: band.color, position: i + 1 }
       if (band.id && serverIds.has(band.id)) {
-        await api('PUT', `/api/charging-tiers/time-bands/${band.id}`, payload)
+        await api('PUT', `/api/charging/time-bands/${band.id}`, payload)
       } else {
-        const created = await api('POST', '/api/charging-tiers/time-bands', payload)
+        const created = await api('POST', '/api/charging/time-bands', payload)
         band.id = created.id
       }
     }
@@ -2065,7 +2065,7 @@ async function saveDownsampling() {
 
 async function loadVehiclePin() {
   try {
-    const data = await api('GET', '/api/vehicle-pin')
+    const data = await api('GET', '/api/cloud/pin')
     hasVehiclePin.value = !!data.has_pin
     vehiclePin.value = ''
   } catch { /* ignore */ }
@@ -2076,7 +2076,7 @@ async function saveVehiclePin() {
   pinError.value = ''
   pinSuccess.value = ''
   try {
-    const data = await api('PUT', '/api/vehicle-pin', { pin: vehiclePin.value })
+    const data = await api('PUT', '/api/cloud/pin', { pin: vehiclePin.value })
     hasVehiclePin.value = !!data.has_pin
     vehiclePin.value = ''
     pinSuccess.value = hasVehiclePin.value ? 'PIN saved' : 'PIN cleared'
@@ -2505,7 +2505,7 @@ async function testTelegram() {
 
 async function loadTelegramUsers() {
   try {
-    telegramUsers.value = await api('GET', '/api/notifications/channels/telegram/users')
+    telegramUsers.value = await api('GET', '/api/telegram/users')
   } catch (e) {
     // Silently ignore if endpoint not available
   }
@@ -2516,7 +2516,7 @@ async function generateLinkToken() {
   linkTokenData.value = null
   linkCopied.value = false
   try {
-    linkTokenData.value = await api('POST', '/api/notifications/channels/telegram/link-token')
+    linkTokenData.value = await api('POST', '/api/telegram/link-token')
   } catch (e) {
     notifError.value = e.message || 'Failed to generate link'
   } finally {
@@ -2537,7 +2537,7 @@ async function copyLink() {
 
 async function approveTelegramUser(chatId) {
   try {
-    await api('PUT', `/api/notifications/channels/telegram/users/${chatId}/approve`)
+    await api('PUT', `/api/telegram/users/${chatId}/approve`)
     await loadTelegramUsers()
   } catch (e) {
     notifError.value = e.message || 'Approve failed'
@@ -2546,7 +2546,7 @@ async function approveTelegramUser(chatId) {
 
 async function rejectTelegramUser(chatId) {
   try {
-    await api('PUT', `/api/notifications/channels/telegram/users/${chatId}/reject`)
+    await api('PUT', `/api/telegram/users/${chatId}/reject`)
     await loadTelegramUsers()
   } catch (e) {
     notifError.value = e.message || 'Reject failed'
@@ -2563,7 +2563,7 @@ async function confirmRemoveUser() {
   showRemoveConfirm.value = false
   removeTargetChatId.value = null
   try {
-    await api('DELETE', `/api/notifications/channels/telegram/users/${chatId}`)
+    await api('DELETE', `/api/telegram/users/${chatId}`)
     await loadTelegramUsers()
   } catch (e) {
     notifError.value = e.message || 'Remove failed'
@@ -2639,7 +2639,7 @@ function startTrackingPoll() {
   trackingPollTimer = setInterval(async () => {
     if (!store.selectedVin) return
     try {
-      const data = await api('GET', `/api/tracking/${store.selectedVin}`)
+      const data = await api('GET', `/api/vehicles/${store.selectedVin}/tracking`)
       if (!data.tracking && tracking.active) {
         tracking.active = false
         stopTrackingPoll()
@@ -2658,7 +2658,7 @@ function stopTrackingPoll() {
 async function loadTrackingStatus() {
   if (!store.selectedVin) return
   try {
-    const data = await api('GET', `/api/tracking/${store.selectedVin}`)
+    const data = await api('GET', `/api/vehicles/${store.selectedVin}/tracking`)
     tracking.active = data.tracking
     if (data.interval_seconds) {
       tracking.interval_seconds = data.interval_seconds
@@ -2675,7 +2675,7 @@ async function startTracking() {
   if (!store.selectedVin) return
   trackingLoading.value = true
   try {
-    const data = await api('POST', `/api/tracking/${store.selectedVin}/start`, { interval_seconds: trackingInterval.value })
+    const data = await api('POST', `/api/vehicles/${store.selectedVin}/tracking`, { interval_seconds: trackingInterval.value })
     tracking.active = data.tracking
     tracking.interval_seconds = data.interval_seconds
     startTrackingPoll()
@@ -2690,7 +2690,7 @@ async function stopTracking() {
   if (!store.selectedVin) return
   trackingLoading.value = true
   try {
-    await api('POST', `/api/tracking/${store.selectedVin}/stop`)
+    await api('DELETE', `/api/vehicles/${store.selectedVin}/tracking`)
     tracking.active = false
     stopTrackingPoll()
   } catch (e) {

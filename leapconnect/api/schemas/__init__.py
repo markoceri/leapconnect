@@ -25,7 +25,6 @@ from leapconnect.api.schemas.connection import (  # noqa: F401
     ConnectionStatusResponse,
     LoginResponse,
     ReconnectResponse,
-    SetPinResponse,
 )
 from leapconnect.api.schemas.identity import (  # noqa: F401
     AccountSetupResponse,
@@ -190,7 +189,6 @@ __all__ = [
     "SchedulerStatusResponse",
     "SeatComfortSchema",
     "SecuritySchema",
-    "SetPinResponse",
     "SetupStatusResponse",
     "StatusResponse",
     "TelegramLinkTokenResponse",

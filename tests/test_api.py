@@ -3,13 +3,13 @@
 
 def test_status_requires_session(client):
     """Accessing /api/status without a session returns 401."""
-    response = client.get("/api/status")
+    response = client.get("/api/cloud/status")
     assert response.status_code == 401
 
 
 def test_status_not_connected(auth_client):
     """When authenticated but not connected, /api/status returns connected=False."""
-    response = auth_client.get("/api/status")
+    response = auth_client.get("/api/cloud/status")
     assert response.status_code == 200
     data = response.json()
     assert data["connected"] is False
@@ -43,7 +43,7 @@ def test_setup_status(client):
 
 def test_auth_login_wrong_password(auth_client):
     """Login with wrong password returns 401."""
-    response = auth_client.post("/api/auth/login", json={"password": "wrongpass"})
+    response = auth_client.post("/api/auth/session", json={"password": "wrongpass"})
     assert response.status_code == 401
 
 
@@ -224,16 +224,16 @@ def test_compare_metrics_structure():
 
 def test_vehicle_pin_is_write_only(auth_client):
     """The vehicle PIN is never echoed back by the API, only has_pin."""
-    resp = auth_client.put("/api/vehicle-pin", json={"pin": "1234"})
+    resp = auth_client.put("/api/cloud/pin", json={"pin": "1234"})
     assert resp.status_code == 200
     assert resp.json() == {"has_pin": True}
 
-    resp = auth_client.get("/api/vehicle-pin")
+    resp = auth_client.get("/api/cloud/pin")
     assert resp.status_code == 200
     assert resp.json() == {"has_pin": True}
 
     # Clearing the PIN reports has_pin=False
-    resp = auth_client.put("/api/vehicle-pin", json={"pin": ""})
+    resp = auth_client.put("/api/cloud/pin", json={"pin": ""})
     assert resp.status_code == 200
     assert resp.json() == {"has_pin": False}
 
@@ -252,3 +252,12 @@ def test_container_dependency_is_overridable(client):
         assert resp.json()["detail"] == "DB not ready"
     finally:
         client.app.dependency_overrides.clear()
+
+
+def test_local_session_delete_logs_out(auth_client):
+    """DELETE /api/auth/session invalidates the session cookie."""
+    resp = auth_client.delete("/api/auth/session")
+    assert resp.status_code == 200
+
+    resp = auth_client.get("/api/cloud/status")
+    assert resp.status_code == 401

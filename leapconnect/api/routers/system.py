@@ -32,7 +32,7 @@ from leapconnect.domain.charging.models import ChargingPriceTier
 
 _LOGGER = logging.getLogger(__name__)
 
-router = APIRouter()
+router = APIRouter(tags=["system"])
 
 
 # ---------------------------------------------------------------------------

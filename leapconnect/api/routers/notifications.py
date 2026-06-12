@@ -34,7 +34,7 @@ from leapconnect.domain.notifications.models import (
 
 _LOGGER = logging.getLogger(__name__)
 
-router = APIRouter()
+router = APIRouter(tags=["notifications"])
 
 
 def _channel_response(ch: NotificationChannel) -> NotificationChannelResponse:
@@ -193,7 +193,7 @@ async def update_notification_cooldown(
 # ---------------------------------------------------------------------------
 
 
-@router.post("/api/tracking/{vin}/start")
+@router.post("/api/vehicles/{vin}/tracking")
 async def start_tracking(request: Request, vin: str, container: ContainerDep) -> dict:
     """Start periodic location tracking for a vehicle."""
     if not container.notification_dispatcher:
@@ -218,11 +218,9 @@ async def start_tracking(request: Request, vin: str, container: ContainerDep) ->
     return {"tracking": True, "vin": vin, "interval_seconds": interval}
 
 
-@router.post("/api/tracking/{vin}/stop")
-async def stop_tracking_post(
-    request: Request, vin: str, container: ContainerDep
-) -> dict:
-    """Stop location tracking for a vehicle (POST)."""
+@router.delete("/api/vehicles/{vin}/tracking")
+async def stop_tracking(request: Request, vin: str, container: ContainerDep) -> dict:
+    """Stop location tracking for a vehicle."""
     if not container.notification_dispatcher:
         raise HTTPException(
             status_code=503, detail="Notification dispatcher not available"
@@ -231,7 +229,7 @@ async def stop_tracking_post(
     return {"tracking": False, "vin": vin, "stopped": stopped}
 
 
-@router.get("/api/tracking/{vin}")
+@router.get("/api/vehicles/{vin}/tracking")
 async def get_tracking_status(vin: str, container: ContainerDep) -> dict:
     """Get tracking status for a vehicle."""
     if not container.notification_dispatcher:
@@ -460,7 +458,7 @@ async def ws_logs(websocket: WebSocket, container: ContainerDep) -> None:
 # ---------------------------------------------------------------------------
 
 
-@router.get("/api/notifications/channels/telegram/users")
+@router.get("/api/telegram/users")
 async def get_telegram_users(
     request: Request, repo: RepoDep, status: str | None = None
 ) -> list[TelegramUserResponse]:
@@ -481,7 +479,7 @@ async def get_telegram_users(
     ]
 
 
-@router.put("/api/notifications/channels/telegram/users/{chat_id}/approve")
+@router.put("/api/telegram/users/{chat_id}/approve")
 async def approve_telegram_user(
     request: Request, chat_id: str, repo: RepoDep, container: ContainerDep
 ) -> StatusResponse:
@@ -497,7 +495,7 @@ async def approve_telegram_user(
     return StatusResponse(status="ok")
 
 
-@router.put("/api/notifications/channels/telegram/users/{chat_id}/reject")
+@router.put("/api/telegram/users/{chat_id}/reject")
 async def reject_telegram_user(
     request: Request, chat_id: str, repo: RepoDep, container: ContainerDep
 ) -> StatusResponse:
@@ -513,7 +511,7 @@ async def reject_telegram_user(
     return StatusResponse(status="ok")
 
 
-@router.delete("/api/notifications/channels/telegram/users/{chat_id}")
+@router.delete("/api/telegram/users/{chat_id}")
 async def delete_telegram_user(
     request: Request, chat_id: str, repo: RepoDep, container: ContainerDep
 ) -> StatusResponse:
@@ -526,7 +524,7 @@ async def delete_telegram_user(
     return StatusResponse(status="ok")
 
 
-@router.post("/api/notifications/channels/telegram/link-token")
+@router.post("/api/telegram/link-token")
 async def create_telegram_link_token(
     request: Request, repo: RepoDep, container: ContainerDep
 ) -> TelegramLinkTokenResponse:

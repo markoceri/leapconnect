@@ -288,13 +288,6 @@ class AppContainer:
         self._close_sync_client()
         self.reset_connection()
 
-    def logout(self) -> None:
-        """Disconnect from the Leapmotor API and clear cached vehicle data."""
-        self._close_sync_client()
-        self.reset_connection()
-        self.picture_cache.clear()
-        self.image_packages.clear()
-
     # -- vehicle PIN ---------------------------------------------------------------
 
     def set_vehicle_pin(self, pin: str) -> None:

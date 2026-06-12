@@ -35,7 +35,7 @@ from leapconnect.domain.telemetry.models import VehicleSnapshot
 
 _LOGGER = logging.getLogger(__name__)
 
-router = APIRouter()
+router = APIRouter(tags=["vehicles"])
 
 
 # ---------------------------------------------------------------------------

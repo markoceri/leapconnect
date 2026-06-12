@@ -14,7 +14,7 @@ from leapconnect.api.schemas import (
 )
 from leapconnect.application.ports.repositories import AppRepository
 
-router = APIRouter()
+router = APIRouter(tags=["history"])
 
 HistoryRepo = Annotated[AppRepository, repo_required("History not available")]
 

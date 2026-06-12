@@ -85,10 +85,17 @@ Enforced by `tests/test_architecture.py`.
 
 - `app.py` — app factory: CORS, session middleware, error handler, SPA mount,
   router registration, lifespan (delegates to the container).
-- `routers/` — one router per context: `identity`, `connection`, `vehicles`,
-  `history`, `commands`, `trips`, `charging`, `maintenance`, `notifications`,
-  `system`. **URL paths are unchanged** from the pre-refactoring monolith so
-  the frontend and PWA clients keep working.
+- `routers/` — one router per context, each with an OpenAPI tag: `identity`,
+  `connection`, `vehicles`, `history`, `commands`, `trips`, `charging`,
+  `maintenance`, `notifications`, `system`. On 2026-06-12 the inconsistent
+  legacy paths were renamed **in place** (no `/api/v2` namespace): local auth
+  and cloud connection are session-style (`POST/DELETE /api/auth/session`,
+  `POST/PUT/DELETE /api/cloud/session`, `GET /api/cloud/status`,
+  `GET/PUT /api/cloud/pin`), root-level kebab paths moved under their context
+  (`/api/charging/tiers`, `/api/charging/time-bands`,
+  `/api/vehicles/{vin}/charging/stats/daily|yearly`, `/api/telegram/*`).
+  The Vue frontend is migrated in the same commit; path changes are breaking
+  for installed PWA clients until they reload.
 - `schemas/` — Pydantic DTOs grouped by context.
 - `deps.py` — FastAPI dependency providers (`get_container`, `get_repo`,
   `get_client`, `get_vehicle` and their `Annotated` aliases), session cookie

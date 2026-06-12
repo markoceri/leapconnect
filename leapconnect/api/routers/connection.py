@@ -1,4 +1,4 @@
-"""Leapmotor cloud connection routes: login, reconnect, disconnect, PIN, status."""
+"""Leapmotor cloud connection routes: session lifecycle, PIN, status."""
 
 from __future__ import annotations
 
@@ -12,7 +12,6 @@ from leapconnect.api.schemas import (
     ConnectionStatusResponse,
     LoginResponse,
     ReconnectResponse,
-    SetPinResponse,
     StatusResponse,
     VehicleSchema,
 )
@@ -21,7 +20,7 @@ from leapconnect.container import AppContainer
 
 _LOGGER = logging.getLogger(__name__)
 
-router = APIRouter()
+router = APIRouter(tags=["cloud-connection"])
 
 
 async def _save_vehicle_pin(container: AppContainer, pin: str) -> None:
@@ -30,7 +29,7 @@ async def _save_vehicle_pin(container: AppContainer, pin: str) -> None:
         await container.repo.save_setting("mqtt_vehicle_pin", pin)
 
 
-@router.post("/api/reconnect", response_model=ReconnectResponse)
+@router.put("/api/cloud/session", response_model=ReconnectResponse)
 async def reconnect(repo: RepoDep, container: ContainerDep) -> ReconnectResponse:
     """Reconnect using previously saved credentials."""
 
@@ -57,14 +56,14 @@ async def reconnect(repo: RepoDep, container: ContainerDep) -> ReconnectResponse
         ) from exc
 
 
-@router.post("/api/disconnect", response_model=StatusResponse)
+@router.delete("/api/cloud/session", response_model=StatusResponse)
 async def disconnect(container: ContainerDep) -> StatusResponse:
     """Disconnect from the Leapmotor cloud without clearing session."""
     container.disconnect()
     return StatusResponse(status="ok")
 
 
-@router.post("/api/login", response_model=LoginResponse)
+@router.post("/api/cloud/session", response_model=LoginResponse)
 async def login(
     request: Request, repo: RepoDep, container: ContainerDep
 ) -> LoginResponse:
@@ -122,22 +121,7 @@ async def login(
         raise HTTPException(status_code=401, detail=str(exc)) from exc
 
 
-@router.post("/api/set-pin", response_model=SetPinResponse)
-async def set_pin(request: Request, container: ContainerDep) -> SetPinResponse:
-    """Set the vehicle operation PIN required for remote controls."""
-    if not container.sync_client:
-        raise HTTPException(status_code=400, detail="Not connected")
-    body = await request.json()
-    pin = body.get("pin", "").strip()
-    if not pin:
-        raise HTTPException(status_code=422, detail="PIN is required")
-    container.sync_client.operation_password = pin
-    # Also persist for HA / auto-connect
-    await _save_vehicle_pin(container, pin)
-    return SetPinResponse(status="ok", has_pin=True)
-
-
-@router.get("/api/vehicle-pin")
+@router.get("/api/cloud/pin")
 async def get_vehicle_pin(container: ContainerDep) -> dict:
     """Get the saved vehicle PIN status (the PIN itself is write-only)."""
     saved_pin = None
@@ -150,7 +134,7 @@ async def get_vehicle_pin(container: ContainerDep) -> dict:
     return {"has_pin": bool(pin)}
 
 
-@router.put("/api/vehicle-pin")
+@router.put("/api/cloud/pin")
 async def update_vehicle_pin(request: Request, container: ContainerDep) -> dict:
     """Save or clear the vehicle operation PIN (never echoed back)."""
     body = await request.json()
@@ -161,14 +145,7 @@ async def update_vehicle_pin(request: Request, container: ContainerDep) -> dict:
     return {"has_pin": bool(pin)}
 
 
-@router.post("/api/logout", response_model=StatusResponse)
-async def logout(container: ContainerDep) -> StatusResponse:
-    """Disconnect from the Leapmotor API and clear session data."""
-    container.logout()
-    return StatusResponse(status="ok")
-
-
-@router.get("/api/status", response_model=ConnectionStatusResponse)
+@router.get("/api/cloud/status", response_model=ConnectionStatusResponse)
 async def connection_status(container: ContainerDep) -> ConnectionStatusResponse:
     """Get current connection status, account info, and vehicle list."""
     has_account = False
