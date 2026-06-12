@@ -34,6 +34,7 @@ from leapconnect.application.notifications import NotificationDispatcher
 from leapconnect.application.scheduler import VehicleDataScheduler
 from leapconnect.application.vehicle_cache import VehicleStatusCache
 from leapconnect.domain.identity.sessions import SessionStore
+from leapconnect.domain.identity.throttle import LoginThrottle
 from leapconnect.infrastructure.abrp.service import AbrpService
 from leapconnect.infrastructure.logbuffer import RingBufferHandler
 from leapconnect.infrastructure.mqtt.home_assistant import HomeAssistantMqttService
@@ -77,8 +78,9 @@ class AppContainer:
         self.live_refresh_interval: int = 30  # default 30s, 0 = disabled
         self._live_refresh_stop: asyncio.Event | None = None
 
-        # Local dashboard sessions
+        # Local dashboard sessions + login throttling
         self.sessions = SessionStore()
+        self.login_throttle = LoginThrottle()
 
         # In-memory log buffer for the frontend log viewer
         self.log_handler = RingBufferHandler()

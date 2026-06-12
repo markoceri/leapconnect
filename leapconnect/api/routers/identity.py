@@ -330,9 +330,21 @@ async def auth_login(
     if not password:
         raise HTTPException(status_code=422, detail="Password is required")
 
+    throttle_key = request.client.host if request.client else "unknown"
+    retry_after = container.login_throttle.retry_after(throttle_key)
+    if retry_after is not None:
+        seconds = int(retry_after) + 1
+        raise HTTPException(
+            status_code=429,
+            detail=f"Too many failed login attempts. Retry in {seconds}s.",
+            headers={"Retry-After": str(seconds)},
+        )
+
     valid = await repo.verify_user_password(password)
     if not valid:
+        container.login_throttle.record_failure(throttle_key)
         raise HTTPException(status_code=401, detail="Invalid password")
+    container.login_throttle.record_success(throttle_key)
 
     user = await repo.get_user()
     token = container.sessions.create()

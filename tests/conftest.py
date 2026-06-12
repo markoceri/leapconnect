@@ -19,6 +19,11 @@ def client(tmp_path):
         ),
     ):
         from leapconnect.api.app import app
+        from leapconnect.container import container
+        from leapconnect.domain.identity.throttle import LoginThrottle
+
+        # The container is a process-wide singleton: reset cross-test state.
+        container.login_throttle = LoginThrottle()
 
         with TestClient(app) as c:
             yield c

@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Old top-level modules** — `main.py`, `models.py`, `schemas.py`, `services/*` and `persistence/*` have been deleted; all imports go through `leapconnect.*`.
 
 ### Security
+- **Login attempts are now rate-limited** — after 5 failed local-login attempts the client IP is locked out for 30 seconds, doubling with each further failure up to 15 minutes (`429` with a `Retry-After` header). A successful login clears the counter.
 - **Vehicle PIN is now write-only** — `GET`/`PUT /api/vehicle-pin` no longer return the saved PIN, only a `has_pin` flag; the Settings UI shows a masked placeholder for a saved PIN instead of pre-filling the input with the plaintext value.
 
 ## [0.9.1] - 2026-06-11

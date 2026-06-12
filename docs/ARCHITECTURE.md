@@ -51,9 +51,8 @@ Enforced by `tests/test_architecture.py`.
 ### `leapconnect.application` — use cases & orchestration
 
 - `ports/` — interfaces implemented by infrastructure:
-  `repositories.py` (segregated per context, combined as
-  `AppRepository`; `VehicleHistoryRepository` kept as deprecated alias) and
-  `notifier.py` (`BaseNotifier`).
+  `repositories.py` (segregated per context, combined as `AppRepository`)
+  and `notifier.py` (`BaseNotifier`).
 - `scheduler.py` — background polling loops (history, MQTT, transitions).
 - `notifications/` — event → notification pipeline: `dispatcher.py`
   (orchestrator: channels, preferences, cooldowns, mute), `policies.py`
