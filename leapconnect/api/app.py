@@ -11,6 +11,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from leapmotor_api.exceptions import LeapmotorApiError
 
+from leapconnect import config
 from leapconnect.api.deps import PUBLIC_PATHS, SESSION_COOKIE_NAME
 from leapconnect.api.routers import (
     charging,
@@ -41,13 +42,10 @@ async def lifespan(app: FastAPI):
 def create_app() -> FastAPI:
     app = FastAPI(title="Leapmotor Dashboard", lifespan=lifespan)
 
-    # CORS — allow Vue dev server during development
+    # CORS — Vue dev server by default, overridable via CORS_ORIGINS
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=[
-            "http://localhost:5173",
-            "http://127.0.0.1:5173",
-        ],
+        allow_origins=config.settings.cors_origins,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],

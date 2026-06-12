@@ -49,5 +49,6 @@ if __name__ == "__main__":
         import uvicorn
 
         from leapconnect.api.app import app
+        from leapconnect.config import settings
 
-        uvicorn.run(app, host="0.0.0.0", port=8099)
+        uvicorn.run(app, host=settings.host, port=settings.port)
