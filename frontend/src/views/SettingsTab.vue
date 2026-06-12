@@ -611,7 +611,7 @@
                 v-model="vehiclePin"
                 :type="showPin ? 'text' : 'password'"
                 class="pin-input"
-                placeholder="PIN"
+                :placeholder="hasVehiclePin ? '•••••• (saved)' : 'PIN'"
                 maxlength="8"
               />
               <button class="pin-eye-btn" tabindex="-1" @click="showPin = !showPin" :title="showPin ? 'Hide PIN' : 'Show PIN'">
@@ -620,7 +620,7 @@
               </button>
             </div>
             <button
-              v-if="vehiclePin"
+              v-if="vehiclePin || hasVehiclePin"
               class="interval-btn" style="font-size:11px;width:auto;padding:0 6px;color:#ff5252"
               :disabled="pinSaving"
               @click="clearVehiclePin"
@@ -2001,7 +2001,9 @@ function toggleDay(band, slotIdx, dayIdx) {
 }
 
 // -- Vehicle PIN state ------------------------------------------------------
+// The PIN is write-only: the backend never returns it, only has_pin.
 const vehiclePin = ref('')
+const hasVehiclePin = ref(false)
 const showPin = ref(false)
 const pinSaving = ref(false)
 const pinSuccess = ref('')
@@ -2064,7 +2066,8 @@ async function saveDownsampling() {
 async function loadVehiclePin() {
   try {
     const data = await api('GET', '/api/vehicle-pin')
-    vehiclePin.value = data.pin || ''
+    hasVehiclePin.value = !!data.has_pin
+    vehiclePin.value = ''
   } catch { /* ignore */ }
 }
 
@@ -2073,8 +2076,10 @@ async function saveVehiclePin() {
   pinError.value = ''
   pinSuccess.value = ''
   try {
-    await api('PUT', '/api/vehicle-pin', { pin: vehiclePin.value })
-    pinSuccess.value = 'PIN saved'
+    const data = await api('PUT', '/api/vehicle-pin', { pin: vehiclePin.value })
+    hasVehiclePin.value = !!data.has_pin
+    vehiclePin.value = ''
+    pinSuccess.value = hasVehiclePin.value ? 'PIN saved' : 'PIN cleared'
     setTimeout(() => { pinSuccess.value = '' }, 3000)
   } catch (err) {
     pinError.value = err.message

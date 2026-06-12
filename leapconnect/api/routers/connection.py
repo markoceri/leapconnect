@@ -140,7 +140,7 @@ async def set_pin(request: Request) -> SetPinResponse:
 
 @router.get("/api/vehicle-pin")
 async def get_vehicle_pin() -> dict:
-    """Get the saved vehicle PIN status and masked value."""
+    """Get the saved vehicle PIN status (the PIN itself is write-only)."""
     saved_pin = None
     if container.repo:
         saved_pin = await container.repo.get_setting("mqtt_vehicle_pin")
@@ -148,21 +148,18 @@ async def get_vehicle_pin() -> dict:
         container.sync_client.operation_password if container.sync_client else None
     )
     pin = saved_pin or runtime_pin
-    return {
-        "has_pin": bool(pin),
-        "pin": pin or "",
-    }
+    return {"has_pin": bool(pin)}
 
 
 @router.put("/api/vehicle-pin")
 async def update_vehicle_pin(request: Request) -> dict:
-    """Save or clear the vehicle operation PIN."""
+    """Save or clear the vehicle operation PIN (never echoed back)."""
     body = await request.json()
     pin = str(body.get("pin", "")).strip()
     await _save_vehicle_pin(pin)
     if container.sync_client and pin:
         container.sync_client.operation_password = pin
-    return {"has_pin": bool(pin), "pin": pin}
+    return {"has_pin": bool(pin)}
 
 
 @router.post("/api/logout", response_model=StatusResponse)

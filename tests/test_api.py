@@ -103,10 +103,11 @@ def test_point_in_polygon_too_few_points():
 
 def test_geofence_contains_circle_and_polygon():
     """_geofence_contains dispatches on shape_type."""
+    from models import Geofence
+
     from leapconnect.domain.notifications.geofencing import (
         geofence_contains as _geofence_contains,
     )
-    from models import Geofence
 
     circle = Geofence(shape_type="circle", latitude=45.0, longitude=9.0, radius_m=200.0)
     assert _geofence_contains(circle, 45.0, 9.0) is True
@@ -220,3 +221,19 @@ def test_compare_metrics_structure():
     assert "performance" in metrics
     assert "conditions" in metrics
     assert metrics["efficiency"]["consumption_kwh_100km"]["delta"] == 0.0
+
+
+def test_vehicle_pin_is_write_only(auth_client):
+    """The vehicle PIN is never echoed back by the API, only has_pin."""
+    resp = auth_client.put("/api/vehicle-pin", json={"pin": "1234"})
+    assert resp.status_code == 200
+    assert resp.json() == {"has_pin": True}
+
+    resp = auth_client.get("/api/vehicle-pin")
+    assert resp.status_code == 200
+    assert resp.json() == {"has_pin": True}
+
+    # Clearing the PIN reports has_pin=False
+    resp = auth_client.put("/api/vehicle-pin", json={"pin": ""})
+    assert resp.status_code == 200
+    assert resp.json() == {"has_pin": False}
