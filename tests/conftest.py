@@ -12,7 +12,7 @@ def client(tmp_path):
     """Create a test client with auto-connect disabled and temp DB."""
     db_file = str(tmp_path / "test.db")
     with (
-        patch.dict(os.environ, {"HISTORY_DB_PATH": db_file}),
+        patch.dict(os.environ, {"DB_PATH": db_file}),
         patch(
             "leapconnect.container.AppContainer.auto_connect",
             new_callable=AsyncMock,

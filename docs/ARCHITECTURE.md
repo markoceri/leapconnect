@@ -120,7 +120,7 @@ the only place where every layer may be imported together.
 
 `leapconnect/config.py` centralises paths, env vars and the app version; the
 environment is parsed by the pydantic-settings `AppSettings` class
-(`DATA_DIR`, `HISTORY_DB_PATH`, `CORS_ORIGINS`, `HOST`, `PORT`).
+(`DATA_DIR`, `DB_PATH`, `CORS_ORIGINS`, `HOST`, `PORT`).
 
 ## Entry points
 

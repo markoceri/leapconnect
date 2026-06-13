@@ -32,7 +32,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Deprecated `datetime.utcnow()`/`utcfromtimestamp()` removed** — replaced with timezone-aware equivalents (stored values remain naive UTC for database compatibility).
 - Removed 12 redundant per-endpoint `LeapmotorApiError → 502` handlers (the global exception handler returns the same response and also logs the failure), and the composition root now uses a public setter for the MQTT polling interval instead of poking a private attribute.
 
-- **Environment configuration via pydantic-settings** — `DATA_DIR`, `HISTORY_DB_PATH`, `HOST`, `PORT` and the new `CORS_ORIGINS` (comma-separated or JSON list; previously hardcoded to the Vue dev server) are parsed by a typed `AppSettings` class in `leapconnect/config.py`.
+- **Environment configuration via pydantic-settings** — `DATA_DIR`, `DB_PATH`, `HOST`, `PORT` and the new `CORS_ORIGINS` (comma-separated or JSON list; previously hardcoded to the Vue dev server) are parsed by a typed `AppSettings` class in `leapconnect/config.py`.
+- **BREAKING: the database-path env var was renamed `HISTORY_DB_PATH` → `DB_PATH`** (the old name predates the `history.db` → `leapconnect.db` rename and the DB now holds far more than history). There is no fallback: deployments setting `HISTORY_DB_PATH` must update it to `DB_PATH`, otherwise the app starts on the default database path.
 
 ### Removed
 - **Old top-level modules** — `main.py`, `models.py`, `schemas.py`, `services/*` and `persistence/*` have been deleted; all imports go through `leapconnect.*`.

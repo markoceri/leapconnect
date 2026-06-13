@@ -34,7 +34,7 @@ class AppSettings(BaseSettings):
     """Environment-driven configuration.
 
     Field names map to environment variables case-insensitively
-    (``data_dir`` ← ``DATA_DIR``, ``history_db_path`` ← ``HISTORY_DB_PATH``…).
+    (``data_dir`` ← ``DATA_DIR``, ``db_path`` ← ``DB_PATH``…).
     """
 
     model_config = SettingsConfigDict(extra="ignore")
@@ -43,7 +43,7 @@ class AppSettings(BaseSettings):
     data_dir: Path = ROOT_DIR / "data"
 
     # SQLite database file (overridden per-test and in Docker).
-    history_db_path: Path = ROOT_DIR / "leapconnect.db"
+    db_path: Path = ROOT_DIR / "leapconnect.db"
 
     # Origins allowed by CORS (the Vue dev server by default). Accepts a
     # comma-separated string or a JSON list.
@@ -93,9 +93,9 @@ def database_path() -> str:
     """Resolve the SQLite database path.
 
     Re-reads the environment on every call: the test suite points
-    ``HISTORY_DB_PATH`` at a fresh temporary file for each test.
+    ``DB_PATH`` at a fresh temporary file for each test.
     """
-    return str(AppSettings().history_db_path)
+    return str(AppSettings().db_path)
 
 
 def database_url() -> str:
