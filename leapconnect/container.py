@@ -494,6 +494,12 @@ class AppContainer:
         await self.repo.init_db()
         _LOGGER.info("History DB initialised at %s", db_path)
 
+        # Restore dashboard sessions so a restart doesn't log clients out
+        restored = await self.repo.load_sessions()
+        self.sessions.restore(restored)
+        if restored:
+            _LOGGER.info("Restored %d dashboard session(s)", len(restored))
+
         # Restore scheduler settings from DB
         saved = await self.repo.load_scheduler_settings()
 

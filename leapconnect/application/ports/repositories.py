@@ -122,6 +122,19 @@ class AccountRepository(abc.ABC):
     ) -> dict | None:
         """Update LeapConnect user display name and/or password."""
 
+    @abc.abstractmethod
+    async def load_sessions(self) -> dict[str, float]:
+        """Return persisted dashboard sessions (token hash -> expiry epoch),
+        purging expired rows."""
+
+    @abc.abstractmethod
+    async def save_session(self, token_hash: str, expires_at: float) -> None:
+        """Persist a dashboard session."""
+
+    @abc.abstractmethod
+    async def delete_session(self, token_hash: str) -> None:
+        """Remove a persisted dashboard session."""
+
 
 class NotificationRepository(abc.ABC):
     """Notification channels, preferences, geofences, Telegram users."""

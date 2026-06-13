@@ -104,6 +104,20 @@ class LeapConnectUserRow(Base):
     created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(UTC))
 
 
+class LocalSessionRow(Base):
+    """Persisted dashboard session (token hash only — never the raw token).
+
+    Brand-new table: created by ``Base.metadata.create_all`` at startup,
+    so no Alembic migration (and no self-healing ALTER fallback) is needed.
+    """
+
+    __tablename__ = "local_sessions"
+
+    token_hash = Column(String(64), primary_key=True)
+    expires_at = Column(Float, nullable=False)  # epoch seconds
+    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(UTC))
+
+
 class NotificationChannelRow(Base):
     """Configured notification channel (e.g. Telegram)."""
 

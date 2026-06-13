@@ -433,9 +433,8 @@ async def delete_geofence_endpoint(
 @router.websocket("/ws/logs")
 async def ws_logs(websocket: WebSocket, container: ContainerDep) -> None:
     """Stream live log entries to connected clients via WebSocket."""
-    token = websocket.query_params.get(
-        "token",
-    ) or websocket.cookies.get(SESSION_COOKIE_NAME)
+    # Cookie-only auth: a query-string token would leak into access logs
+    token = websocket.cookies.get(SESSION_COOKIE_NAME)
     if not container.sessions.validate(token):
         await websocket.close(code=4401, reason="Unauthorized")
         return

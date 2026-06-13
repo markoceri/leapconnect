@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import hashlib
 import secrets
+import time
 from datetime import UTC, datetime
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from leapconnect.application.ports.repositories import (
     AccountRepository,
@@ -15,6 +16,7 @@ from leapconnect.infrastructure.persistence.base import SqlRepositoryBase
 from leapconnect.infrastructure.persistence.tables import (
     AccountRow,
     LeapConnectUserRow,
+    LocalSessionRow,
 )
 
 
@@ -148,3 +150,36 @@ class SqlAccountRepository(SqlRepositoryBase, AccountRepository):
                 row.password_hash = self._hash_password(password, row.salt)
             await session.commit()
             return {"id": row.id, "display_name": row.display_name}
+
+    # -- dashboard sessions ----------------------------------------------------
+
+    async def load_sessions(self) -> dict[str, float]:
+        """Return persisted sessions (token hash -> expiry), purging expired."""
+        now = time.time()
+        async with self._session_factory() as session:
+            await session.execute(
+                delete(LocalSessionRow).where(LocalSessionRow.expires_at <= now)
+            )
+            await session.commit()
+            result = await session.execute(select(LocalSessionRow))
+            return {row.token_hash: row.expires_at for row in result.scalars()}
+
+    async def save_session(self, token_hash: str, expires_at: float) -> None:
+        """Persist a dashboard session."""
+        async with self._session_factory() as session:
+            session.add(
+                LocalSessionRow(
+                    token_hash=token_hash,
+                    expires_at=expires_at,
+                    created_at=datetime.now(UTC),
+                )
+            )
+            await session.commit()
+
+    async def delete_session(self, token_hash: str) -> None:
+        """Remove a persisted dashboard session."""
+        async with self._session_factory() as session:
+            await session.execute(
+                delete(LocalSessionRow).where(LocalSessionRow.token_hash == token_hash)
+            )
+            await session.commit()

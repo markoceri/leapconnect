@@ -25,8 +25,10 @@ from leapconnect.api.schemas import (
     UserUpdateResponse,
     VehicleSchema,
 )
+from leapconnect.application.ports.repositories import AppRepository
 from leapconnect.config import CERTS_DIR
-from leapconnect.domain.identity.sessions import SESSION_MAX_AGE
+from leapconnect.container import AppContainer
+from leapconnect.domain.identity.sessions import SESSION_MAX_AGE, hash_token
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -41,6 +43,15 @@ def _set_session_cookie(resp: Response, token: str) -> None:
         httponly=True,
         samesite="strict",
     )
+
+
+async def _create_session(container: AppContainer, repo: AppRepository) -> str:
+    """Create a session token and persist its hash (survives restarts)."""
+    token = container.sessions.create()
+    expiry = container.sessions.expiry_of(token)
+    if expiry:
+        await repo.save_session(hash_token(token), expiry)
+    return token
 
 
 @router.get("/api/setup/status", response_model=SetupStatusResponse)
@@ -308,7 +319,7 @@ async def create_user(
     user = await repo.create_user(display_name, password)
 
     # Auto-login: create session for the new user
-    token = container.sessions.create()
+    token = await _create_session(container, repo)
     resp = JSONResponse(
         content=UserCreateResponse(
             status="ok", display_name=user["display_name"]
@@ -347,7 +358,7 @@ async def auth_login(
     container.login_throttle.record_success(throttle_key)
 
     user = await repo.get_user()
-    token = container.sessions.create()
+    token = await _create_session(container, repo)
     resp = JSONResponse(
         content=AuthLoginResponse(
             status="ok",
@@ -359,10 +370,14 @@ async def auth_login(
 
 
 @router.delete("/api/auth/session", response_model=StatusResponse)
-async def auth_logout(request: Request, container: ContainerDep) -> Response:
-    """Logout from the LeapConnect session."""
+async def auth_logout(
+    request: Request, repo: RepoDep, container: ContainerDep
+) -> Response:
+    """Logout from the LeapConnect session (revoked server-side too)."""
     token = request.cookies.get(SESSION_COOKIE_NAME)
     container.sessions.invalidate(token)
+    if token:
+        await repo.delete_session(hash_token(token))
     resp = JSONResponse(content=StatusResponse(status="ok").model_dump())
     resp.delete_cookie(key=SESSION_COOKIE_NAME)
     return resp

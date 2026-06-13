@@ -42,7 +42,7 @@ One subpackage per **bounded context**:
 | `charging`      | price tiers, time-of-use bands, session costs, TOU cost calculation (`costing.py`) |
 | `maintenance`   | plan items/records/alerts, the due/overdue engine (`engine.py`), pack normalization (`packs.py`), model resolver (`resolver.py`) |
 | `notifications` | channels/preferences/geofences/Telegram users, geofence geometry (`geofencing.py`), the event catalog + message templates (`event_catalog.py`) |
-| `identity`      | local dashboard session policy (`sessions.py`) |
+| `identity`      | local dashboard session policy (`sessions.py`, hash-keyed store persisted via the repository), login throttling (`throttle.py`) |
 | `settings`      | typed user/scheduler/MQTT/ABRP settings models |
 
 **Rule:** domain modules import only the stdlib and other domain modules.
