@@ -61,7 +61,10 @@ Enforced by `tests/test_architecture.py`.
   `tracking.py` (periodic location tracking), `telegram_admin.py` (user
   approve/decline messages).
 - `vehicle_cache.py` — rate-limited, single-flight status cache.
-- `commands.py` — remote-command rights checks and execution maps.
+- `commands.py` — the remote-command registry (`CommandSpec`: client method,
+  required vehicle right, Pydantic param model) shared by the REST endpoint
+  `POST /api/vehicles/{vin}/commands/{command}`, the Telegram bot and the
+  MQTT bridge; rights checks included (REST is pass-through for now).
 - `settings_store.py` — typed settings ↔ key/value settings table.
 - `maintenance.py` — plan auto-generation use case.
 

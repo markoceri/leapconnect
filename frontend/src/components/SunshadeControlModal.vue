@@ -142,7 +142,7 @@ function cancelLockedAction() {
 
 async function quickAction(type) {
   requestAction(async () => {
-    const action = type === 'open' ? 'sunshade/open' : 'sunshade/close'
+    const action = type === 'open' ? 'sunshade-open' : 'sunshade-close'
     loadingAction.value = type
     try {
       if (props.onExec) await props.onExec({ action, body: null })

@@ -359,18 +359,22 @@ export const useAppStore = defineStore('app', () => {
   }
 
   async function execControl(vin, action, body = null) {
-    const result = await api('POST', `/api/vehicles/${vin}/${action}`, body)
+    const result = await api('POST', `/api/vehicles/${vin}/commands/${action}`, body)
     const entry = { action, body, response: result, timestamp: new Date().toISOString() }
     commandHistory.value = [entry, ...commandHistory.value].slice(0, 10)
     return result
   }
 
+  async function setChargeSchedule(vin, body) {
+    return await api('PUT', `/api/vehicles/${vin}/charge-schedule`, body)
+  }
+
   async function setChargeLimit(vin, limit) {
-    return await api('POST', `/api/vehicles/${vin}/charge-limit`, { limit })
+    return await api('POST', `/api/vehicles/${vin}/commands/charge-limit`, { limit })
   }
 
   async function sendDestination(vin, { address, address_name, latitude, longitude }) {
-    return await api('POST', `/api/vehicles/${vin}/send-destination`, {
+    return await api('POST', `/api/vehicles/${vin}/commands/send-destination`, {
       address, address_name, latitude, longitude,
     })
   }
@@ -411,6 +415,7 @@ export const useAppStore = defineStore('app', () => {
     goToVehicleSelector,
     execControl,
     setChargeLimit,
+    setChargeSchedule,
     sendDestination,
     submitPin,
     loadPicturePackage,

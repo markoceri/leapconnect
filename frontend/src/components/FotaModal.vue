@@ -145,7 +145,7 @@ function formatScheduleTime(ts) {
 
 async function execute() {
   if (!taskId.value) return
-  const action = `fota/${selectedAction.value}`
+  const action = `fota-${selectedAction.value}`
   loadingAction.value = selectedAction.value
   try {
     const body = { task_id: taskId.value }
