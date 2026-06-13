@@ -760,7 +760,7 @@ onMounted(async () => {
   } catch { /* use default */ }
   // Load charging tiers and session costs
   try {
-    const tiersData = await api('GET', '/api/charging-tiers')
+    const tiersData = await api('GET', '/api/charging/tiers')
     const tierMap = {}
     for (const t of (tiersData.tiers || [])) { tierMap[t.id] = t }
     chargingTiers.value = tierMap

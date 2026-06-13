@@ -12,10 +12,18 @@ def client(tmp_path):
     """Create a test client with auto-connect disabled and temp DB."""
     db_file = str(tmp_path / "test.db")
     with (
-        patch.dict(os.environ, {"HISTORY_DB_PATH": db_file}),
-        patch("main._auto_connect", new_callable=AsyncMock),
+        patch.dict(os.environ, {"DB_PATH": db_file}),
+        patch(
+            "leapconnect.container.AppContainer.auto_connect",
+            new_callable=AsyncMock,
+        ),
     ):
-        from main import app
+        from leapconnect.api.app import app
+        from leapconnect.container import container
+        from leapconnect.domain.identity.throttle import LoginThrottle
+
+        # The container is a process-wide singleton: reset cross-test state.
+        container.login_throttle = LoginThrottle()
 
         with TestClient(app) as c:
             yield c

@@ -482,7 +482,7 @@ watch(
 // Load charging tiers on mount
 ;(async () => {
   try {
-    const data = await api('GET', '/api/charging-tiers')
+    const data = await api('GET', '/api/charging/tiers')
     availableTiers.value = data.tiers || []
     chargingTiersLoaded.value = true
   } catch { /* ignore */ }
@@ -548,48 +548,48 @@ const controls = computed(() => {
   const base = [
     { action: 'lock', icon: Lock, label: 'Lock', color: '#ffab40', right: 110 },
     { action: 'unlock', icon: Unlock, label: 'Unlock', color: '#00e676', right: 110 },
-    { action: 'trunk/open', icon: TrunkOpenIcon, label: 'Open Trunk', color: '#00d4ff', right: 130 },
-    { action: 'trunk/close', icon: ChevronDown, label: 'Close Trunk', color: '#5c6478', right: 130 },
+    { action: 'trunk-open', icon: TrunkOpenIcon, label: 'Open Trunk', color: '#00d4ff', right: 130 },
+    { action: 'trunk-close', icon: ChevronDown, label: 'Close Trunk', color: '#5c6478', right: 130 },
     { action: 'find', icon: Radio, label: 'Find Car', color: '#00d4ff', right: 120 },
     { action: 'windows', icon: Columns2, label: 'Windows', color: '#7c6aff', modal: 'windows', right: 230 },
     { action: 'sunshade', icon: Sun, label: 'Sunshade', color: '#ffab40', modal: 'sunshade', right: 161 },
     { action: 'climate', icon: Thermometer, label: 'Climate', color: '#00d4ff', modal: 'climate', right: 170 },
     { action: 'ac-schedule', icon: CalendarClock, label: 'AC Schedule', color: '#7c6aff', modal: 'climateSchedule', right: 171 },
   ]
-  return isT03.value ? base.filter(c => c.action !== 'trunk/close') : base
+  return isT03.value ? base.filter(c => c.action !== 'trunk-close') : base
 })
 
 const chargingControls = [
-  { action: 'charging/start', icon: PlugZap, label: 'Start Charge', color: '#00e676', right: 193 },
-  { action: 'charging/stop', icon: PlugZap, label: 'Stop Charge', color: '#ff5252', right: 193 },
+  { action: 'charging-start', icon: PlugZap, label: 'Start Charge', color: '#00e676', right: 193 },
+  { action: 'charging-stop', icon: PlugZap, label: 'Stop Charge', color: '#ff5252', right: 193 },
   { action: 'unlock-charger', icon: Plug, label: 'Unlock Charger', color: '#ffab40', right: 192 },
   { action: 'battery-preheat', icon: BatteryCharging, label: 'Battery Preheat', color: '#00e676', right: 190 },
   { action: 'battery-preheat-off', icon: BatteryCharging, label: 'Preheat Off', color: '#5c6478', right: 190 },
-  { action: 'healthy-charging/on', icon: ShieldCheck, label: 'Healthy Charge On', color: '#00e676', right: 480 },
-  { action: 'healthy-charging/off', icon: ShieldOff, label: 'Healthy Charge Off', color: '#ff5252', right: 480 },
+  { action: 'healthy-charging-on', icon: ShieldCheck, label: 'Healthy Charge On', color: '#00e676', right: 480 },
+  { action: 'healthy-charging-off', icon: ShieldOff, label: 'Healthy Charge Off', color: '#ff5252', right: 480 },
   { action: 'charge-schedule', icon: CalendarClock, label: 'Schedule', color: '#00d4ff', modal: 'chargeSchedule', right: 340 },
 ]
 
 const comfortControls = [
   { action: 'seats', icon: Armchair, label: 'Seats', color: '#ff9100', modal: 'seats', right: 301 },
-  { action: 'steering-wheel-heat/on', icon: Heater, label: 'Wheel Heat On', color: '#ff9100', right: 320 },
-  { action: 'steering-wheel-heat/off', icon: Heater, label: 'Wheel Heat Off', color: '#5c6478', right: 320 },
-  { action: 'fuel-heating/on', icon: Flame, label: 'Fuel Heat On', color: '#ff9100', right: 380 },
-  { action: 'fuel-heating/off', icon: Flame, label: 'Fuel Heat Off', color: '#5c6478', right: 380 },
-  { action: 'sunroof/open', icon: Sun, label: 'Sunroof Open', color: '#00d4ff', right: 160 },
-  { action: 'sunroof/close', icon: Sun, label: 'Sunroof Close', color: '#5c6478', right: 160 },
+  { action: 'steering-wheel-heat-on', icon: Heater, label: 'Wheel Heat On', color: '#ff9100', right: 320 },
+  { action: 'steering-wheel-heat-off', icon: Heater, label: 'Wheel Heat Off', color: '#5c6478', right: 320 },
+  { action: 'fuel-heating-on', icon: Flame, label: 'Fuel Heat On', color: '#ff9100', right: 380 },
+  { action: 'fuel-heating-off', icon: Flame, label: 'Fuel Heat Off', color: '#5c6478', right: 380 },
+  { action: 'sunroof-open', icon: Sun, label: 'Sunroof Open', color: '#00d4ff', right: 160 },
+  { action: 'sunroof-close', icon: Sun, label: 'Sunroof Close', color: '#5c6478', right: 160 },
 ]
 
 const securityControls = [
-  { action: 'sentry-mode/on', icon: Eye, label: 'Sentry On', color: '#00e676', right: 220 },
-  { action: 'sentry-mode/off', icon: EyeOff, label: 'Sentry Off', color: '#5c6478', right: 220 },
-  { action: 'rearview-mirror-heat/on', icon: AirVent, label: 'Mirror Heat On', color: '#ff9100', right: 440 },
-  { action: 'rearview-mirror-heat/off', icon: AirVent, label: 'Mirror Heat Off', color: '#5c6478', right: 440 },
+  { action: 'sentry-mode-on', icon: Eye, label: 'Sentry On', color: '#00e676', right: 220 },
+  { action: 'sentry-mode-off', icon: EyeOff, label: 'Sentry Off', color: '#5c6478', right: 220 },
+  { action: 'rearview-mirror-heat-on', icon: AirVent, label: 'Mirror Heat On', color: '#ff9100', right: 440 },
+  { action: 'rearview-mirror-heat-off', icon: AirVent, label: 'Mirror Heat Off', color: '#5c6478', right: 440 },
 ]
 
 const vehicleControls = [
-  { action: 'on3/on', icon: Power, label: 'ON3 On', color: '#00e676', right: 410 },
-  { action: 'on3/off', icon: PowerOff, label: 'ON3 Off', color: '#ff5252', right: 410 },
+  { action: 'on3-on', icon: Power, label: 'ON3 On', color: '#00e676', right: 410 },
+  { action: 'on3-off', icon: PowerOff, label: 'ON3 Off', color: '#ff5252', right: 410 },
   { action: 'ble-key-restart', icon: Key, label: 'BLE Restart', color: '#7c6aff', right: 430 },
   { action: 'hotspot', icon: Wifi, label: 'Hotspot', color: '#00d4ff', right: 140 },
   { action: 'send-destination', icon: Navigation, label: 'Send Destination', color: '#ff7043', modal: 'destination', right: 180 },
@@ -665,7 +665,7 @@ function isActive(action) {
   if (action === 'lock') return s.value.doors?.is_locked
   if (action === 'unlock') return s.value.doors?.is_locked === false
   if (action === 'ac' || action === 'climate') return s.value.climate?.ac_switch
-  if (action === 'trunk/open') return s.value.doors?.bbcm_back_door_status
+  if (action === 'trunk-open') return s.value.doors?.bbcm_back_door_status
   return false
 }
 
@@ -805,7 +805,11 @@ async function execFota({ action, body }) {
   const ok = await requirePin()
   if (!ok) return
   try {
-    await store.execControl(props.vehicle.vin, action, body)
+    if (action === 'fota-schedule') {
+      await api('PUT', `/api/vehicles/${props.vehicle.vin}/fota/schedule`, body)
+    } else {
+      await store.execControl(props.vehicle.vin, action, body)
+    }
     toast('Firmware command sent', 'success')
   } catch (err) {
     toast(`FOTA: ${err.message}`, 'error')
@@ -816,7 +820,7 @@ async function execChargeSchedule({ action, body }) {
   const ok = await requirePin()
   if (!ok) return
   try {
-    await store.execControl(props.vehicle.vin, action, body)
+    await store.setChargeSchedule(props.vehicle.vin, body)
     toast('Charge schedule updated', 'success')
     await store.refreshAfterCommand()
   } catch (err) {

@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **BREAKING: API endpoints renamed in place** (no `/api/v2` namespace, no aliases — the bundled Vue frontend is migrated in the same release; an installed PWA with a stale cached shell recovers on the next service-worker auto-update):
+  - Local auth is session-style: `POST /api/auth/login` → `POST /api/auth/session`, `POST /api/auth/logout` → `DELETE /api/auth/session`
+  - Cloud connection: `POST /api/login` → `POST /api/cloud/session`, `POST /api/reconnect` → `PUT /api/cloud/session`, `POST /api/disconnect` → `DELETE /api/cloud/session`, `GET /api/status` → `GET /api/cloud/status`
+  - Vehicle PIN: `POST /api/set-pin` and `GET/PUT /api/vehicle-pin` merged into `GET/PUT /api/cloud/pin`; the unused `POST /api/logout` was deleted
+  - Charging: `/api/charging-tiers` → `/api/charging/tiers`, `/api/charging-tiers/time-bands` → `/api/charging/time-bands`; the misleading `/api/vehicles/{vin}/charge-stats/cloud` (it serves *local* history) → `/api/vehicles/{vin}/charging/stats/daily`, `/charge-stats/year` → `/charging/stats/yearly`
+  - Telegram administration: `/api/notifications/channels/telegram/users*` → `/api/telegram/users*`, `.../telegram/link-token` → `/api/telegram/link-token`
+  - Location tracking is a REST resource: `POST /api/tracking/{vin}/start` → `POST /api/vehicles/{vin}/tracking`, `POST /api/tracking/{vin}/stop` → `DELETE /api/vehicles/{vin}/tracking`, `GET /api/tracking/{vin}` → `GET /api/vehicles/{vin}/tracking`
+- **OpenAPI tags per router** — `/docs` is now grouped by bounded context (identity, cloud-connection, vehicles, history, commands, trips, charging, maintenance, notifications, system).
+- **BREAKING: one generic vehicle-command endpoint** — the ~50 per-command routes (three different naming styles: `/ac` + `/ac-off`, `/sentry-mode/on|off`, `/battery-preheat` + `/battery-preheat-off`, …) are replaced by `POST /api/vehicles/{vin}/commands/{command}` with kebab-case command names and an optional JSON body validated per command (e.g. `charge-limit` enforces 20–100). A single command registry in the application layer is now shared by REST, Telegram bot and MQTT bridge (previously three drifting maps). Vehicle rights are not yet enforced on REST (pass-through, as before).
+  - New `GET /api/vehicles/{vin}/commands` lists every command with an `available` flag based on the vehicle's rights/abilities, so the UI can also surface unsupported commands on request.
+  - Cloud schedules are proper REST resources now: `PUT` (was `POST`) on `/api/vehicles/{vin}/charge-schedule`, `/ac-schedule` and `/fota/schedule`.
+- **BREAKING: trip payload typos fixed** — the misspelled cloud-compat field names in `/api/vehicles/{vin}/trips` and `/trips/totals` are gone: `eneryConsume` → `energyConsumed`, `recoveryEnery` → `energyRecovered`, `accumulated_enery_consume` → `accumulated_energy_consumed`, `total_enery`/`totalenery` → `total_energy`, `total_milage`/`totalmileage` → `total_mileage`, `totalrecoveryenery` → `total_energy_recovered`, `maxspeed` → `max_speed`, `ustime` → `total_hours`.
+- **Backend restructured into a hexagonal architecture** — the code moved from a monolithic `main.py` into the `leapconnect/` package, split into `domain` (pure business logic), `application` (use cases and ports), `infrastructure` (SQLite, MQTT, Telegram, ABRP adapters) and `api` (FastAPI routers per bounded context) layers, wired together by the `leapconnect/container.py` composition root. This is a passive refactoring: URL paths and behavior are unchanged, and the layering rules are enforced by a dedicated architecture test suite. See `docs/ARCHITECTURE.md` for the overview.
+- **New entry points** — the ASGI app is now `leapconnect.api.app:app` (uvicorn target, Docker CMD) and the password-reset CLI is `python -m leapconnect --reset-password <pw>`.
+
+- **SQLite adapter split per bounded context** — the monolithic 1.9k-line `sqlite_adapter.py` is now a thin facade composing one repository class per context (telemetry, settings, account, notifications, charging, maintenance), with ORM tables and the startup migration logic in dedicated modules. No behavior change.
+- **Notification dispatcher split into policy modules** — the monolithic dispatcher is now an orchestrator plus dedicated modules: detection policies (movement alert, unlocked timeout, SOC thresholds with 0%-glitch filter, charge interrupted, range low, tire pressure, geofence watcher), location tracking, and Telegram user-administration messages. Each policy is now covered by unit tests. No behavior change.
+- **API routers use FastAPI dependency injection** — endpoints receive the repository, cloud client, vehicle and composition root via `Depends` providers in `api/deps.py` instead of importing the `container` singleton, making them overridable in tests. URL paths, status codes and behavior unchanged (route parity re-verified).
+
+### Fixed
+- **Background tasks can no longer be garbage-collected mid-flight** — fire-and-forget jobs (snapshot saves, MQTT publishes, notification sends, MQTT command handlers) now go through a `spawn()` helper that keeps a strong reference until completion.
+- **Deprecated `datetime.utcnow()`/`utcfromtimestamp()` removed** — replaced with timezone-aware equivalents (stored values remain naive UTC for database compatibility).
+- Removed 12 redundant per-endpoint `LeapmotorApiError → 502` handlers (the global exception handler returns the same response and also logs the failure), and the composition root now uses a public setter for the MQTT polling interval instead of poking a private attribute.
+
+- **Environment configuration via pydantic-settings** — `DATA_DIR`, `DB_PATH`, `HOST`, `PORT` and the new `CORS_ORIGINS` (comma-separated or JSON list; previously hardcoded to the Vue dev server) are parsed by a typed `AppSettings` class in `leapconnect/config.py`.
+- **BREAKING: the database-path env var was renamed `HISTORY_DB_PATH` → `DB_PATH`** (the old name predates the `history.db` → `leapconnect.db` rename and the DB now holds far more than history). There is no fallback: deployments setting `HISTORY_DB_PATH` must update it to `DB_PATH`, otherwise the app starts on the default database path.
+
+### Removed
+- **Old top-level modules** — `main.py`, `models.py`, `schemas.py`, `services/*` and `persistence/*` have been deleted; all imports go through `leapconnect.*`.
+
+### Security
+- **Secrets are encrypted at rest** — the Leapmotor account password (and p12 password), MQTT broker password, ABRP token, vehicle operation PIN and Telegram bot token are now stored encrypted (Fernet/AES) instead of plaintext in SQLite. The key is auto-generated with `0600` permissions next to the database (the `DATA_DIR` volume in Docker). Existing plaintext values keep working and are transparently re-encrypted the next time they are saved — no migration step. The local dashboard login password remains a one-way PBKDF2 hash (it is only ever verified, never recovered).
+- **Dashboard sessions survive restarts** — session tokens are persisted in SQLite (SHA-256 hashes only, never the raw token) and restored at startup, so updating or restarting the container no longer logs every client out. Logout still revokes the session server-side; expired rows are purged automatically.
+- **WebSocket auth is cookie-only** — the unused `?token=` query-string fallback on `/ws/vehicle/{vin}` and `/ws/logs` was removed (query strings end up in access logs).
+- **Login attempts are now rate-limited** — after 5 failed local-login attempts the client IP is locked out for 30 seconds, doubling with each further failure up to 15 minutes (`429` with a `Retry-After` header). A successful login clears the counter.
+- **Vehicle PIN is now write-only** — `GET`/`PUT /api/vehicle-pin` no longer return the saved PIN, only a `has_pin` flag; the Settings UI shows a masked placeholder for a saved PIN instead of pre-filling the input with the plaintext value.
+
 ## [0.9.1] - 2026-06-11
 
 ### Added

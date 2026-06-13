@@ -3,13 +3,13 @@
 
 def test_status_requires_session(client):
     """Accessing /api/status without a session returns 401."""
-    response = client.get("/api/status")
+    response = client.get("/api/cloud/status")
     assert response.status_code == 401
 
 
 def test_status_not_connected(auth_client):
     """When authenticated but not connected, /api/status returns connected=False."""
-    response = auth_client.get("/api/status")
+    response = auth_client.get("/api/cloud/status")
     assert response.status_code == 200
     data = response.json()
     assert data["connected"] is False
@@ -43,7 +43,7 @@ def test_setup_status(client):
 
 def test_auth_login_wrong_password(auth_client):
     """Login with wrong password returns 401."""
-    response = auth_client.post("/api/auth/login", json={"password": "wrongpass"})
+    response = auth_client.post("/api/auth/session", json={"password": "wrongpass"})
     assert response.status_code == 401
 
 
@@ -64,7 +64,7 @@ def test_similar_trips_gpskey_not_found(auth_client):
 
 def test_scoring_haversine():
     """Haversine distance between same point is 0."""
-    from main import _haversine_km
+    from leapconnect.domain.trips.analysis import haversine_km as _haversine_km
 
     d = _haversine_km(45.0, 9.0, 45.0, 9.0)
     assert d == 0.0
@@ -72,7 +72,7 @@ def test_scoring_haversine():
 
 def test_scoring_haversine_known():
     """Haversine returns known approximate distance Milan-Rome."""
-    from main import _haversine_km
+    from leapconnect.domain.trips.analysis import haversine_km as _haversine_km
 
     d = _haversine_km(45.464, 9.190, 41.903, 12.496)
     assert 470 < d < 490  # ~480 km
@@ -80,7 +80,7 @@ def test_scoring_haversine_known():
 
 def test_point_in_polygon_inside():
     """A point well within a square polygon is detected as inside."""
-    from services.notification_dispatcher import point_in_polygon
+    from leapconnect.domain.notifications.geofencing import point_in_polygon
 
     square = [[45.0, 9.0], [45.0, 9.1], [45.1, 9.1], [45.1, 9.0]]
     assert point_in_polygon(45.05, 9.05, square) is True
@@ -88,7 +88,7 @@ def test_point_in_polygon_inside():
 
 def test_point_in_polygon_outside():
     """A point beyond the polygon bounds is detected as outside."""
-    from services.notification_dispatcher import point_in_polygon
+    from leapconnect.domain.notifications.geofencing import point_in_polygon
 
     square = [[45.0, 9.0], [45.0, 9.1], [45.1, 9.1], [45.1, 9.0]]
     assert point_in_polygon(45.2, 9.05, square) is False
@@ -96,15 +96,17 @@ def test_point_in_polygon_outside():
 
 def test_point_in_polygon_too_few_points():
     """A degenerate polygon (fewer than 3 points) never contains anything."""
-    from services.notification_dispatcher import point_in_polygon
+    from leapconnect.domain.notifications.geofencing import point_in_polygon
 
     assert point_in_polygon(45.0, 9.0, [[45.0, 9.0], [45.1, 9.1]]) is False
 
 
 def test_geofence_contains_circle_and_polygon():
     """_geofence_contains dispatches on shape_type."""
-    from models import Geofence
-    from services.notification_dispatcher import _geofence_contains
+    from leapconnect.domain.notifications.geofencing import (
+        geofence_contains as _geofence_contains,
+    )
+    from leapconnect.domain.notifications.models import Geofence
 
     circle = Geofence(shape_type="circle", latitude=45.0, longitude=9.0, radius_m=200.0)
     assert _geofence_contains(circle, 45.0, 9.0) is True
@@ -120,14 +122,16 @@ def test_geofence_contains_circle_and_polygon():
 
 def test_similarity_identical_trip():
     """Breakdown for identical trips scores 1.0."""
-    from main import _trip_similarity_breakdown
+    from leapconnect.domain.trips.analysis import (
+        trip_similarity_breakdown as _trip_similarity_breakdown,
+    )
 
     trip = {
         "beginTime": "2026-06-01 08:30:00",
         "endTime": "2026-06-01 09:15:00",
         "travelMile": 15000,
-        "eneryConsume": 2500,
-        "recoveryEnery": 300,
+        "energyConsumed": 2500,
+        "energyRecovered": 300,
         "maxSpeed": 95,
         "startSoc": 75,
         "endSoc": 68,
@@ -147,14 +151,16 @@ def test_similarity_identical_trip():
 
 def test_similarity_different_trips():
     """Breakdown for very different trips returns low score."""
-    from main import _trip_similarity_breakdown
+    from leapconnect.domain.trips.analysis import (
+        trip_similarity_breakdown as _trip_similarity_breakdown,
+    )
 
     ref = {
         "beginTime": "2026-06-01 08:30:00",
         "endTime": "2026-06-01 09:15:00",
         "travelMile": 15000,
-        "eneryConsume": 2500,
-        "recoveryEnery": 300,
+        "energyConsumed": 2500,
+        "energyRecovered": 300,
         "maxSpeed": 95,
         "startSoc": 75,
         "endSoc": 68,
@@ -169,8 +175,8 @@ def test_similarity_different_trips():
         "beginTime": "2026-06-01 20:00:00",
         "endTime": "2026-06-01 20:10:00",
         "travelMile": 3000,
-        "eneryConsume": 600,
-        "recoveryEnery": 0,
+        "energyConsumed": 600,
+        "energyRecovered": 0,
         "maxSpeed": 50,
         "startSoc": 80,
         "endSoc": 78,
@@ -191,14 +197,16 @@ def test_similarity_different_trips():
 
 def test_compare_metrics_structure():
     """Compare metrics returns expected keys."""
-    from main import _trip_compare_metrics
+    from leapconnect.domain.trips.analysis import (
+        trip_compare_metrics as _trip_compare_metrics,
+    )
 
     ref = {
         "beginTime": "2026-06-01 08:30:00",
         "endTime": "2026-06-01 09:15:00",
         "travelMile": 15000,
-        "eneryConsume": 2500,
-        "recoveryEnery": 300,
+        "energyConsumed": 2500,
+        "energyRecovered": 300,
         "maxSpeed": 95,
         "avgSpeed": 33.3,
         "startSoc": 75,
@@ -212,3 +220,44 @@ def test_compare_metrics_structure():
     assert "performance" in metrics
     assert "conditions" in metrics
     assert metrics["efficiency"]["consumption_kwh_100km"]["delta"] == 0.0
+
+
+def test_vehicle_pin_is_write_only(auth_client):
+    """The vehicle PIN is never echoed back by the API, only has_pin."""
+    resp = auth_client.put("/api/cloud/pin", json={"pin": "1234"})
+    assert resp.status_code == 200
+    assert resp.json() == {"has_pin": True}
+
+    resp = auth_client.get("/api/cloud/pin")
+    assert resp.status_code == 200
+    assert resp.json() == {"has_pin": True}
+
+    # Clearing the PIN reports has_pin=False
+    resp = auth_client.put("/api/cloud/pin", json={"pin": ""})
+    assert resp.status_code == 200
+    assert resp.json() == {"has_pin": False}
+
+
+def test_container_dependency_is_overridable(client):
+    """Routers resolve the container via Depends, so tests can swap it."""
+    from leapconnect.api import deps
+
+    class StubContainer:
+        repo = None  # simulates "DB not ready"
+
+    client.app.dependency_overrides[deps.get_container] = StubContainer
+    try:
+        resp = client.get("/api/setup/status")
+        assert resp.status_code == 503
+        assert resp.json()["detail"] == "DB not ready"
+    finally:
+        client.app.dependency_overrides.clear()
+
+
+def test_local_session_delete_logs_out(auth_client):
+    """DELETE /api/auth/session invalidates the session cookie."""
+    resp = auth_client.delete("/api/auth/session")
+    assert resp.status_code == 200
+
+    resp = auth_client.get("/api/cloud/status")
+    assert resp.status_code == 401

@@ -437,7 +437,7 @@ async function loadData() {
     const toDate = `${y}-${String(m + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
 
     const [tiersData, costs, prefs, historyData] = await Promise.all([
-      api('GET', '/api/charging-tiers'),
+      api('GET', '/api/charging/tiers'),
       api('GET', `/api/vehicles/${props.vin}/charging-costs`),
       api('GET', '/api/preferences'),
       api('GET', `/api/vehicles/${props.vin}/history?from_date=${fromDate}&to_date=${toDate}&max_points=5000`),

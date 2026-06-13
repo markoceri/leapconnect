@@ -23,7 +23,7 @@ See [uv installation docs](https://docs.astral.sh/uv/getting-started/installatio
 ```bash
 uv sync
 uv run pre-commit install && uv run pre-commit install --hook-type pre-push
-uv run uvicorn main:app --host 0.0.0.0 --port 8099 --reload
+uv run uvicorn leapconnect.api.app:app --host 0.0.0.0 --port 8099 --reload
 ```
 
 The API runs at **http://localhost:8099**.
@@ -50,11 +50,12 @@ This outputs to `frontend/dist/`. The FastAPI backend will automatically serve t
 ## Project Structure
 
 ```
-├── main.py              # FastAPI application entrypoint
-├── models.py            # SQLAlchemy models
-├── schemas.py           # Pydantic schemas
-├── services/            # Background services (MQTT, scheduler, cache)
-├── persistence/         # Database repository and SQLite adapter
+├── leapconnect/         # Python backend (hexagonal layout)
+│   ├── domain/          # Pure business logic (bounded contexts)
+│   ├── application/     # Use cases, scheduler, ports
+│   ├── infrastructure/  # SQLite, MQTT, Telegram, ABRP adapters
+│   ├── api/             # FastAPI app factory, routers, DTOs
+│   └── container.py     # Composition root
 ├── migrations/          # Alembic database migrations
 ├── tests/               # Pytest test suite
 └── frontend/            # Vue.js 3 SPA

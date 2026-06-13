@@ -36,6 +36,9 @@ htmlcov/
 # Database files
 *.db
 
+# Secret encryption key
+secret.key
+
 # Data directory (user data, certs, db — persisted via bind mount)
 data/*
 
@@ -46,3 +49,6 @@ traefik/certs/
 # Ignore folders
 logs/
 ignore/
+
+# Ignore AI assistant files
+CLAUDE.md

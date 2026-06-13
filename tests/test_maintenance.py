@@ -59,10 +59,10 @@ def test_model_override_no_vehicle(auth_client):
 
 
 class TestModelResolver:
-    """Unit tests for services/maintenance_resolver.py."""
+    """Unit tests for leapconnect.domain.maintenance.resolver."""
 
     def test_resolve_t03(self):
-        from services.maintenance_resolver import resolve_model
+        from leapconnect.domain.maintenance.resolver import resolve_model
 
         class FakeVehicle:
             vin = "VIN123"
@@ -79,7 +79,7 @@ class TestModelResolver:
         assert result["needs_confirmation"] is False
 
     def test_resolve_b10(self):
-        from services.maintenance_resolver import resolve_model
+        from leapconnect.domain.maintenance.resolver import resolve_model
 
         class FakeVehicle:
             vin = "VIN456"
@@ -95,7 +95,7 @@ class TestModelResolver:
         assert result["confidence"] == "high"
 
     def test_resolve_c10_ambiguous(self):
-        from services.maintenance_resolver import resolve_model
+        from leapconnect.domain.maintenance.resolver import resolve_model
 
         class FakeVehicle:
             vin = "VIN789"
@@ -111,7 +111,7 @@ class TestModelResolver:
         assert result["needs_confirmation"] is True
 
     def test_resolve_c10_reev_by_allocation(self):
-        from services.maintenance_resolver import resolve_model
+        from leapconnect.domain.maintenance.resolver import resolve_model
 
         class FakeVehicle:
             vin = "VIN999"
@@ -127,7 +127,7 @@ class TestModelResolver:
         assert result["needs_confirmation"] is False
 
     def test_resolve_c10_reev_by_fuel_ability(self):
-        from services.maintenance_resolver import resolve_model
+        from leapconnect.domain.maintenance.resolver import resolve_model
 
         class FakeVehicle:
             vin = "VIN888"
@@ -143,7 +143,7 @@ class TestModelResolver:
         assert result["needs_confirmation"] is False
 
     def test_resolve_unknown(self):
-        from services.maintenance_resolver import resolve_model
+        from leapconnect.domain.maintenance.resolver import resolve_model
 
         class FakeVehicle:
             vin = "VIN000"
@@ -164,10 +164,10 @@ class TestModelResolver:
 
 
 class TestMaintenanceService:
-    """Unit tests for services/maintenance_service.py."""
+    """Unit tests for leapconnect.domain.maintenance.engine."""
 
     def _item(self, **kw):
-        from models import MaintenancePlanItem
+        from leapconnect.domain.maintenance.models import MaintenancePlanItem
 
         defaults = dict(
             id=1,
@@ -186,7 +186,7 @@ class TestMaintenanceService:
     def test_alert_none_without_last_done(self):
         from datetime import datetime
 
-        from services.maintenance_service import compute_alert
+        from leapconnect.domain.maintenance.engine import compute_alert
 
         item = self._item()
         assert compute_alert(item, 10000, datetime(2026, 1, 1)) is None
@@ -194,7 +194,7 @@ class TestMaintenanceService:
     def test_alert_overdue_by_km(self):
         from datetime import datetime
 
-        from services.maintenance_service import compute_alert
+        from leapconnect.domain.maintenance.engine import compute_alert
 
         item = self._item(last_done_km=0, interval_months=None)
         alert = compute_alert(item, 41000, datetime(2026, 1, 1))
@@ -204,7 +204,7 @@ class TestMaintenanceService:
     def test_alert_due_soon_by_km(self):
         from datetime import datetime
 
-        from services.maintenance_service import compute_alert
+        from leapconnect.domain.maintenance.engine import compute_alert
 
         item = self._item(last_done_km=0, interval_months=None)
         # due at 40000, current 38500 -> 1500 remaining (<= 2000 threshold)
@@ -214,7 +214,7 @@ class TestMaintenanceService:
     def test_alert_ok_far_away(self):
         from datetime import datetime
 
-        from services.maintenance_service import compute_alert
+        from leapconnect.domain.maintenance.engine import compute_alert
 
         item = self._item(last_done_km=0, interval_months=None)
         alert = compute_alert(item, 10000, datetime(2026, 1, 1))
@@ -223,7 +223,7 @@ class TestMaintenanceService:
     def test_trigger_mode_and_requires_both(self):
         from datetime import datetime
 
-        from services.maintenance_service import compute_alert
+        from leapconnect.domain.maintenance.engine import compute_alert
 
         item = self._item(
             trigger_mode="and",
@@ -237,7 +237,7 @@ class TestMaintenanceService:
     def test_summarize_and_sort(self):
         from datetime import datetime
 
-        from services.maintenance_service import (
+        from leapconnect.domain.maintenance.engine import (
             compute_alerts,
             due_soon_alerts,
             summarize,
@@ -263,7 +263,7 @@ class TestPackNormalization:
     """Unit tests for pack parsing/validation."""
 
     def test_normalize_valid_pack(self):
-        from services.maintenance_service import normalize_pack
+        from leapconnect.domain.maintenance.packs import normalize_pack
 
         pack = normalize_pack(
             {
@@ -279,7 +279,7 @@ class TestPackNormalization:
     def test_normalize_rejects_empty_items(self):
         import pytest
 
-        from services.maintenance_service import normalize_pack
+        from leapconnect.domain.maintenance.packs import normalize_pack
 
         with pytest.raises(ValueError):
             normalize_pack({"name": "x", "items": []})
@@ -287,13 +287,13 @@ class TestPackNormalization:
     def test_normalize_rejects_missing_service_type(self):
         import pytest
 
-        from services.maintenance_service import normalize_pack
+        from leapconnect.domain.maintenance.packs import normalize_pack
 
         with pytest.raises(ValueError):
             normalize_pack({"items": [{"label": "no type"}]})
 
     def test_pack_applies_to_model(self):
-        from services.maintenance_service import pack_applies_to_model
+        from leapconnect.domain.maintenance.packs import pack_applies_to_model
 
         assert pack_applies_to_model({"model_compat": ["C10"]}, "C10_REEV")
         assert pack_applies_to_model({}, "T03")
@@ -301,15 +301,15 @@ class TestPackNormalization:
 
 
 class TestGithubUrlParsing:
-    """Unit tests for services/maintenance_community.py URL parsing."""
+    """Unit tests for leapconnect.infrastructure.community URL parsing."""
 
     def test_parse_full_url(self):
-        from services.maintenance_community import parse_github_url
+        from leapconnect.infrastructure.community import parse_github_url
 
         assert parse_github_url("https://github.com/foo/bar") == ("foo", "bar", None)
 
     def test_parse_with_branch(self):
-        from services.maintenance_community import parse_github_url
+        from leapconnect.infrastructure.community import parse_github_url
 
         assert parse_github_url("https://github.com/foo/bar/tree/dev") == (
             "foo",
@@ -318,14 +318,17 @@ class TestGithubUrlParsing:
         )
 
     def test_parse_shorthand(self):
-        from services.maintenance_community import parse_github_url
+        from leapconnect.infrastructure.community import parse_github_url
 
         assert parse_github_url("foo/bar") == ("foo", "bar", None)
 
     def test_parse_invalid(self):
         import pytest
 
-        from services.maintenance_community import CommunityError, parse_github_url
+        from leapconnect.infrastructure.community import (
+            CommunityError,
+            parse_github_url,
+        )
 
         with pytest.raises(CommunityError):
             parse_github_url("not a url")
@@ -363,7 +366,7 @@ class TestOfficialPacks:
     """Unit tests for official factory-pack selection (replaces embedded catalog)."""
 
     def _packs(self):
-        from models import MaintenancePack
+        from leapconnect.domain.maintenance.models import MaintenancePack
 
         def mk(model, sts):
             return MaintenancePack(
@@ -382,7 +385,7 @@ class TestOfficialPacks:
         ]
 
     def test_exact_match_c10_not_reev(self):
-        from services.maintenance_service import factory_items_for_model
+        from leapconnect.domain.maintenance.packs import factory_items_for_model
 
         items = factory_items_for_model(self._packs(), "C10")
         sts = {i["service_type"] for i in items}
@@ -390,7 +393,7 @@ class TestOfficialPacks:
         assert "engine_oil_replace" not in sts  # must NOT pull the REEV pack
 
     def test_exact_match_reev(self):
-        from services.maintenance_service import factory_items_for_model
+        from leapconnect.domain.maintenance.packs import factory_items_for_model
 
         items = factory_items_for_model(self._packs(), "C10_REEV")
         sts = {i["service_type"] for i in items}
@@ -398,7 +401,7 @@ class TestOfficialPacks:
         assert "brake_fluid_replace" not in sts
 
     def test_unknown_model_returns_empty(self):
-        from services.maintenance_service import factory_items_for_model
+        from leapconnect.domain.maintenance.packs import factory_items_for_model
 
         assert factory_items_for_model(self._packs(), "ZZZ") == []
 
@@ -409,7 +412,10 @@ class TestCostSummary:
     def _data(self):
         from datetime import datetime
 
-        from models import MaintenancePlanItem, MaintenanceRecord
+        from leapconnect.domain.maintenance.models import (
+            MaintenancePlanItem,
+            MaintenanceRecord,
+        )
 
         plan = [
             MaintenancePlanItem(service_type="brake_fluid_replace", category="brakes"),
@@ -438,7 +444,7 @@ class TestCostSummary:
     def test_totals_and_avg(self):
         from datetime import datetime
 
-        from services.maintenance_service import compute_cost_summary
+        from leapconnect.domain.maintenance.engine import compute_cost_summary
 
         records, plan = self._data()
         s = compute_cost_summary(records, plan, datetime(2026, 6, 7))
@@ -450,7 +456,7 @@ class TestCostSummary:
     def test_by_category_sorted(self):
         from datetime import datetime
 
-        from services.maintenance_service import compute_cost_summary
+        from leapconnect.domain.maintenance.engine import compute_cost_summary
 
         records, plan = self._data()
         s = compute_cost_summary(records, plan, datetime(2026, 6, 7))
@@ -460,7 +466,7 @@ class TestCostSummary:
     def test_empty(self):
         from datetime import datetime
 
-        from services.maintenance_service import compute_cost_summary
+        from leapconnect.domain.maintenance.engine import compute_cost_summary
 
         s = compute_cost_summary([], [], datetime(2026, 6, 7))
         assert s == {

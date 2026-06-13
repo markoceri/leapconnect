@@ -14,10 +14,12 @@ dependencies = [
     "Pillow>=10.0.0",
     "aiomqtt>=2.0.0",
     "httpx>=0.28.1",
+    "pydantic-settings>=2.14.0",
+    "cryptography>=43.0.0",
 ]
 
 [project.scripts]
-serve = "uvicorn main:app --host 0.0.0.0 --port 8099"
+serve = "uvicorn leapconnect.api.app:app --host 0.0.0.0 --port 8099"
 
 [dependency-groups]
 dev = [

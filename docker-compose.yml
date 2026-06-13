@@ -53,7 +53,7 @@ services:
       context: .
       dockerfile: Dockerfile
     environment:
-      - HISTORY_DB_PATH=/app/data/leapconnect.db
+      - DB_PATH=/app/data/leapconnect.db
       - DATA_DIR=/app/data
     volumes:
       - ./data:/app/data

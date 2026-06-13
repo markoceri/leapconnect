@@ -149,7 +149,7 @@ services:
   app:
     image: ghcr.io/markoceri/leapconnect:latest
     environment:
-      - HISTORY_DB_PATH=/app/data/leapconnect.db
+      - DB_PATH=/app/data/leapconnect.db
       - DATA_DIR=/app/data
     volumes:
       - ./data:/app/data
@@ -227,7 +227,7 @@ Interested in contributing? Read the [contributing guide](CONTRIBUTING.md) for d
 | `APP_CERT_PATH` | Yes | Path to the app certificate PEM file |
 | `APP_KEY_PATH` | Yes | Path to the app key PEM file |
 | `ACCOUNT_P12_PASSWORD` | No | P12 password (usually auto-derived from login) |
-| `HISTORY_DB_PATH` | No | SQLite database path (default: `/app/data/leapconnect.db`) |
+| `DB_PATH` | No | SQLite database path (default: `/app/data/leapconnect.db`) |
 
 ## Login
 
@@ -241,10 +241,10 @@ If you are locked out of your **LeapConnect local account** (the app login passw
 
 ```bash
 # Direct
-python main.py --reset-password "new_password"
+python -m leapconnect --reset-password "new_password"
 
 # Docker
-docker compose exec app uv run python main.py --reset-password "new_password"
+docker compose exec app uv run python -m leapconnect --reset-password "new_password"
 ```
 
 > **Note:** Quote the password to prevent shell interpretation of special characters (`$`, `&`, `!`, etc.).

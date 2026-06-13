@@ -434,7 +434,7 @@ async function doDelete() {
       .filter((_, i) => i !== deleteIdx.value)
       .map(normalizeEntry)
     const body = { controls: updated }
-    await api('POST', `/api/vehicles/${props.vin}/ac-schedule`, body)
+    await api('PUT', `/api/vehicles/${props.vin}/ac-schedule`, body)
     showDeleteConfirm.value = false
     await fetchSchedules()
     emit('saved')
@@ -462,7 +462,7 @@ async function saveForm() {
       updated = [...existing, entry]
     }
     const body = { controls: updated }
-    await api('POST', `/api/vehicles/${props.vin}/ac-schedule`, body)
+    await api('PUT', `/api/vehicles/${props.vin}/ac-schedule`, body)
     editing.value = false
     await fetchSchedules()
     emit('saved')

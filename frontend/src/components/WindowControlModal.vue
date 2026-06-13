@@ -132,7 +132,7 @@ watch(() => props.visible, (val) => {
 })
 
 async function quickAction(type) {
-  const action = type === 'open' ? 'windows/open' : 'windows/close'
+  const action = type === 'open' ? 'windows-open' : 'windows-close'
   loadingAction.value = type
   try {
     if (props.onExec) await props.onExec({ action, body: null })

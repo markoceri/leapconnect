@@ -27,9 +27,7 @@ COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-editable
 
 # Copy application code
-COPY main.py models.py schemas.py ./
-COPY persistence/ ./persistence/
-COPY services/ ./services/
+COPY leapconnect/ ./leapconnect/
 COPY alembic.ini ./
 COPY migrations/ ./migrations/
 
@@ -38,8 +36,8 @@ COPY --from=frontend-build /app/frontend/dist ./frontend/dist
 
 # Data volume for SQLite database
 VOLUME ["/app/data"]
-ENV HISTORY_DB_PATH=/app/data/leapconnect.db
+ENV DB_PATH=/app/data/leapconnect.db
 
 EXPOSE 8099
 
-CMD ["uv", "run", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8099"]
+CMD ["uv", "run", "uvicorn", "leapconnect.api.app:app", "--host", "0.0.0.0", "--port", "8099"]

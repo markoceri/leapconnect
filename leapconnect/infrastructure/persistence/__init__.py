@@ -1,0 +1,1 @@
+"""SQLAlchemy/SQLite persistence adapter."""

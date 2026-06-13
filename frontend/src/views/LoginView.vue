@@ -52,7 +52,7 @@ async function handleLogin() {
   error.value = ''
   submitting.value = true
   try {
-    await api('POST', '/api/auth/login', { password: form.password })
+    await api('POST', '/api/auth/session', { password: form.password })
     // Re-check status — session cookie is now set
     await store.checkStatus()
   } catch (err) {
