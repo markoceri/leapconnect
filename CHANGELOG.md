@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-06-13
+
 ### Changed
 - **BREAKING: API endpoints renamed in place** (no `/api/v2` namespace, no aliases — the bundled Vue frontend is migrated in the same release; an installed PWA with a stale cached shell recovers on the next service-worker auto-update):
   - Local auth is session-style: `POST /api/auth/login` → `POST /api/auth/session`, `POST /api/auth/logout` → `DELETE /api/auth/session`
