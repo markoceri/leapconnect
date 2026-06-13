@@ -68,8 +68,8 @@ def build_trip_row(segment: list[VehicleSnapshot]) -> dict | None:
         "beginTime": start.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
         "endTime": end.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
         "travelMile": int(round(travel_km * 1000)),
-        "eneryConsume": int(round(energy_wh)),
-        "recoveryEnery": int(round(segment_regen_energy_wh(segment))),
+        "energyConsumed": int(round(energy_wh)),
+        "energyRecovered": int(round(segment_regen_energy_wh(segment))),
         "maxSpeed": max((s.drive_speed or 0) for s in segment),
         "avgSpeed": round(travel_km / duration_h, 1) if duration_h > 0 else 0,
         "startSoc": start.battery_soc,
@@ -144,9 +144,9 @@ def build_local_trip_payload(snapshots: list[VehicleSnapshot]) -> dict:
     if len(snapshots) < 2:
         return {
             "source": "local_history",
-            "total_enery": 0,
-            "total_milage": 0,
-            "total_ustime": 0,
+            "total_energy": 0,
+            "total_mileage": 0,
+            "total_hours": 0,
             "data": [],
         }
 
@@ -187,7 +187,7 @@ def build_local_trip_payload(snapshots: list[VehicleSnapshot]) -> dict:
             day,
             {
                 "day": day,
-                "accumulated_enery_consume": 0,
+                "accumulated_energy_consumed": 0,
                 "accumulated_mileage": 0.0,
                 "current_mileage": 0.0,
                 "drivingRecord": [],
@@ -198,8 +198,8 @@ def build_local_trip_payload(snapshots: list[VehicleSnapshot]) -> dict:
                 "beginTime": trip["beginTime"],
                 "endTime": trip["endTime"],
                 "travelMile": trip["travelMile"],
-                "eneryConsume": trip["eneryConsume"],
-                "recoveryEnery": trip["recoveryEnery"],
+                "energyConsumed": trip["energyConsumed"],
+                "energyRecovered": trip["energyRecovered"],
                 "maxSpeed": trip["maxSpeed"],
                 "avgSpeed": trip["avgSpeed"],
                 "startSoc": trip["startSoc"],
@@ -212,7 +212,7 @@ def build_local_trip_payload(snapshots: list[VehicleSnapshot]) -> dict:
                 "gpskey": trip["gpskey"],
             }
         )
-        bucket["accumulated_enery_consume"] += trip["eneryConsume"]
+        bucket["accumulated_energy_consumed"] += trip["energyConsumed"]
         bucket["accumulated_mileage"] += trip["_travel_km"]
         bucket["current_mileage"] = round(bucket["accumulated_mileage"], 2)
 
@@ -226,9 +226,9 @@ def build_local_trip_payload(snapshots: list[VehicleSnapshot]) -> dict:
     ordered_days = sorted(by_day.values(), key=lambda d: d["day"], reverse=True)
     return {
         "source": "local_history",
-        "total_enery": round(total_energy_kwh, 3),
-        "total_milage": round(total_distance_km, 2),
-        "total_ustime": round(total_hours, 2),
+        "total_energy": round(total_energy_kwh, 3),
+        "total_mileage": round(total_distance_km, 2),
+        "total_hours": round(total_hours, 2),
         "data": ordered_days,
     }
 
@@ -300,7 +300,7 @@ def trip_start_hour(trip: dict) -> int | None:
 
 def trip_consumption_kwh_100km(trip: dict) -> float | None:
     km = trip_distance_km(trip)
-    kwh = (float(trip.get("eneryConsume") or 0.0)) / 1000.0
+    kwh = (float(trip.get("energyConsumed") or 0.0)) / 1000.0
     if km <= 0:
         return None
     return (kwh / km) * 100.0
@@ -381,8 +381,8 @@ def trip_compare_metrics(reference: dict, candidate: dict) -> dict:
 
     ref_cons = trip_consumption_kwh_100km(reference)
     cand_cons = trip_consumption_kwh_100km(candidate)
-    ref_regen = (float(reference.get("recoveryEnery") or 0.0)) / 1000.0
-    cand_regen = (float(candidate.get("recoveryEnery") or 0.0)) / 1000.0
+    ref_regen = (float(reference.get("energyRecovered") or 0.0)) / 1000.0
+    cand_regen = (float(candidate.get("energyRecovered") or 0.0)) / 1000.0
 
     ref_avg_speed = float(reference.get("avgSpeed") or 0.0)
     cand_avg_speed = float(candidate.get("avgSpeed") or 0.0)

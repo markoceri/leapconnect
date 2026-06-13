@@ -92,11 +92,11 @@ async def get_trips_totals(
 
     return {
         "source": "local_history",
-        "maxspeed": int(max_speed),
-        "totalenery": round(float(payload.get("total_enery", 0.0)), 3),
-        "totalmileage": round(float(payload.get("total_milage", 0.0)), 2),
-        "totalrecoveryenery": calculate_local_regen_energy_kwh(snapshots),
-        "ustime": round(total_hours, 2),
+        "max_speed": int(max_speed),
+        "total_energy": round(float(payload.get("total_energy", 0.0)), 3),
+        "total_mileage": round(float(payload.get("total_mileage", 0.0)), 2),
+        "total_energy_recovered": calculate_local_regen_energy_kwh(snapshots),
+        "total_hours": round(total_hours, 2),
     }
 
 

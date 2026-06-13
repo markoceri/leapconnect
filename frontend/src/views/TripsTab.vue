@@ -15,23 +15,23 @@
     <!-- Totals KPI -->
     <div v-if="totals" class="summary-grid">
       <div class="summary-card">
-        <div class="summary-value" style="color: #00d4ff">{{ formatKm(totals.totalmileage) }}</div>
+        <div class="summary-value" style="color: #00d4ff">{{ formatKm(totals.total_mileage) }}</div>
         <div class="summary-label">Total distance</div>
       </div>
       <div class="summary-card">
-        <div class="summary-value" style="color: #00e676">{{ formatEnergy(totals.totalenery) }}</div>
+        <div class="summary-value" style="color: #00e676">{{ formatEnergy(totals.total_energy) }}</div>
         <div class="summary-label">Total energy</div>
       </div>
       <div class="summary-card">
-        <div class="summary-value" style="color: #42a5f5">{{ formatEnergy(totals.totalrecoveryenery) }}</div>
+        <div class="summary-value" style="color: #42a5f5">{{ formatEnergy(totals.total_energy_recovered) }}</div>
         <div class="summary-label">Regen energy</div>
       </div>
       <div class="summary-card">
-        <div class="summary-value" style="color: #ff7043">{{ totals.maxspeed || '—' }} km/h</div>
+        <div class="summary-value" style="color: #ff7043">{{ totals.max_speed || '—' }} km/h</div>
         <div class="summary-label">Max speed</div>
       </div>
       <div class="summary-card">
-        <div class="summary-value" style="color: #7c6aff">{{ formatTime(totals.ustime) }}</div>
+        <div class="summary-value" style="color: #7c6aff">{{ formatTime(totals.total_hours) }}</div>
         <div class="summary-label">Driving time</div>
       </div>
       <div v-if="avgConsumption" class="summary-card">
@@ -75,7 +75,7 @@
       <div v-for="day in tripDays" :key="day.day" class="trip-day-group">
         <div class="day-header">
           <span class="day-date">{{ formatDayLabel(day.day) }}</span>
-          <span class="day-summary">{{ day.trips.length }} trip{{ day.trips.length > 1 ? 's' : '' }} · {{ formatKm(day.accumulated_mileage) }} · {{ formatEnergy(day.accumulated_enery_consume) }}</span>
+          <span class="day-summary">{{ day.trips.length }} trip{{ day.trips.length > 1 ? 's' : '' }} · {{ formatKm(day.accumulated_mileage) }} · {{ formatEnergy(day.accumulated_energy_consumed) }}</span>
         </div>
         <div v-for="trip in day.trips" :key="trip.gpskey || trip.beginTime" class="trip-row" @click="onTripRowClick(trip)">
           <label v-if="compareMode" class="compare-checkbox" @click.stop>
@@ -91,7 +91,7 @@
           </div>
           <div class="trip-stats">
             <span class="trip-stat"><Navigation :size="12" /> {{ formatTripKm(trip.travelMile) }}</span>
-            <span class="trip-stat"><Zap :size="12" /> {{ formatTripEnergy(trip.eneryConsume) }}</span>
+            <span class="trip-stat"><Zap :size="12" /> {{ formatTripEnergy(trip.energyConsumed) }}</span>
             <span v-if="trip.travelMile > 0" class="trip-stat consumption">{{ tripConsumption(trip) }} kWh/100km</span>
           </div>
           <ChevronRight :size="16" class="trip-arrow" />
@@ -148,11 +148,11 @@
               </div>
               <div class="detail-stat">
                 <span class="stat-label">Energy</span>
-                <span class="stat-value" style="color: #00e676">{{ formatTripEnergy(selectedTrip.eneryConsume) }}</span>
+                <span class="stat-value" style="color: #00e676">{{ formatTripEnergy(selectedTrip.energyConsumed) }}</span>
               </div>
               <div class="detail-stat">
                 <span class="stat-label">Regen</span>
-                <span class="stat-value" style="color: #42a5f5">{{ formatTripRegen(selectedTrip.recoveryEnery) }}</span>
+                <span class="stat-value" style="color: #42a5f5">{{ formatTripRegen(selectedTrip.energyRecovered) }}</span>
               </div>
               <div class="detail-stat">
                 <span class="stat-label">Consumption</span>
@@ -440,7 +440,7 @@ const tripDays = computed(() => {
   return tripsData.value.data.map(day => ({
     day: day.day,
     accumulated_mileage: day.accumulated_mileage,
-    accumulated_enery_consume: day.accumulated_enery_consume,
+    accumulated_energy_consumed: day.accumulated_energy_consumed,
     current_mileage: day.current_mileage,
     trips: [...(day.drivingRecord || [])].reverse(),
   })).filter(d => d.trips.length > 0)
@@ -448,8 +448,8 @@ const tripDays = computed(() => {
 
 const avgConsumption = computed(() => {
   if (!totals.value) return null
-  const km = parseFloat(totals.value.totalmileage) || 0
-  const energy = parseFloat(totals.value.totalenery) || 0
+  const km = parseFloat(totals.value.total_mileage) || 0
+  const energy = parseFloat(totals.value.total_energy) || 0
   if (km <= 0) return null
   return (energy / km * 100).toFixed(1)
 })
@@ -927,7 +927,7 @@ function formatSocDelta(trip) {
 
 function tripConsumption(trip) {
   const km = (parseFloat(trip.travelMile) || 0) / 1000
-  const kwh = (parseFloat(trip.eneryConsume) || 0) / 1000
+  const kwh = (parseFloat(trip.energyConsumed) || 0) / 1000
   if (km <= 0) return '—'
   return (kwh / km * 100).toFixed(1)
 }
@@ -966,8 +966,8 @@ function formatScore(score) {
 function compareMetrics(a, b) {
   const aKm = (parseFloat(a.travelMile) || 0) / 1000
   const bKm = (parseFloat(b.travelMile) || 0) / 1000
-  const aKwh = (parseFloat(a.eneryConsume) || 0) / 1000
-  const bKwh = (parseFloat(b.eneryConsume) || 0) / 1000
+  const aKwh = (parseFloat(a.energyConsumed) || 0) / 1000
+  const bKwh = (parseFloat(b.energyConsumed) || 0) / 1000
   const aCons = parseFloat(tripConsumption(a))
   const bCons = parseFloat(tripConsumption(b))
   const aDur = tripDurationMinutes(a)
