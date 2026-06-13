@@ -77,7 +77,12 @@ Enforced by `tests/test_architecture.py`.
   `account.py`, `notifications.py`, `charging.py`, `maintenance.py`) sharing a
   session factory via `base.py`, and `sqlite_adapter.py` — the thin
   `SqlAlchemyRepository` facade composing them into `AppRepository` and owning
-  the engine lifecycle.
+  the engine lifecycle. Secret fields (cloud/MQTT passwords, ABRP token,
+  vehicle PIN, Telegram bot token) are encrypted at rest via `secrets.py`
+  (`SecretCipher`); the repos that touch them encrypt on write / decrypt on
+  read, tolerating legacy plaintext.
+- `secrets.py` — Fernet `SecretCipher` + key file management
+  (`0600`, beside the DB) for at-rest secret encryption.
 - `mqtt/home_assistant.py` — Home Assistant MQTT discovery bridge.
 - `telegram/` — bot polling (`bot.py`), notifier (`notifier.py`), config.
 - `abrp/service.py` — A Better Route Planner telemetry.

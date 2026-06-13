@@ -26,9 +26,28 @@ from leapconnect.infrastructure.persistence.tables import (
     TelegramUserRow,
 )
 
+# Channel-config fields that are secrets and must be encrypted at rest.
+_SECRET_CONFIG_KEYS = ("bot_token",)
+
 
 class SqlNotificationRepository(SqlRepositoryBase, NotificationRepository):
     """Channels, preferences, geofences, Telegram users and link tokens."""
+
+    def _config_to_json(self, config: dict) -> str:
+        """Serialize a channel config, encrypting its secret fields."""
+        stored = dict(config)
+        for key in _SECRET_CONFIG_KEYS:
+            if stored.get(key):
+                stored[key] = self._cipher.encrypt(stored[key])
+        return json.dumps(stored)
+
+    def _config_from_json(self, config_json: str | None) -> dict:
+        """Deserialize a channel config, decrypting its secret fields."""
+        config = json.loads(config_json) if config_json else {}
+        for key in _SECRET_CONFIG_KEYS:
+            if config.get(key):
+                config[key] = self._cipher.decrypt(config[key])
+        return config
 
     async def get_notification_channels(self) -> list[NotificationChannel]:
         """Return all notification channels."""
@@ -41,7 +60,7 @@ class SqlNotificationRepository(SqlRepositoryBase, NotificationRepository):
             NotificationChannel(
                 id=r.id,
                 channel_type=r.channel_type,
-                config=json.loads(r.config_json) if r.config_json else {},
+                config=self._config_from_json(r.config_json),
                 enabled=r.enabled,
                 created_at=r.created_at,
             )
@@ -59,7 +78,7 @@ class SqlNotificationRepository(SqlRepositoryBase, NotificationRepository):
             return NotificationChannel(
                 id=row.id,
                 channel_type=row.channel_type,
-                config=json.loads(row.config_json) if row.config_json else {},
+                config=self._config_from_json(row.config_json),
                 enabled=row.enabled,
                 created_at=row.created_at,
             )
@@ -73,7 +92,7 @@ class SqlNotificationRepository(SqlRepositoryBase, NotificationRepository):
                 row = await session.get(NotificationChannelRow, channel.id)
                 if row:
                     row.channel_type = channel.channel_type
-                    row.config_json = json.dumps(channel.config)
+                    row.config_json = self._config_to_json(channel.config)
                     row.enabled = channel.enabled
                     await session.commit()
                     channel.id = row.id
@@ -81,7 +100,7 @@ class SqlNotificationRepository(SqlRepositoryBase, NotificationRepository):
             # Create new
             row = NotificationChannelRow(
                 channel_type=channel.channel_type,
-                config_json=json.dumps(channel.config),
+                config_json=self._config_to_json(channel.config),
                 enabled=channel.enabled,
                 created_at=datetime.now(UTC),
             )

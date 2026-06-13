@@ -36,19 +36,21 @@ class SqlAccountRepository(SqlRepositoryBase, AccountRepository):
             stmt = select(AccountRow).where(AccountRow.username == username)
             result = await session.execute(stmt)
             existing = result.scalar_one_or_none()
+            enc_password = self._cipher.encrypt(password)
+            enc_p12 = self._cipher.encrypt(p12_password)
             if existing:
-                existing.password = password
+                existing.password = enc_password
                 existing.cert_path = cert_path
                 existing.key_path = key_path
-                existing.p12_password = p12_password
+                existing.p12_password = enc_p12
             else:
                 session.add(
                     AccountRow(
                         username=username,
-                        password=password,
+                        password=enc_password,
                         cert_path=cert_path,
                         key_path=key_path,
-                        p12_password=p12_password,
+                        p12_password=enc_p12,
                         created_at=datetime.now(UTC),
                     )
                 )
@@ -64,10 +66,10 @@ class SqlAccountRepository(SqlRepositoryBase, AccountRepository):
                 return None
             return {
                 "username": row.username,
-                "password": row.password,
+                "password": self._cipher.decrypt(row.password),
                 "cert_path": row.cert_path,
                 "key_path": row.key_path,
-                "p12_password": row.p12_password,
+                "p12_password": self._cipher.decrypt(row.p12_password),
             }
 
     async def delete_account(self, username: str) -> None:

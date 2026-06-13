@@ -38,6 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Old top-level modules** — `main.py`, `models.py`, `schemas.py`, `services/*` and `persistence/*` have been deleted; all imports go through `leapconnect.*`.
 
 ### Security
+- **Secrets are encrypted at rest** — the Leapmotor account password (and p12 password), MQTT broker password, ABRP token, vehicle operation PIN and Telegram bot token are now stored encrypted (Fernet/AES) instead of plaintext in SQLite. The key is auto-generated with `0600` permissions next to the database (the `DATA_DIR` volume in Docker). Existing plaintext values keep working and are transparently re-encrypted the next time they are saved — no migration step. The local dashboard login password remains a one-way PBKDF2 hash (it is only ever verified, never recovered).
 - **Dashboard sessions survive restarts** — session tokens are persisted in SQLite (SHA-256 hashes only, never the raw token) and restored at startup, so updating or restarting the container no longer logs every client out. Logout still revokes the session server-side; expired rows are purged automatically.
 - **WebSocket auth is cookie-only** — the unused `?token=` query-string fallback on `/ws/vehicle/{vin}` and `/ws/logs` was removed (query strings end up in access logs).
 - **Login attempts are now rate-limited** — after 5 failed local-login attempts the client IP is locked out for 30 seconds, doubling with each further failure up to 15 minutes (`429` with a `Retry-After` header). A successful login clears the counter.

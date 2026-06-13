@@ -8,6 +8,8 @@ Each bounded context has its own repository class (``SqlTelemetryRepository``,
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from leapconnect.application.ports.repositories import AppRepository
@@ -21,6 +23,15 @@ from leapconnect.infrastructure.persistence.notifications import (
 from leapconnect.infrastructure.persistence.settings import SqlSettingsRepository
 from leapconnect.infrastructure.persistence.tables import Base
 from leapconnect.infrastructure.persistence.telemetry import SqlTelemetryRepository
+from leapconnect.infrastructure.secrets import load_or_create_cipher
+
+
+def _key_path_for(database_url: str) -> Path:
+    """Key file location: beside the SQLite DB (``DATA_DIR`` in the Docker image)."""
+    db_path = database_url.split(":///", 1)[-1]
+    if db_path and db_path != ":memory:":
+        return Path(db_path).resolve().parent / "secret.key"
+    return Path("secret.key")
 
 
 class SqlAlchemyRepository(
@@ -34,10 +45,13 @@ class SqlAlchemyRepository(
 ):
     """Concrete adapter backed by an async SQLAlchemy engine (SQLite)."""
 
-    def __init__(self, database_url: str) -> None:
+    def __init__(self, database_url: str, secret_key_path: Path | None = None) -> None:
         # aiosqlite requires the ``sqlite+aiosqlite:///`` scheme
         self._engine = create_async_engine(database_url, echo=False)
-        super().__init__(async_sessionmaker(self._engine, expire_on_commit=False))
+        cipher = load_or_create_cipher(secret_key_path or _key_path_for(database_url))
+        super().__init__(
+            async_sessionmaker(self._engine, expire_on_commit=False), cipher
+        )
 
     # -- lifecycle -----------------------------------------------------------
 

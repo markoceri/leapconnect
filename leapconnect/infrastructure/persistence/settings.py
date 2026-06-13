@@ -13,6 +13,15 @@ from leapconnect.infrastructure.persistence.tables import (
     AppSettingRow,
 )
 
+# Setting keys whose values are secrets and must be encrypted at rest.
+SECRET_SETTING_KEYS: frozenset[str] = frozenset(
+    {
+        "mqtt_password",
+        "abrp_user_token",
+        "mqtt_vehicle_pin",
+    }
+)
+
 
 class SqlSettingsRepository(SqlRepositoryBase, SettingsRepository):
     """Key/value settings and scheduler configuration."""
@@ -83,13 +92,19 @@ class SqlSettingsRepository(SqlRepositoryBase, SettingsRepository):
             await session.commit()
 
     async def get_setting(self, key: str) -> str | None:
-        """Get a single app setting value."""
+        """Get a single app setting value (decrypting secret keys)."""
         async with self._session_factory() as session:
             row = await session.get(AppSettingRow, key)
-            return row.value if row else None
+            if not row:
+                return None
+            if key in SECRET_SETTING_KEYS:
+                return self._cipher.decrypt(row.value)
+            return row.value
 
     async def save_setting(self, key: str, value: str) -> None:
-        """Save a single app setting (upsert)."""
+        """Save a single app setting (upsert; secret keys encrypted at rest)."""
+        if key in SECRET_SETTING_KEYS:
+            value = self._cipher.encrypt(value)
         async with self._session_factory() as session:
             existing = await session.get(AppSettingRow, key)
             if existing:
