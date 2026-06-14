@@ -41,7 +41,8 @@ One subpackage per **bounded context**:
 | `trips`         | trip segmentation/merging, similarity scoring, charge-session detection (`analysis.py`) — trips are derived on the fly, there is no persistent Trip aggregate |
 | `charging`      | price tiers, time-of-use bands, session costs, TOU cost calculation (`costing.py`) |
 | `maintenance`   | plan items/records/alerts, the due/overdue engine (`engine.py`), pack normalization (`packs.py`), model resolver (`resolver.py`) |
-| `notifications` | channels/preferences/geofences/Telegram users, geofence geometry (`geofencing.py`), the event catalog + message templates (`event_catalog.py`) |
+| `notifications` | channels/preferences/Telegram users, the event catalog + message templates (`event_catalog.py`) |
+| `zones`         | `Zone` model, zone geometry (`geometry.py`), pure enter/exit transition detection (`detection.py`) — a reusable location concept consumed by notifications (alerts) and charging (tier-by-zone) |
 | `identity`      | local dashboard session policy (`sessions.py`, hash-keyed store persisted via the repository), login throttling (`throttle.py`) |
 | `settings`      | typed user/scheduler/MQTT/ABRP settings models |
 
@@ -55,11 +56,14 @@ Enforced by `tests/test_architecture.py`.
   and `notifier.py` (`BaseNotifier`).
 - `scheduler.py` — background polling loops (history, MQTT, transitions).
 - `notifications/` — event → notification pipeline: `dispatcher.py`
-  (orchestrator: channels, preferences, cooldowns, mute), `policies.py`
-  (stateful custom-event detectors: movement alert, unlocked timeout, SOC
-  thresholds, charge interrupted, range low, tire pressure, geofence watcher),
-  `tracking.py` (periodic location tracking), `telegram_admin.py` (user
-  approve/decline messages).
+  (orchestrator: channels, preferences, cooldowns, mute; also owns the
+  `ZoneTracker` and maps zone enter/exit crossings to `geofence_enter`/
+  `geofence_exit` events), `policies.py` (stateful custom-event detectors:
+  movement alert, unlocked timeout, SOC thresholds, charge interrupted, range
+  low, tire pressure), `tracking.py` (periodic location tracking),
+  `telegram_admin.py` (user approve/decline messages).
+- `zones/` — `ZoneTracker` holds the per-VIN inside-zone state and delegates
+  the set math to `domain.zones.detect_transitions`.
 - `vehicle_cache.py` — rate-limited, single-flight status cache.
 - `commands.py` — the remote-command registry (`CommandSpec`: client method,
   required vehicle right, Pydantic param model) shared by the REST endpoint
@@ -74,7 +78,8 @@ Enforced by `tests/test_architecture.py`.
   split per bounded context: `tables.py` (ORM rows + Alembic `Base`),
   `migration.py` (startup Alembic upgrade + self-healing ALTER fallbacks),
   one repository class per context (`telemetry.py`, `settings.py`,
-  `account.py`, `notifications.py`, `charging.py`, `maintenance.py`) sharing a
+  `account.py`, `notifications.py`, `zones.py`, `charging.py`,
+  `maintenance.py`) sharing a
   session factory via `base.py`, and `sqlite_adapter.py` — the thin
   `SqlAlchemyRepository` facade composing them into `AppRepository` and owning
   the engine lifecycle. Secret fields (cloud/MQTT passwords, ABRP token,
@@ -95,7 +100,7 @@ Enforced by `tests/test_architecture.py`.
   router registration, lifespan (delegates to the container).
 - `routers/` — one router per context, each with an OpenAPI tag: `identity`,
   `connection`, `vehicles`, `history`, `commands`, `trips`, `charging`,
-  `maintenance`, `notifications`, `system`. On 2026-06-12 the inconsistent
+  `maintenance`, `notifications`, `zones`, `system`. On 2026-06-12 the inconsistent
   legacy paths were renamed **in place** (no `/api/v2` namespace): local auth
   and cloud connection are session-style (`POST/DELETE /api/auth/session`,
   `POST/PUT/DELETE /api/cloud/session`, `GET /api/cloud/status`,

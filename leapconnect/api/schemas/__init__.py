@@ -61,9 +61,6 @@ from leapconnect.api.schemas.maintenance import (  # noqa: F401
     MaintenanceServiceItem,
 )
 from leapconnect.api.schemas.notifications import (  # noqa: F401
-    GeofenceCreate,
-    GeofenceResponse,
-    GeofenceUpdate,
     NotificationChannelConfig,
     NotificationChannelCreate,
     NotificationChannelResponse,
@@ -112,6 +109,11 @@ from leapconnect.api.schemas.vehicle import (  # noqa: F401
     VehicleStatusSchema,
     WindowSchema,
 )
+from leapconnect.api.schemas.zones import (  # noqa: F401
+    ZoneCreate,
+    ZoneResponse,
+    ZoneUpdate,
+)
 
 __all__ = [
     "AbrpStatusResponse",
@@ -145,9 +147,6 @@ __all__ = [
     "DoorSchema",
     "DrivingSchema",
     "FullVehicleDataResponse",
-    "GeofenceCreate",
-    "GeofenceResponse",
-    "GeofenceUpdate",
     "IgnitionSchema",
     "LiveRefreshStatusResponse",
     "LocationSchema",
@@ -208,4 +207,7 @@ __all__ = [
     "VehicleStatusSchema",
     "WeeklyConsumptionSchema",
     "WindowSchema",
+    "ZoneCreate",
+    "ZoneResponse",
+    "ZoneUpdate",
 ]

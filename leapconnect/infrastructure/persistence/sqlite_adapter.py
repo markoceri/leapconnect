@@ -23,6 +23,7 @@ from leapconnect.infrastructure.persistence.notifications import (
 from leapconnect.infrastructure.persistence.settings import SqlSettingsRepository
 from leapconnect.infrastructure.persistence.tables import Base
 from leapconnect.infrastructure.persistence.telemetry import SqlTelemetryRepository
+from leapconnect.infrastructure.persistence.zones import SqlZoneRepository
 from leapconnect.infrastructure.secrets import load_or_create_cipher
 
 
@@ -39,6 +40,7 @@ class SqlAlchemyRepository(
     SqlSettingsRepository,
     SqlAccountRepository,
     SqlNotificationRepository,
+    SqlZoneRepository,
     SqlChargingRepository,
     SqlMaintenanceRepository,
     AppRepository,

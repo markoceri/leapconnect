@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Zones — a first-class bounded context with its own top-level tab** — geofences are promoted out of *Settings → Notifications* into a dedicated **Zones** tab built around a full-bleed map:
+  - Draw **circular or polygonal** zones; reshape an existing zone's geometry directly on the map (geoman.io vertex editing, shown on demand rather than via a persistent toolbar).
+  - Toggle **OpenStreetMap POI overlays** (EV chargers, parking, shopping, fuel/service areas) for the current viewport to help place zones.
+  - New layers: `domain/zones` (pure `Zone` model + geometry + `detect_transitions`), `application/zones` (`ZoneTracker`, consumed by the notification dispatcher), an `infrastructure` repository, and an `/api/zones` CRUD router (OpenAPI tag `zones`).
+- **Charging-tier auto-selection by zone** — a zone can declare a charging tier; when an **AC** charge starts inside it, the session is billed at that tier. Precedence: DC fast charge → `public_dc`; else a matching zone's tier; else `home_grid`.
+
+### Changed
+- **BREAKING: the geofence API moved to the zones context** — `/api/notifications/geofences*` is replaced by `/api/zones*` (the bundled Vue frontend is migrated in the same release). The `geofences` DB table is kept (no data migration) and gains a `charging_tier_id` column via migration `0012` with a self-healing fallback; the `geofence_enter`/`geofence_exit` event types are unchanged — only their UI labels are reworded to "Zone entered"/"Zone left".
+
 ## [0.10.0] - 2026-06-13
 
 ### Changed

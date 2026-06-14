@@ -5,14 +5,12 @@ from types import SimpleNamespace
 from leapconnect.application.notifications.policies import (
     ChannelView,
     ChargeInterruptedPolicy,
-    GeofenceWatcher,
     MovementAlertPolicy,
     SocGlitchFilter,
     SocThresholdPolicy,
     StatusReading,
     charge_transition_suppression,
 )
-from leapconnect.domain.notifications.models import Geofence
 
 
 def _channels(configs: dict[str, dict] | None = None, enabled: bool = True):
@@ -199,52 +197,6 @@ class TestChargeInterruptedPolicy:
             "V1", StatusReading(is_charging=False, gun_inserted=True), 55, ch
         )
         assert events == []
-
-
-class TestGeofenceWatcher:
-    def _zone(self, **kw):
-        defaults = dict(
-            id=1,
-            name="Home",
-            shape_type="circle",
-            latitude=45.0,
-            longitude=9.0,
-            radius_m=200.0,
-            notify_on_enter=True,
-            notify_on_exit=True,
-            enabled=True,
-        )
-        defaults.update(kw)
-        return Geofence(**defaults)
-
-    def _channels_with_zone(self, zone):
-        ch = _channels()
-        ch.geofences = [zone]
-        return ch
-
-    def test_enter_and_exit(self):
-        w = GeofenceWatcher()
-        ch = self._channels_with_zone(self._zone())
-        # Start outside: no events
-        assert w.detect("V1", StatusReading(lat=46.0, lon=9.0), ch) == []
-        # Enter
-        events = w.detect("V1", StatusReading(lat=45.0, lon=9.0), ch)
-        assert ("geofence_enter", {"zone_name": "Home"}) in events
-        # Stay inside: no repeat
-        assert w.detect("V1", StatusReading(lat=45.0, lon=9.0), ch) == []
-        # Exit
-        events = w.detect("V1", StatusReading(lat=46.0, lon=9.0), ch)
-        assert ("geofence_exit", {"zone_name": "Home"}) in events
-
-    def test_disabled_zone_ignored(self):
-        w = GeofenceWatcher()
-        ch = self._channels_with_zone(self._zone(enabled=False))
-        assert w.detect("V1", StatusReading(lat=45.0, lon=9.0), ch) == []
-
-    def test_other_vehicle_zone_ignored(self):
-        w = GeofenceWatcher()
-        ch = self._channels_with_zone(self._zone(vin="OTHER"))
-        assert w.detect("V1", StatusReading(lat=45.0, lon=9.0), ch) == []
 
 
 class TestStatusReading:

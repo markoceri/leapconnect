@@ -148,3 +148,9 @@ def run_alembic_upgrade(sync_conn) -> None:
             )
         if "points_json" not in geo_cols:
             sync_conn.execute(text("ALTER TABLE geofences ADD COLUMN points_json TEXT"))
+        # 0012: charging_tier_id (zone tier auto-selection). Skipped on the
+        # create_all + "stamp to head" path; add it idempotently.
+        if "charging_tier_id" not in geo_cols:
+            sync_conn.execute(
+                text("ALTER TABLE geofences ADD COLUMN charging_tier_id VARCHAR(32)")
+            )

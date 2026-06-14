@@ -172,7 +172,7 @@ EVENT_CATALOG: list[dict] = [
     },
     {
         "event_type": "geofence_enter",
-        "label": "Geofence enter",
+        "label": "Zone entered",
         "description": "Notify when the vehicle enters a configured zone",
         "category": "security",
         "has_image": True,
@@ -180,7 +180,7 @@ EVENT_CATALOG: list[dict] = [
     },
     {
         "event_type": "geofence_exit",
-        "label": "Geofence exit",
+        "label": "Zone left",
         "description": "Notify when the vehicle exits a configured zone",
         "category": "security",
         "has_image": True,

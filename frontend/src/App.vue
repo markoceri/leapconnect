@@ -207,6 +207,9 @@
             :status="status"
             :vehicle="vehicle"
           />
+          <ZonesTab
+            v-else-if="store.activeTab === 'zones'"
+          />
           <template v-else-if="store.currentData">
             <DashboardTab
               v-if="store.activeTab === 'dashboard'"
@@ -306,9 +309,10 @@ import TripsTab from './views/TripsTab.vue'
 import MaintenanceTab from './views/MaintenanceTab.vue'
 import MessagesTab from './views/MessagesTab.vue'
 import SettingsTab from './views/SettingsTab.vue'
+import ZonesTab from './views/ZonesTab.vue'
 import ToastContainer from './components/ToastContainer.vue'
 import MessageDropdown from './components/MessageDropdown.vue'
-import { LayoutDashboard, List, TrendingUp, Mail, Settings, RefreshCw, LogOut, Cloud, CloudOff, Sun, Moon, PanelTop, PanelTopClose, PanelLeft, PanelLeftClose, MoreHorizontal, Bell, BatteryCharging, MapPin, Wrench } from 'lucide-vue-next'
+import { LayoutDashboard, List, TrendingUp, Mail, Settings, RefreshCw, LogOut, Cloud, CloudOff, Sun, Moon, PanelTop, PanelTopClose, PanelLeft, PanelLeftClose, MoreHorizontal, Bell, BatteryCharging, MapPin, MapPinned, Wrench } from 'lucide-vue-next'
 
 const store = useAppStore()
 const { toast } = useToast()
@@ -345,6 +349,7 @@ const tabs = [
   { id: 'charging', label: 'Charging', icon: BatteryCharging },
   { id: 'trips', label: 'Trips', icon: MapPin },
   { id: 'maintenance', label: 'Maintenance', icon: Wrench },
+  { id: 'zones', label: 'Zones', icon: MapPinned },
   { id: 'details', label: 'Details', icon: List },
   { id: 'history', label: 'History', icon: TrendingUp },
   { id: 'messages', label: 'Messages', icon: Mail },

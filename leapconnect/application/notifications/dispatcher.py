@@ -24,6 +24,7 @@ from leapconnect.application.notifications.policies import (
 )
 from leapconnect.application.notifications.tracking import LocationTracker
 from leapconnect.application.ports.notifier import BaseNotifier, Notification
+from leapconnect.application.zones import ZoneTracker
 from leapconnect.asyncutils import spawn
 from leapconnect.domain.notifications.event_catalog import (
     EVENT_CATALOG_MAP,
@@ -32,11 +33,11 @@ from leapconnect.domain.notifications.event_catalog import (
     TRANSITION_EVENTS,
 )
 from leapconnect.domain.notifications.models import (
-    Geofence,
     NotificationChannel,
     NotificationPreference,
 )
 from leapconnect.domain.telemetry.models import VehicleEvent
+from leapconnect.domain.zones import Zone
 from leapconnect.infrastructure.telegram.config import TelegramConfig
 from leapconnect.infrastructure.telegram.notifier import TelegramNotifier
 
@@ -74,10 +75,12 @@ class NotificationDispatcher:
         self._preferences: dict[
             int, dict[str, NotificationPreference]
         ] = {}  # channel_id -> {event_type: pref}
-        self._geofences: list[Geofence] = []
+        self._zones: list[Zone] = []
 
         # Custom detection policies (own all per-VIN detection state)
         self._policies = CustomEventPipeline()
+        # Zone enter/exit tracking (per-VIN inside state)
+        self._zone_tracker = ZoneTracker()
 
         # Per-event cooldowns: (vin, event_type) -> last_notification_time
         self._cooldowns: dict[tuple[str, str], float] = {}
@@ -95,7 +98,7 @@ class NotificationDispatcher:
         self._muted_until: float | None = None
 
     async def reload_config(self) -> None:
-        """Reload channels, preferences, and geofences from the database."""
+        """Reload channels, preferences, and zones from the database."""
         # Stop existing Telegram polling before recreating notifiers
         for notifier in self._notifiers.values():
             if isinstance(notifier, TelegramNotifier):
@@ -115,7 +118,7 @@ class NotificationDispatcher:
                 prefs = await self._repo.get_notification_preferences(ch.id)
                 self._preferences[ch.id] = {p.event_type: p for p in prefs}
 
-        self._geofences = await self._repo.get_geofences()
+        self._zones = await self._repo.get_zones()
 
         # Load cooldown setting
         raw = await self._repo.get_setting("notification_cooldown_seconds")
@@ -124,9 +127,9 @@ class NotificationDispatcher:
                 self._cooldown_seconds = max(0, float(raw))
 
         _LOGGER.info(
-            "NotificationDispatcher reloaded: %d channels, %d geofences, cooldown=%ds",
+            "NotificationDispatcher reloaded: %d channels, %d zones, cooldown=%ds",
             len(self._notifiers),
-            len(self._geofences),
+            len(self._zones),
             int(self._cooldown_seconds),
         )
 
@@ -179,8 +182,31 @@ class NotificationDispatcher:
             channel_ids=list(self._notifiers),
             get_config=self._get_event_config,
             is_enabled=self._is_event_enabled,
-            geofences=self._geofences,
         )
+
+    def _detect_zone_events(
+        self, vin: str, reading: StatusReading
+    ) -> list[tuple[str, dict]]:
+        """Map zone enter/exit transitions to notification events.
+
+        Zones own the geometry + transition detection (``ZoneTracker``); this
+        only translates the crossings into the ``geofence_enter``/
+        ``geofence_exit`` event types (kept for history compatibility),
+        honoring each zone's ``notify_on_enter``/``notify_on_exit`` flags.
+        """
+        if not (reading.lat and reading.lon):
+            return []
+        entered, exited = self._zone_tracker.update(
+            vin, reading.lat, reading.lon, self._zones
+        )
+        events: list[tuple[str, dict]] = []
+        for zone in entered:
+            if zone.notify_on_enter:
+                events.append(("geofence_enter", {"zone_name": zone.name}))
+        for zone in exited:
+            if zone.notify_on_exit:
+                events.append(("geofence_exit", {"zone_name": zone.name}))
+        return events
 
     def _check_cooldown(self, vin: str, event_type: str) -> bool:
         """Returns True if we can send (cooldown expired)."""
@@ -301,6 +327,11 @@ class NotificationDispatcher:
 
         # 2. Custom detection logic based on current status
         custom_events = self._policies.detect(vin, status, self._channel_view())
+
+        # 3. Zone enter/exit transitions (own bounded context, mapped here to
+        #    the notification event types stored in history).
+        custom_events += self._detect_zone_events(vin, reading)
+
         notifications_to_send.extend(custom_events)
 
         # Persist custom-detected events to history

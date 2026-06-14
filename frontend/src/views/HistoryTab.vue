@@ -111,8 +111,8 @@
           <option value="moving_stop">Moving stop</option>
           <option value="soc_change">SOC change</option>
           <option value="charge_state_change">Charge state change</option>
-          <option value="geofence_enter">Geofence enter</option>
-          <option value="geofence_exit">Geofence exit</option>
+          <option value="geofence_enter">Zone entered</option>
+          <option value="geofence_exit">Zone left</option>
           <option value="movement_alert">Movement alert</option>
           <option value="unlocked_timeout">Unlocked timeout</option>
           <option value="tire_pressure_alert">Tire pressure alert</option>
@@ -352,8 +352,14 @@ async function loadEvents() {
   }
 }
 
+const EVENT_TYPE_LABELS = {
+  geofence_enter: 'Zone entered',
+  geofence_exit: 'Zone left',
+}
+
 function formatEventType(type) {
-  return type.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+  return EVENT_TYPE_LABELS[type]
+    || type.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
 }
 
 function formatEventTime(ts) {

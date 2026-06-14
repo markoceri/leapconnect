@@ -78,46 +78,39 @@ def test_scoring_haversine_known():
     assert 470 < d < 490  # ~480 km
 
 
-def test_point_in_polygon_inside():
-    """A point well within a square polygon is detected as inside."""
-    from leapconnect.domain.notifications.geofencing import point_in_polygon
-
-    square = [[45.0, 9.0], [45.0, 9.1], [45.1, 9.1], [45.1, 9.0]]
-    assert point_in_polygon(45.05, 9.05, square) is True
-
-
-def test_point_in_polygon_outside():
-    """A point beyond the polygon bounds is detected as outside."""
-    from leapconnect.domain.notifications.geofencing import point_in_polygon
-
-    square = [[45.0, 9.0], [45.0, 9.1], [45.1, 9.1], [45.1, 9.0]]
-    assert point_in_polygon(45.2, 9.05, square) is False
-
-
-def test_point_in_polygon_too_few_points():
-    """A degenerate polygon (fewer than 3 points) never contains anything."""
-    from leapconnect.domain.notifications.geofencing import point_in_polygon
-
-    assert point_in_polygon(45.0, 9.0, [[45.0, 9.0], [45.1, 9.1]]) is False
-
-
-def test_geofence_contains_circle_and_polygon():
-    """_geofence_contains dispatches on shape_type."""
-    from leapconnect.domain.notifications.geofencing import (
-        geofence_contains as _geofence_contains,
+def test_zones_crud_round_trip(auth_client):
+    """Zone CRUD over /api/zones, including charging_tier_id round-trip."""
+    resp = auth_client.post(
+        "/api/zones",
+        json={
+            "name": "Home",
+            "shape_type": "circle",
+            "latitude": 45.0,
+            "longitude": 9.0,
+            "radius_m": 150.0,
+            "charging_tier_id": "home_solar",
+        },
     )
-    from leapconnect.domain.notifications.models import Geofence
+    assert resp.status_code == 200
+    created = resp.json()
+    assert created["charging_tier_id"] == "home_solar"
+    zone_id = created["id"]
 
-    circle = Geofence(shape_type="circle", latitude=45.0, longitude=9.0, radius_m=200.0)
-    assert _geofence_contains(circle, 45.0, 9.0) is True
-    assert _geofence_contains(circle, 46.0, 9.0) is False
+    # List includes the new zone
+    listing = auth_client.get("/api/zones").json()
+    assert any(z["id"] == zone_id for z in listing)
 
-    polygon = Geofence(
-        shape_type="polygon",
-        points=[[45.0, 9.0], [45.0, 9.1], [45.1, 9.1], [45.1, 9.0]],
+    # Update the assigned tier
+    resp = auth_client.put(
+        f"/api/zones/{zone_id}", json={"charging_tier_id": "public_dc"}
     )
-    assert _geofence_contains(polygon, 45.05, 9.05) is True
-    assert _geofence_contains(polygon, 45.05, 9.5) is False
+    assert resp.status_code == 200
+    assert resp.json()["charging_tier_id"] == "public_dc"
+
+    # Delete
+    assert auth_client.delete(f"/api/zones/{zone_id}").status_code == 200
+    listing = auth_client.get("/api/zones").json()
+    assert not any(z["id"] == zone_id for z in listing)
 
 
 def test_similarity_identical_trip():

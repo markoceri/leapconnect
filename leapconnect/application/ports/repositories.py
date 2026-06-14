@@ -17,7 +17,6 @@ from leapconnect.domain.charging.models import (
     ChargingTimeBand,
 )
 from leapconnect.domain.notifications.models import (
-    Geofence,
     NotificationChannel,
     NotificationPreference,
     TelegramUser,
@@ -27,6 +26,7 @@ from leapconnect.domain.telemetry.models import (
     VehicleEvent,
     VehicleSnapshot,
 )
+from leapconnect.domain.zones.models import Zone
 
 
 class TelemetryRepository(abc.ABC):
@@ -136,8 +136,24 @@ class AccountRepository(abc.ABC):
         """Remove a persisted dashboard session."""
 
 
+class ZoneRepository(abc.ABC):
+    """Geographic zones (consumed by notifications and charging)."""
+
+    @abc.abstractmethod
+    async def get_zones(self, vin: str | None = None) -> list[Zone]:
+        """Return zones, optionally filtered by VIN."""
+
+    @abc.abstractmethod
+    async def save_zone(self, zone: Zone) -> Zone:
+        """Create or update a zone."""
+
+    @abc.abstractmethod
+    async def delete_zone(self, zone_id: int) -> bool:
+        """Delete a zone by ID."""
+
+
 class NotificationRepository(abc.ABC):
-    """Notification channels, preferences, geofences, Telegram users."""
+    """Notification channels, preferences, Telegram users."""
 
     @abc.abstractmethod
     async def get_notification_channels(self) -> list[NotificationChannel]:
@@ -170,18 +186,6 @@ class NotificationRepository(abc.ABC):
         self, channel_id: int, preferences: list[NotificationPreference]
     ) -> None:
         """Upsert notification preferences for a channel (replaces all)."""
-
-    @abc.abstractmethod
-    async def get_geofences(self, vin: str | None = None) -> list[Geofence]:
-        """Return geofences, optionally filtered by VIN."""
-
-    @abc.abstractmethod
-    async def save_geofence(self, geofence: Geofence) -> Geofence:
-        """Create or update a geofence."""
-
-    @abc.abstractmethod
-    async def delete_geofence(self, geofence_id: int) -> bool:
-        """Delete a geofence by ID."""
 
     @abc.abstractmethod
     async def get_telegram_users(self, status: str | None = None) -> list[TelegramUser]:
@@ -344,6 +348,7 @@ class AppRepository(
     SettingsRepository,
     AccountRepository,
     NotificationRepository,
+    ZoneRepository,
     ChargingRepository,
     MaintenanceRepository,
 ):

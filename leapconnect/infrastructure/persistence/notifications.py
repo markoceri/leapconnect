@@ -12,14 +12,12 @@ from leapconnect.application.ports.repositories import (
     NotificationRepository,
 )
 from leapconnect.domain.notifications.models import (
-    Geofence,
     NotificationChannel,
     NotificationPreference,
     TelegramUser,
 )
 from leapconnect.infrastructure.persistence.base import SqlRepositoryBase
 from leapconnect.infrastructure.persistence.tables import (
-    GeofenceRow,
     NotificationChannelRow,
     NotificationPreferenceRow,
     TelegramLinkTokenRow,
@@ -31,7 +29,7 @@ _SECRET_CONFIG_KEYS = ("bot_token",)
 
 
 class SqlNotificationRepository(SqlRepositoryBase, NotificationRepository):
-    """Channels, preferences, geofences, Telegram users and link tokens."""
+    """Channels, preferences, Telegram users and link tokens."""
 
     def _config_to_json(self, config: dict) -> str:
         """Serialize a channel config, encrypting its secret fields."""
@@ -176,84 +174,6 @@ class SqlNotificationRepository(SqlRepositoryBase, NotificationRepository):
                     )
                 )
             await session.commit()
-
-    # -- geofences -----------------------------------------------------------
-
-    async def get_geofences(self, vin: str | None = None) -> list[Geofence]:
-        """Return geofences, optionally filtered by VIN."""
-        conditions = []
-        if vin:
-            conditions.append((GeofenceRow.vin == vin) | (GeofenceRow.vin.is_(None)))
-        stmt = select(GeofenceRow).order_by(GeofenceRow.id.asc())
-        if conditions:
-            stmt = stmt.where(*conditions)
-        async with self._session_factory() as session:
-            result = await session.execute(stmt)
-            rows = result.scalars().all()
-        return [
-            Geofence(
-                id=r.id,
-                vin=r.vin,
-                name=r.name,
-                shape_type=r.shape_type or "circle",
-                latitude=r.latitude,
-                longitude=r.longitude,
-                radius_m=r.radius_m,
-                points=json.loads(r.points_json) if r.points_json else None,
-                notify_on_enter=r.notify_on_enter,
-                notify_on_exit=r.notify_on_exit,
-                enabled=r.enabled,
-            )
-            for r in rows
-        ]
-
-    async def save_geofence(self, geofence: Geofence) -> Geofence:
-        """Create or update a geofence."""
-        async with self._session_factory() as session:
-            if geofence.id:
-                row = await session.get(GeofenceRow, geofence.id)
-                if row:
-                    row.vin = geofence.vin
-                    row.name = geofence.name
-                    row.shape_type = geofence.shape_type
-                    row.latitude = geofence.latitude
-                    row.longitude = geofence.longitude
-                    row.radius_m = geofence.radius_m
-                    row.points_json = (
-                        json.dumps(geofence.points) if geofence.points else None
-                    )
-                    row.notify_on_enter = geofence.notify_on_enter
-                    row.notify_on_exit = geofence.notify_on_exit
-                    row.enabled = geofence.enabled
-                    await session.commit()
-                    return geofence
-            # Create new
-            row = GeofenceRow(
-                vin=geofence.vin,
-                name=geofence.name,
-                shape_type=geofence.shape_type,
-                latitude=geofence.latitude,
-                longitude=geofence.longitude,
-                radius_m=geofence.radius_m,
-                points_json=json.dumps(geofence.points) if geofence.points else None,
-                notify_on_enter=geofence.notify_on_enter,
-                notify_on_exit=geofence.notify_on_exit,
-                enabled=geofence.enabled,
-            )
-            session.add(row)
-            await session.commit()
-            geofence.id = row.id
-            return geofence
-
-    async def delete_geofence(self, geofence_id: int) -> bool:
-        """Delete a geofence by ID."""
-        async with self._session_factory() as session:
-            row = await session.get(GeofenceRow, geofence_id)
-            if not row:
-                return False
-            await session.delete(row)
-            await session.commit()
-            return True
 
     # -- telegram users ------------------------------------------------------
 

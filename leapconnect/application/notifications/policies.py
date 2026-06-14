@@ -10,20 +10,15 @@ from __future__ import annotations
 
 import logging
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from leapconnect.domain.notifications.geofencing import (
-    geofence_contains,
-    haversine_distance_m,
-)
+from leapconnect.domain.zones import haversine_distance_m
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
     from leapmotor_api.models import VehicleStatus
-
-    from leapconnect.domain.notifications.models import Geofence
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -38,7 +33,6 @@ class ChannelView:
     channel_ids: list[int]
     get_config: Callable[[int, str], dict | None]
     is_enabled: Callable[[int, str], bool]
-    geofences: list[Geofence] = field(default_factory=list)
 
 
 @dataclass
@@ -337,48 +331,6 @@ class TirePressurePolicy:
         return results
 
 
-class GeofenceWatcher:
-    """Enter/exit transitions against the configured geofence zones."""
-
-    def __init__(self) -> None:
-        # vin -> set of geofence IDs the vehicle is currently inside
-        self._inside: dict[str, set[int]] = {}
-
-    def detect(
-        self, vin: str, r: StatusReading, channels: ChannelView
-    ) -> list[DetectedEvent]:
-        results: list[DetectedEvent] = []
-        if not (r.lat and r.lon):
-            return results
-
-        geofences = channels.geofences
-        current_inside: set[int] = set()
-        for gf in geofences:
-            if not gf.enabled or not gf.id:
-                continue
-            if gf.vin and gf.vin != vin:
-                continue
-            if geofence_contains(gf, r.lat, r.lon):
-                current_inside.add(gf.id)
-
-        prev_inside = self._inside.get(vin, set())
-
-        # Entered zones
-        for gf_id in current_inside - prev_inside:
-            gf = next((g for g in geofences if g.id == gf_id), None)
-            if gf and gf.notify_on_enter:
-                results.append(("geofence_enter", {"zone_name": gf.name}))
-
-        # Exited zones
-        for gf_id in prev_inside - current_inside:
-            gf = next((g for g in geofences if g.id == gf_id), None)
-            if gf and gf.notify_on_exit:
-                results.append(("geofence_exit", {"zone_name": gf.name}))
-
-        self._inside[vin] = current_inside
-        return results
-
-
 class CustomEventPipeline:
     """Runs every policy in order and aggregates the detected events."""
 
@@ -390,7 +342,6 @@ class CustomEventPipeline:
         self._charge_interrupted = ChargeInterruptedPolicy()
         self._range_low = RangeLowPolicy()
         self._tire_pressure = TirePressurePolicy()
-        self._geofences = GeofenceWatcher()
 
     def detect(
         self, vin: str, status: VehicleStatus, channels: ChannelView
@@ -406,7 +357,6 @@ class CustomEventPipeline:
         results += self._charge_interrupted.detect(vin, r, soc_for_alerts, channels)
         results += self._range_low.detect(r, channels)
         results += self._tire_pressure.detect(r, channels)
-        results += self._geofences.detect(vin, r, channels)
         return results
 
 

@@ -556,22 +556,46 @@ class VehicleDataScheduler:
                     "Scheduler: transition poll failed for %s", vehicle.vin
                 )
 
+    async def _zone_charging_tier(self, vin: str, status) -> str | None:
+        """Charging tier of the first tier-assigned zone the vehicle is in."""
+        from leapconnect.application.notifications.policies import StatusReading
+        from leapconnect.domain.zones import zone_contains
+
+        reading = StatusReading.from_status(status)
+        if not (reading.lat and reading.lon):
+            return None
+        zones = await self._repo.get_zones(vin)
+        for zone in zones:
+            if not zone.enabled or not zone.charging_tier_id:
+                continue
+            if zone_contains(zone, reading.lat, reading.lon):
+                return zone.charging_tier_id
+        return None
+
     async def _handle_charging_cost_event(self, event, status) -> None:
         """Auto-create/finalize session cost on charge_start/charge_stop."""
 
         from leapconnect.domain.charging.models import ChargingSessionCost
 
         if event.event_type == "charge_start":
-            # Determine default tier
+            # Tier precedence: DC fast charge (physical) → public_dc; else a
+            # zone with a configured charging tier the vehicle is inside; else
+            # the home_grid default.
             tier_id = "home_grid"  # default
-            # If DC/fast charge detected
+            is_dc = False
             if hasattr(status, "battery") and status.battery:
                 charge_state = getattr(status.battery, "charge_state", None)
                 if hasattr(charge_state, "value"):
                     charge_state = charge_state.value
                 # charge_state 2 = DC fast charge typically
                 if charge_state == 2:
-                    tier_id = "public_dc"
+                    is_dc = True
+            if is_dc:
+                tier_id = "public_dc"
+            else:
+                zone_tier = await self._zone_charging_tier(event.vin, status)
+                if zone_tier:
+                    tier_id = zone_tier
             sc = ChargingSessionCost(
                 vin=event.vin,
                 start_ts=event.timestamp,

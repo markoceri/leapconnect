@@ -33,23 +33,6 @@ class NotificationPreference:
 
 
 @dataclass
-class Geofence:
-    """A geographic zone for enter/exit notifications."""
-
-    id: int | None = None
-    vin: str | None = None  # None = applies to all vehicles
-    name: str = ""
-    shape_type: str = "circle"  # "circle" | "polygon"
-    latitude: float = 0.0  # circle center, or polygon centroid
-    longitude: float = 0.0
-    radius_m: float = 200.0  # used only when shape_type == "circle"
-    points: list[list[float]] | None = None  # [[lat, lon], ...] for polygons
-    notify_on_enter: bool = True
-    notify_on_exit: bool = True
-    enabled: bool = True
-
-
-@dataclass
 class TelegramUser:
     """A Telegram user that has interacted with the bot."""
 

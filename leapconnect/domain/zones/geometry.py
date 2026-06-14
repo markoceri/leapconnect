@@ -1,7 +1,7 @@
-"""Geofence geometry (pure domain service).
+"""Zone geometry (pure domain service).
 
-Containment checks for circular and polygonal geofences plus small geometric
-helpers. At geofence scale the small-angle distortion of treating lat/lon as
+Containment checks for circular and polygonal zones plus small geometric
+helpers. At zone scale the small-angle distortion of treating lat/lon as
 planar coordinates is negligible.
 """
 
@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import math
 
-from leapconnect.domain.notifications.models import Geofence
+from leapconnect.domain.zones.models import Zone
 
 
 def haversine_distance_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -49,12 +49,12 @@ def point_in_polygon(lat: float, lon: float, points: list) -> bool:
     return inside
 
 
-def geofence_contains(geofence: Geofence, lat: float, lon: float) -> bool:
-    """Return True if the vehicle position falls inside the geofence."""
-    if geofence.shape_type == "polygon":
-        return point_in_polygon(lat, lon, geofence.points or [])
-    return haversine_distance_m(geofence.latitude, geofence.longitude, lat, lon) <= (
-        geofence.radius_m
+def zone_contains(zone: Zone, lat: float, lon: float) -> bool:
+    """Return True if the vehicle position falls inside the zone."""
+    if zone.shape_type == "polygon":
+        return point_in_polygon(lat, lon, zone.points or [])
+    return haversine_distance_m(zone.latitude, zone.longitude, lat, lon) <= (
+        zone.radius_m
     )
 
 

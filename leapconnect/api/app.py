@@ -24,6 +24,7 @@ from leapconnect.api.routers import (
     system,
     trips,
     vehicles,
+    zones,
 )
 from leapconnect.config import FRONTEND_DIST
 from leapconnect.container import container
@@ -91,6 +92,7 @@ def create_app() -> FastAPI:
     app.include_router(charging.router)
     app.include_router(maintenance.router)
     app.include_router(notifications.router)
+    app.include_router(zones.router)
     app.include_router(system.router)
 
     # SPA fallback — must be last

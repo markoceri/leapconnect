@@ -142,8 +142,8 @@ class NotificationPreferenceRow(Base):
     config_json = Column(String(1024), nullable=True)
 
 
-class GeofenceRow(Base):
-    """Geographic zone for enter/exit notifications."""
+class ZoneRow(Base):
+    """Geographic zone (table kept as "geofences" — no data migration)."""
 
     __tablename__ = "geofences"
 
@@ -158,6 +158,7 @@ class GeofenceRow(Base):
     notify_on_enter = Column(Boolean, nullable=False, default=True)
     notify_on_exit = Column(Boolean, nullable=False, default=True)
     enabled = Column(Boolean, nullable=False, default=True)
+    charging_tier_id = Column(String(32), nullable=True)  # tier when charging here
 
 
 class TelegramUserRow(Base):

@@ -1,7 +1,6 @@
-"""Notifications context — channels, preferences, geofences, Telegram users."""
+"""Notifications context — channels, preferences, Telegram users."""
 
 from leapconnect.domain.notifications.models import (
-    Geofence,
     NotificationChannel,
     NotificationPreference,
     TelegramLinkToken,
@@ -9,7 +8,6 @@ from leapconnect.domain.notifications.models import (
 )
 
 __all__ = [
-    "Geofence",
     "NotificationChannel",
     "NotificationPreference",
     "TelegramLinkToken",

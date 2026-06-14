@@ -1,4 +1,4 @@
-"""Notification routes: channels, events, geofences, tracking, Telegram users."""
+"""Notification routes: channels, events, tracking, Telegram users."""
 
 from __future__ import annotations
 
@@ -10,9 +10,6 @@ from starlette.websockets import WebSocketDisconnect
 
 from leapconnect.api.deps import SESSION_COOKIE_NAME, ContainerDep, RepoDep
 from leapconnect.api.schemas import (
-    GeofenceCreate,
-    GeofenceResponse,
-    GeofenceUpdate,
     NotificationChannelCreate,
     NotificationChannelResponse,
     NotificationChannelUpdate,
@@ -25,9 +22,7 @@ from leapconnect.api.schemas import (
 from leapconnect.application.notifications import NotificationDispatcher
 from leapconnect.container import AppContainer
 from leapconnect.domain.notifications.event_catalog import EVENT_CATALOG
-from leapconnect.domain.notifications.geofencing import polygon_centroid
 from leapconnect.domain.notifications.models import (
-    Geofence,
     NotificationChannel,
     NotificationPreference,
 )
@@ -302,125 +297,6 @@ async def update_notification_events(
         for item in body.preferences
     ]
     await repo.save_notification_preferences(body.channel_id, prefs)
-    await _reload_dispatcher(container)
-    return StatusResponse(status="ok")
-
-
-# ---------------------------------------------------------------------------
-# Geofences
-# ---------------------------------------------------------------------------
-
-
-def _geofence_to_response(gf: Geofence) -> GeofenceResponse:
-    return GeofenceResponse(
-        id=gf.id,
-        vin=gf.vin,
-        name=gf.name,
-        shape_type=gf.shape_type,
-        latitude=gf.latitude,
-        longitude=gf.longitude,
-        radius_m=gf.radius_m,
-        points=gf.points,
-        notify_on_enter=gf.notify_on_enter,
-        notify_on_exit=gf.notify_on_exit,
-        enabled=gf.enabled,
-    )
-
-
-@router.get("/api/notifications/geofences")
-async def get_geofences(
-    request: Request, repo: RepoDep, vin: str | None = None
-) -> list[GeofenceResponse]:
-    """List geofences, optionally filtered by VIN."""
-    geofences = await repo.get_geofences(vin=vin)
-    return [_geofence_to_response(gf) for gf in geofences]
-
-
-@router.post("/api/notifications/geofences")
-async def create_geofence(
-    request: Request, body: GeofenceCreate, repo: RepoDep, container: ContainerDep
-) -> GeofenceResponse:
-    """Create a new geofence."""
-    latitude, longitude = body.latitude, body.longitude
-    points = body.points
-    if body.shape_type == "polygon":
-        if not points or len(points) < 3:
-            raise HTTPException(
-                status_code=400, detail="A polygon geofence needs at least 3 points"
-            )
-        latitude, longitude = polygon_centroid(points)
-    else:
-        points = None
-    gf = Geofence(
-        vin=body.vin,
-        name=body.name,
-        shape_type=body.shape_type,
-        latitude=latitude,
-        longitude=longitude,
-        radius_m=body.radius_m,
-        points=points,
-        notify_on_enter=body.notify_on_enter,
-        notify_on_exit=body.notify_on_exit,
-        enabled=body.enabled,
-    )
-    saved = await repo.save_geofence(gf)
-    await _reload_dispatcher(container)
-    return _geofence_to_response(saved)
-
-
-@router.put("/api/notifications/geofences/{geofence_id}")
-async def update_geofence(
-    request: Request,
-    geofence_id: int,
-    body: GeofenceUpdate,
-    repo: RepoDep,
-    container: ContainerDep,
-) -> GeofenceResponse:
-    """Update a geofence."""
-    geofences = await repo.get_geofences()
-    existing = next((gf for gf in geofences if gf.id == geofence_id), None)
-    if not existing:
-        raise HTTPException(status_code=404, detail="Geofence not found")
-    if body.name is not None:
-        existing.name = body.name
-    if body.shape_type is not None:
-        existing.shape_type = body.shape_type
-    if body.radius_m is not None:
-        existing.radius_m = body.radius_m
-    if body.notify_on_enter is not None:
-        existing.notify_on_enter = body.notify_on_enter
-    if body.notify_on_exit is not None:
-        existing.notify_on_exit = body.notify_on_exit
-    if body.enabled is not None:
-        existing.enabled = body.enabled
-    if body.points is not None:
-        existing.points = body.points
-    # Recompute geometry: polygons derive center from points, circles use lat/lon.
-    if existing.shape_type == "polygon":
-        if not existing.points or len(existing.points) < 3:
-            raise HTTPException(
-                status_code=400, detail="A polygon geofence needs at least 3 points"
-            )
-        existing.latitude, existing.longitude = polygon_centroid(existing.points)
-    else:
-        existing.points = None
-        if body.latitude is not None:
-            existing.latitude = body.latitude
-        if body.longitude is not None:
-            existing.longitude = body.longitude
-    saved = await repo.save_geofence(existing)
-    await _reload_dispatcher(container)
-    return _geofence_to_response(saved)
-
-
-@router.delete("/api/notifications/geofences/{geofence_id}")
-async def delete_geofence_endpoint(
-    request: Request, geofence_id: int, repo: RepoDep, container: ContainerDep
-) -> StatusResponse:
-    """Delete a geofence."""
-    deleted = await repo.delete_geofence(geofence_id)
-    if not deleted:
-        raise HTTPException(status_code=404, detail="Geofence not found")
     await _reload_dispatcher(container)
     return StatusResponse(status="ok")
 
