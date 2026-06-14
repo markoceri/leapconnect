@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Zones — a first-class bounded context with its own top-level tab** — geofences are promoted out of *Settings → Notifications* into a dedicated **Zones** tab built around a full-bleed map:
   - Draw **circular or polygonal** zones; reshape an existing zone's geometry directly on the map (geoman.io vertex editing, shown on demand rather than via a persistent toolbar).
   - Toggle **OpenStreetMap POI overlays** (EV chargers, parking, shopping, fuel/service areas) for the current viewport to help place zones.
+  - **All registered vehicles are shown on the map** as photo markers (real car image, name and model in the popup), with map controls to fit all vehicles or locate the browser's device. Each zone in the list reports **which vehicles are currently inside it**.
   - New layers: `domain/zones` (pure `Zone` model + geometry + `detect_transitions`), `application/zones` (`ZoneTracker`, consumed by the notification dispatcher), an `infrastructure` repository, and an `/api/zones` CRUD router (OpenAPI tag `zones`).
 - **Charging-tier auto-selection by zone** — a zone can declare a charging tier; when an **AC** charge starts inside it, the session is billed at that tier. Precedence: DC fast charge → `public_dc`; else a matching zone's tier; else `home_grid`.
 
