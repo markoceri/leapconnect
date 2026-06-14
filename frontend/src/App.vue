@@ -209,6 +209,7 @@
           />
           <ZonesTab
             v-else-if="store.activeTab === 'zones'"
+            :status="status"
           />
           <template v-else-if="store.currentData">
             <DashboardTab

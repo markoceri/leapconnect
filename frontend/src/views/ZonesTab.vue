@@ -2,6 +2,17 @@
   <div class="zones-tab">
     <div class="zone-map-container" ref="mapEl"></div>
 
+    <!-- Locate controls (top-right) -->
+    <div class="map-locate">
+      <button class="map-btn" @click="fitVehicles" title="Show vehicles">
+        <Car :size="17" />
+      </button>
+      <button class="map-btn" @click="locateDevice" :disabled="locatingDevice" title="Locate me">
+        <Loader2 v-if="locatingDevice" :size="17" class="spin" />
+        <Crosshair v-else :size="17" />
+      </button>
+    </div>
+
     <!-- Floating zones panel (top-left) -->
     <div class="zone-panel" :class="{ collapsed: panelCollapsed }">
       <div class="zone-panel-head">
@@ -42,6 +53,17 @@
                   {{ [z.notify_on_enter && 'enter', z.notify_on_exit && 'exit'].filter(Boolean).join('/') }}
                 </span>
                 <span v-if="z.charging_tier_id" class="zone-row-tier">· {{ tierLabel(z.charging_tier_id) }}</span>
+              </span>
+              <span v-if="occupantsFor(z.id).length" class="zone-occupants">
+                <img
+                  v-for="v in occupantsFor(z.id)"
+                  :key="v.vin"
+                  class="occ-avatar"
+                  :src="vehicleImg(v.vin)"
+                  :alt="v.name"
+                  :title="`${v.name} — ${v.model}`"
+                />
+                <span class="occ-names">{{ occupantsFor(z.id).map(v => v.name).join(', ') }}</span>
               </span>
             </div>
             <button class="icon-btn" @click.stop="editShape(z)" title="Edit shape"><Spline :size="14" /></button>
@@ -153,13 +175,19 @@ import '@geoman-io/leaflet-geoman-free'
 import '@geoman-io/leaflet-geoman-free/dist/leaflet-geoman.css'
 import { api } from '../composables/useApi'
 import { useAppStore } from '../stores/appStore'
+import { useToast } from '../composables/useToast'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import {
   MapPinned, Plus, Pencil, Trash2, Circle, Hexagon, Layers, Spline,
-  ChevronDown, ChevronUp, X, Loader2,
+  ChevronDown, ChevronUp, X, Loader2, Car, Crosshair,
 } from 'lucide-vue-next'
 
+const props = defineProps({
+  status: { type: Object, default: () => ({}) },
+})
+
 const store = useAppStore()
+const { toast } = useToast()
 
 // Overpass POI overlay definitions: emoji marker + the OSM selectors used to
 // fetch them for the current viewport.
@@ -213,6 +241,13 @@ let pendingGeometry = null
 const overlays = reactive({ charging: false, parking: false, shopping: false, fuel: false })
 const overlayLoading = ref(false)
 const currentZoom = ref(13)
+const locatingDevice = ref(false)
+// vin -> { vin, name, model, lat, lng } for every registered vehicle we located
+const vehiclePositions = ref({})
+
+function vehicleImg(vin) {
+  return `/api/vehicles/${vin}/picture/image`
+}
 
 const anyOverlayOn = computed(() => Object.values(overlays).some(Boolean))
 const zoomTooLow = computed(() => currentZoom.value < OVERPASS_MIN_ZOOM)
@@ -223,9 +258,167 @@ const editingZoneName = computed(
 // Non-reactive Leaflet handles
 let map = null
 let baseLayer = null
+let deviceMarker = null
+const vehicleMarkers = new Map() // vin -> leaflet marker
 const zoneLayers = new Map() // zone id -> leaflet layer
 const overlayGroups = {} // key -> L.layerGroup
 let overpassTimer = null
+
+const deviceIcon = L.divIcon({
+  className: 'locate-marker',
+  html: '<div style="width:30px;height:30px;border-radius:50%;background:#00e676;'
+    + 'border:2px solid #fff;display:flex;align-items:center;justify-content:center;'
+    + 'box-shadow:0 2px 8px #00e67688;font-size:14px;">📍</div>',
+  iconSize: [30, 30],
+  iconAnchor: [15, 30],
+  popupAnchor: [0, -30],
+})
+
+// --- Vehicle positions & markers (all registered vehicles) ---
+function vehicleDivIcon(vin) {
+  return L.divIcon({
+    className: 'vehicle-marker',
+    html: `<div class="veh-pin"><img src="${vehicleImg(vin)}" alt="" /></div>`,
+    iconSize: [46, 46],
+    iconAnchor: [23, 23],
+    popupAnchor: [0, -22],
+  })
+}
+
+function vehiclePopupHtml(v) {
+  return `<div class="veh-popup"><img src="${vehicleImg(v.vin)}" alt="" />`
+    + `<div class="veh-popup-name">${v.name}</div>`
+    + `<div class="veh-popup-model">${v.model || ''}</div></div>`
+}
+
+async function loadVehiclePositions() {
+  const list = store.vehicles || []
+  await Promise.allSettled(list.map(async (v) => {
+    try {
+      const res = await api('GET', `/api/vehicles/${v.vin}/status`)
+      const loc = res?.status?.location
+      if (loc && loc.latitude != null && loc.longitude != null) {
+        vehiclePositions.value[v.vin] = {
+          vin: v.vin,
+          name: v.vehicle_nickname || v.car_type || v.vin,
+          model: v.car_type || '',
+          lat: loc.latitude,
+          lng: loc.longitude,
+        }
+      }
+    } catch {
+      // a vehicle that can't be located is simply omitted
+    }
+  }))
+  renderVehicleMarkers()
+}
+
+function renderVehicleMarkers() {
+  if (!map) return
+  for (const v of Object.values(vehiclePositions.value)) {
+    const pos = [v.lat, v.lng]
+    const existing = vehicleMarkers.get(v.vin)
+    if (existing) {
+      existing.setLatLng(pos)
+      existing.setPopupContent(vehiclePopupHtml(v))
+    } else {
+      const m = L.marker(pos, { icon: vehicleDivIcon(v.vin), pmIgnore: true })
+        .bindTooltip(v.name, { direction: 'top', offset: [0, -22] })
+        .bindPopup(vehiclePopupHtml(v))
+        .addTo(map)
+      vehicleMarkers.set(v.vin, m)
+    }
+  }
+}
+
+function fitVehicles() {
+  const markers = [...vehicleMarkers.values()]
+  if (!markers.length) {
+    toast('No vehicle locations available', 'error')
+    return
+  }
+  if (markers.length === 1) {
+    map.flyTo(markers[0].getLatLng(), Math.max(map.getZoom(), 15))
+  } else {
+    map.fitBounds(L.featureGroup(markers).getBounds().pad(0.3))
+  }
+}
+
+// --- Zone occupancy (which vehicles sit inside each zone) ---
+function haversineM(lat1, lon1, lat2, lon2) {
+  const R = 6371000
+  const toRad = (d) => (d * Math.PI) / 180
+  const dPhi = toRad(lat2 - lat1)
+  const dLmb = toRad(lon2 - lon1)
+  const a = Math.sin(dPhi / 2) ** 2
+    + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLmb / 2) ** 2
+  return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+}
+
+function pointInPolygon(lat, lon, pts) {
+  if (!pts || pts.length < 3) return false
+  let inside = false
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+    const yi = pts[i][0], xi = pts[i][1], yj = pts[j][0], xj = pts[j][1]
+    if (((yi > lat) !== (yj > lat)) && (lon < ((xj - xi) * (lat - yi)) / (yj - yi) + xi)) {
+      inside = !inside
+    }
+  }
+  return inside
+}
+
+function zoneContainsPoint(z, lat, lon) {
+  if (z.shape_type === 'polygon') return pointInPolygon(lat, lon, z.points || [])
+  return haversineM(z.latitude, z.longitude, lat, lon) <= z.radius_m
+}
+
+const zoneOccupants = computed(() => {
+  const list = Object.values(vehiclePositions.value)
+  const out = {}
+  for (const z of zones.value) {
+    out[z.id] = list.filter(v => zoneContainsPoint(z, v.lat, v.lng))
+  }
+  return out
+})
+
+function occupantsFor(id) {
+  return zoneOccupants.value[id] || []
+}
+
+function locateDevice() {
+  if (!navigator.geolocation) {
+    toast('Geolocation is not supported by this browser', 'error')
+    return
+  }
+  if (!window.isSecureContext) {
+    toast('Geolocation requires HTTPS or localhost', 'error')
+    return
+  }
+  locatingDevice.value = true
+  navigator.geolocation.getCurrentPosition(
+    (p) => {
+      locatingDevice.value = false
+      const pos = [p.coords.latitude, p.coords.longitude]
+      if (deviceMarker) deviceMarker.setLatLng(pos)
+      else {
+        deviceMarker = L.marker(pos, { icon: deviceIcon, pmIgnore: true })
+          .bindTooltip('Your location', { direction: 'top', offset: [0, -16] })
+          .addTo(map)
+      }
+      map.flyTo(pos, Math.max(map.getZoom(), 15))
+    },
+    (err) => {
+      locatingDevice.value = false
+      const msg = err.code === err.PERMISSION_DENIED
+        ? 'Location permission denied'
+        : err.code === err.TIMEOUT
+          ? 'Location request timed out'
+          : 'Could not get your location'
+      toast(msg, 'error')
+    },
+    { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 },
+  )
+}
 
 function tierLabel(id) {
   return chargingTiers.value.find(t => t.id === id)?.label || id
@@ -276,6 +469,7 @@ function initMap() {
   for (const o of OVERLAY_DEFS) overlayGroups[o.key] = L.layerGroup()
 
   renderZones()
+  loadVehiclePositions()
   setTimeout(() => map && map.invalidateSize(), 120)
 }
 
@@ -546,6 +740,21 @@ watch(() => store.theme, () => {
   if (baseLayer) baseLayer.setUrl(tileUrl())
 })
 
+// Keep the currently-selected vehicle's marker live from the websocket feed.
+watch(() => props.status?.location, (loc) => {
+  const vin = store.selectedVin
+  if (!vin || !loc || loc.latitude == null || loc.longitude == null) return
+  const v = (store.vehicles || []).find(x => x.vin === vin)
+  vehiclePositions.value[vin] = {
+    vin,
+    name: v?.vehicle_nickname || v?.car_type || vin,
+    model: v?.car_type || '',
+    lat: loc.latitude,
+    lng: loc.longitude,
+  }
+  renderVehicleMarkers()
+}, { deep: true })
+
 onMounted(load)
 onBeforeUnmount(() => {
   clearTimeout(overpassTimer)
@@ -566,6 +775,34 @@ onBeforeUnmount(() => {
   border-radius: 12px;
   overflow: hidden;
 }
+
+/* Locate controls */
+.map-locate {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 600;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.map-btn {
+  width: 38px;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--card) 90%, transparent);
+  backdrop-filter: blur(10px);
+  border: 1px solid var(--border2);
+  border-radius: 10px;
+  color: var(--text);
+  cursor: pointer;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+  transition: color 0.15s, border-color 0.15s;
+}
+.map-btn:hover { color: #00d4ff; border-color: #00d4ff55; }
+.map-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* Floating zones panel */
 .zone-panel {
@@ -801,6 +1038,50 @@ onBeforeUnmount(() => {
   padding: 8px 14px;
   border-radius: 8px;
 }
+
+/* Vehicle photo markers + popups (Leaflet injects the markup → :deep) */
+:deep(.veh-pin) {
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  border: 2px solid #00d4ff;
+  background: var(--card);
+  overflow: hidden;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
+}
+:deep(.veh-pin img) {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+:deep(.veh-popup) { text-align: center; min-width: 120px; }
+:deep(.veh-popup img) {
+  width: 120px;
+  height: 72px;
+  object-fit: contain;
+  display: block;
+  margin: 0 auto 4px;
+}
+:deep(.veh-popup-name) { font-weight: 700; font-size: 13px; }
+:deep(.veh-popup-model) { font-size: 11px; opacity: 0.7; }
+
+.zone-occupants {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+  flex-wrap: wrap;
+}
+.occ-avatar {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1px solid #00d4ff;
+  background: var(--bg2);
+  flex-shrink: 0;
+}
+.occ-names { font-size: 11px; color: var(--sub); }
 
 /* POI marker pins (Leaflet injects the markup, so reach it via :deep) */
 :deep(.poi-pin) {
