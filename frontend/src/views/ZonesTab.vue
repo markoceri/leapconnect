@@ -1235,6 +1235,7 @@ onBeforeUnmount(() => {
 .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
 
 @media (max-width: 640px) {
-  .zone-panel { width: calc(100% - 24px); }
+  /* Leave room on the right for the locate buttons (38px @ right:12px). */
+  .zone-panel { left: 12px; right: 62px; width: auto; max-width: none; }
 }
 </style>
