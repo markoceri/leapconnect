@@ -21,7 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.10.0] - 2026-06-13
 
 ### Changed
-- **BREAKING: API endpoints renamed in place** (no `/api/v2` namespace, no aliases — the bundled Vue frontend is migrated in the same release; an installed PWA with a stale cached shell recovers on the next service-worker auto-update):
+- **BREAKING: API endpoints renamed in place**:
   - Local auth is session-style: `POST /api/auth/login` → `POST /api/auth/session`, `POST /api/auth/logout` → `DELETE /api/auth/session`
   - Cloud connection: `POST /api/login` → `POST /api/cloud/session`, `POST /api/reconnect` → `PUT /api/cloud/session`, `POST /api/disconnect` → `DELETE /api/cloud/session`, `GET /api/status` → `GET /api/cloud/status`
   - Vehicle PIN: `POST /api/set-pin` and `GET/PUT /api/vehicle-pin` merged into `GET/PUT /api/cloud/pin`; the unused `POST /api/logout` was deleted
