@@ -957,12 +957,15 @@ class HomeAssistantMqttService:
             await self._publish(topic, json.dumps(config), retain=True)
 
         # ── Device tracker (GPS) ───────────────────────────────────────────
+        # No state_topic / value_template: a state_topic would override the
+        # zone resolution Home Assistant derives from the GPS attributes, which
+        # is what pinned the tracker to "home" regardless of the real position.
+        # With only json_attributes_topic + source_type=gps, HA computes the
+        # home/not_home/<zone> state from the published latitude/longitude.
         tracker_config = {
             "name": f"{device_name} Location",
             "unique_id": f"{device_id}_location",
             "json_attributes_topic": f"{prefix}/{vin}/location",
-            "state_topic": f"{prefix}/{vin}/location",
-            "value_template": "{{ 'home' if value_json.latitude else 'not_home' }}",
             "device": device_info,
             "icon": "mdi:car-connected",
             "source_type": "gps",

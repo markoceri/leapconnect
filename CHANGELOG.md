@@ -21,6 +21,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - **BREAKING: the geofence API moved to the zones context** — `/api/notifications/geofences*` is replaced by `/api/zones*` (the bundled Vue frontend is migrated in the same release). The `geofences` DB table is kept (no data migration) and gains a `charging_tier_id` column via migration `0012` with a self-healing fallback; the `geofence_enter`/`geofence_exit` event types are unchanged — only their UI labels are reworded to "Zone entered"/"Zone left".
 
+### Fixed
+- **Home Assistant `Location` device tracker was stuck on "home"** (#16) — the MQTT discovery config forced the state via a `value_template` (`'home' if value_json.latitude`), so the tracker reported *home* whenever GPS coordinates were present, regardless of the actual position. The `state_topic`/`value_template` are dropped; with only the GPS attributes (`json_attributes_topic` + `source_type=gps`) Home Assistant now resolves the home/not_home/zone state from the published latitude/longitude. The discovery config is retained, so existing installs pick up the corrected entity on the next publish.
+
 ## [0.10.0] - 2026-06-13
 
 ### Changed
