@@ -34,6 +34,9 @@
               <div>
                 <div class="vs-card-name">{{ v.vehicle_nickname || v.car_type || 'Leapmotor' }}</div>
                 <div class="vs-card-vin">{{ v.vin }}</div>
+                <div v-if="store.zonePresence[v.vin]?.length" class="vs-card-zone">
+                  <MapPin :size="11" /> {{ store.zonePresence[v.vin].join(', ') }}
+                </div>
               </div>
               <div class="vs-card-badge" :class="{ charging: store.vehicleData[v.vin]?.status?.is_charging, plugged: store.vehicleData[v.vin]?.status?.is_plugged }">
                 <template v-if="store.vehicleData[v.vin]?.status?.is_charging"><Zap :size="12" /> Charging</template>
@@ -69,9 +72,10 @@
 </template>
 
 <script setup>
+import { onMounted, onBeforeUnmount } from 'vue'
 import { useAppStore } from '../stores/appStore'
 import DynamicCarImage from '../components/DynamicCarImage.vue'
-import { Zap, Plug } from 'lucide-vue-next'
+import { Zap, Plug, MapPin } from 'lucide-vue-next'
 
 defineProps({
   vehicles: { type: Array, required: true },
@@ -79,6 +83,13 @@ defineProps({
 defineEmits(['select'])
 
 const store = useAppStore()
+
+let presenceTimer = null
+onMounted(() => {
+  store.loadZonePresence()
+  presenceTimer = setInterval(() => store.loadZonePresence(), 30000)
+})
+onBeforeUnmount(() => clearInterval(presenceTimer))
 function getStatus(vin, section, key) {
   const data = store.vehicleData[vin]
   if (!data?.status?.[section]) return null
@@ -202,6 +213,14 @@ function formatOdo(vin) {
   color: var(--muted2);
   margin-top: 2px;
   font-family: var(--mono);
+}
+.vs-card-zone {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: #00d4ff;
+  margin-top: 4px;
 }
 .vs-card-badge {
   font-size: 11px;

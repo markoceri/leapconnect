@@ -159,6 +159,8 @@ class ZoneRow(Base):
     notify_on_exit = Column(Boolean, nullable=False, default=True)
     enabled = Column(Boolean, nullable=False, default=True)
     charging_tier_id = Column(String(32), nullable=True)  # tier when charging here
+    dwell_alert_minutes = Column(Integer, nullable=False, default=0)
+    absence_alert_minutes = Column(Integer, nullable=False, default=0)
 
 
 class TelegramUserRow(Base):
@@ -229,6 +231,7 @@ class ChargingSessionCostRow(Base):
     peak_power_kw = Column(Float, nullable=True)
     cost = Column(Float, nullable=True)
     note = Column(String(256), nullable=True)
+    zone_name = Column(String(128), nullable=True)
 
 
 # ---------------------------------------------------------------------------

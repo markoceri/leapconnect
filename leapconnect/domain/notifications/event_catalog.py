@@ -187,6 +187,27 @@ EVENT_CATALOG: list[dict] = [
         "configurable": False,
     },
     {
+        "event_type": "zone_dwell",
+        "label": "Zone dwell too long",
+        "description": (
+            "Notify when the vehicle stays inside a zone longer than the per-zone limit"
+        ),
+        "category": "security",
+        "has_image": False,
+        "configurable": False,
+    },
+    {
+        "event_type": "zone_absence",
+        "label": "Zone absence too long",
+        "description": (
+            "Notify when the vehicle stays away from a zone longer than the "
+            "per-zone limit"
+        ),
+        "category": "security",
+        "has_image": False,
+        "configurable": False,
+    },
+    {
         "event_type": "unlocked_timeout",
         "label": "Unlocked too long",
         "description": "Notify if the vehicle stays unlocked for too long while parked",
@@ -387,6 +408,14 @@ MESSAGE_TEMPLATES: dict[str, dict[str, str]] = {
     "geofence_exit": {
         "title": "📍 Left zone",
         "body": 'Vehicle left zone "{zone_name}"',
+    },
+    "zone_dwell": {
+        "title": "⏱️ Still in zone",
+        "body": 'Vehicle has been in zone "{zone_name}" for over {minutes} min',
+    },
+    "zone_absence": {
+        "title": "⏱️ Away from zone",
+        "body": 'Vehicle has been away from zone "{zone_name}" for over {minutes} min',
     },
     "unlocked_timeout": {
         "title": "⚠️ Unlocked too long",

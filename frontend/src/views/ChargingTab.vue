@@ -103,6 +103,7 @@
           <span>Energy</span>
           <span>Peak</span>
           <span>Tier</span>
+          <span>Zone</span>
           <span>Cost</span>
           <span class="head-edit" />
         </div>
@@ -115,6 +116,7 @@
             <span v-if="s.tier_label" class="tier-badge" :class="'tier-' + s.tier_id">{{ s.tier_label }}</span>
             <span v-else class="tier-badge tier-none">No tier</span>
           </span>
+          <span class="cell cell-zone" data-label="Zone">{{ s.zone_name || '—' }}</span>
           <span class="cell cell-cost" data-label="Cost">
             <span v-if="s.cost != null">€{{ s.cost.toFixed(2) }}</span>
             <span v-else class="cost-none">—</span>
@@ -126,6 +128,19 @@
           </span>
         </div>
         <div v-if="!filteredSessions.length" class="empty-row">No charging sessions in this period</div>
+      </div>
+    </div>
+
+    <!-- Charging by location -->
+    <div v-if="costByLocation.length" class="chart-card wide">
+      <div class="chart-header"><MapPin :size="16" class="chart-icon" /> Charging by location</div>
+      <div class="location-list">
+        <div v-for="loc in costByLocation" :key="loc.zone" class="location-row">
+          <span class="loc-name">{{ loc.zone }}</span>
+          <span class="loc-stat">{{ loc.sessions }} session{{ loc.sessions === 1 ? '' : 's' }}</span>
+          <span class="loc-stat">{{ loc.energy.toFixed(1) }} kWh</span>
+          <span class="loc-cost">€{{ loc.cost.toFixed(2) }}</span>
+        </div>
       </div>
     </div>
     </template>
@@ -170,7 +185,7 @@ import { ref, computed, onMounted, watch, nextTick, onUnmounted } from 'vue'
 import { Chart, registerables } from 'chart.js'
 import { api } from '../composables/useApi'
 import { parseUTC } from '../utils/maintenance'
-import { Zap, TrendingUp, PieChart, Clock, CalendarDays, ChevronLeft, ChevronRight, List, Pencil } from 'lucide-vue-next'
+import { Zap, TrendingUp, PieChart, Clock, CalendarDays, ChevronLeft, ChevronRight, List, Pencil, MapPin } from 'lucide-vue-next'
 
 Chart.register(...registerables)
 
@@ -298,6 +313,19 @@ const monthlySummary = computed(() => {
     else months[key].public += s.energy_kwh || 0
   }
   return Object.values(months).sort((a, b) => b.month.localeCompare(a.month)).slice(0, 12)
+})
+
+// Charging energy/cost grouped by the zone the session happened in
+const costByLocation = computed(() => {
+  const groups = {}
+  for (const s of filteredSessions.value) {
+    const key = s.zone_name || 'Unknown location'
+    if (!groups[key]) groups[key] = { zone: key, sessions: 0, energy: 0, cost: 0 }
+    groups[key].sessions++
+    groups[key].energy += s.energy_kwh || 0
+    groups[key].cost += s.cost || 0
+  }
+  return Object.values(groups).sort((a, b) => b.energy - a.energy)
 })
 
 // Time-of-use bands with energy distribution
@@ -646,6 +674,21 @@ watch(selectedMonth, loadData)
 .tou-energy { min-width: 60px; text-align: right; color: var(--text); }
 .tou-cost { min-width: 50px; text-align: right; color: var(--muted); }
 
+/* Charging by location */
+.location-list { display: flex; flex-direction: column; }
+.location-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+.location-row:last-child { border-bottom: none; }
+.loc-name { flex: 1; color: var(--text); font-weight: 500; }
+.loc-stat { color: var(--muted); min-width: 70px; text-align: right; }
+.loc-cost { color: var(--text); min-width: 60px; text-align: right; font-weight: 600; }
+
 /* Monthly summary */
 .monthly-table-wrap { overflow-x: auto; }
 .monthly-table { width: 100%; border-collapse: collapse; font-size: 12px; }
@@ -658,7 +701,7 @@ watch(selectedMonth, loadData)
 /* Desktop: aligned table with header */
 .session-head, .session-row {
   display: grid;
-  grid-template-columns: 1.1fr 1.4fr 0.9fr 0.8fr 1.1fr 0.9fr 40px;
+  grid-template-columns: 1.1fr 1.4fr 0.9fr 0.8fr 1.1fr 1fr 0.9fr 40px;
   gap: 12px; align-items: center;
 }
 .session-head { padding: 0 0 8px; border-bottom: 1px solid var(--border); }

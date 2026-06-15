@@ -89,28 +89,43 @@ def test_zones_crud_round_trip(auth_client):
             "longitude": 9.0,
             "radius_m": 150.0,
             "charging_tier_id": "home_solar",
+            "dwell_alert_minutes": 540,
+            "absence_alert_minutes": 2880,
         },
     )
     assert resp.status_code == 200
     created = resp.json()
     assert created["charging_tier_id"] == "home_solar"
+    assert created["dwell_alert_minutes"] == 540
+    assert created["absence_alert_minutes"] == 2880
     zone_id = created["id"]
 
     # List includes the new zone
     listing = auth_client.get("/api/zones").json()
     assert any(z["id"] == zone_id for z in listing)
 
-    # Update the assigned tier
+    # Update the assigned tier + dwell threshold
     resp = auth_client.put(
-        f"/api/zones/{zone_id}", json={"charging_tier_id": "public_dc"}
+        f"/api/zones/{zone_id}",
+        json={"charging_tier_id": "public_dc", "dwell_alert_minutes": 60},
     )
     assert resp.status_code == 200
-    assert resp.json()["charging_tier_id"] == "public_dc"
+    body = resp.json()
+    assert body["charging_tier_id"] == "public_dc"
+    assert body["dwell_alert_minutes"] == 60
+    assert body["absence_alert_minutes"] == 2880  # unchanged
 
     # Delete
     assert auth_client.delete(f"/api/zones/{zone_id}").status_code == 200
     listing = auth_client.get("/api/zones").json()
     assert not any(z["id"] == zone_id for z in listing)
+
+
+def test_zone_presence_endpoint(auth_client):
+    """The presence endpoint returns a vin -> zone-names mapping (a dict)."""
+    resp = auth_client.get("/api/zones/presence")
+    assert resp.status_code == 200
+    assert isinstance(resp.json(), dict)
 
 
 def test_similarity_identical_trip():

@@ -12,6 +12,7 @@ export const useAppStore = defineStore('app', () => {
   const vehicles = ref([])
   const selectedVin = ref(null)
   const vehicleData = ref({})
+  const zonePresence = ref({}) // vin -> [zone names the vehicle is currently in]
   const hasPin = ref(sessionStorage.getItem('hasPin') === 'true')
   const loading = ref(false)
   const refreshing = ref(false)
@@ -234,6 +235,14 @@ export const useAppStore = defineStore('app', () => {
     }
   }
 
+  async function loadZonePresence() {
+    try {
+      zonePresence.value = await api('GET', '/api/zones/presence')
+    } catch {
+      // presence is best-effort; ignore failures
+    }
+  }
+
   async function loadPicturePackage(vin) {
     try {
       const data = await api('GET', `/api/vehicles/${vin}/picture/package`)
@@ -395,6 +404,7 @@ export const useAppStore = defineStore('app', () => {
     vehicles,
     selectedVin,
     vehicleData,
+    zonePresence,
     hasPin,
     loading,
     refreshing,
@@ -409,6 +419,7 @@ export const useAppStore = defineStore('app', () => {
     logout,
     checkStatus,
     loadVehicleData,
+    loadZonePresence,
     refreshCurrent,
     refreshAfterCommand,
     selectVehicle,

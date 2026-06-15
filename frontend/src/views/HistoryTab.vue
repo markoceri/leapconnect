@@ -113,6 +113,8 @@
           <option value="charge_state_change">Charge state change</option>
           <option value="geofence_enter">Zone entered</option>
           <option value="geofence_exit">Zone left</option>
+          <option value="zone_dwell">Zone dwell too long</option>
+          <option value="zone_absence">Zone absence too long</option>
           <option value="movement_alert">Movement alert</option>
           <option value="unlocked_timeout">Unlocked timeout</option>
           <option value="tire_pressure_alert">Tire pressure alert</option>
@@ -355,6 +357,8 @@ async function loadEvents() {
 const EVENT_TYPE_LABELS = {
   geofence_enter: 'Zone entered',
   geofence_exit: 'Zone left',
+  zone_dwell: 'Zone dwell too long',
+  zone_absence: 'Zone absence too long',
 }
 
 function formatEventType(type) {
@@ -375,7 +379,7 @@ function eventDotClass(type) {
   if (type.includes('charge') || type.includes('plugged')) return 'dot-charge'
   if (type.includes('driving') || type.includes('moving')) return 'dot-drive'
   if (type.includes('lock') || type.includes('ignition') || type.includes('movement_alert') || type.includes('unlocked_timeout')) return 'dot-security'
-  if (type.includes('geofence')) return 'dot-geofence'
+  if (type.includes('geofence') || type.includes('zone')) return 'dot-geofence'
   if (type.includes('tracking')) return 'dot-tracking'
   if (type.includes('tire') || type.includes('range_low')) return 'dot-maintenance'
   if (type.includes('soc')) return 'dot-soc'

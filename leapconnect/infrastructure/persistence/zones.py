@@ -44,6 +44,8 @@ class SqlZoneRepository(SqlRepositoryBase, ZoneRepository):
                 notify_on_exit=r.notify_on_exit,
                 enabled=r.enabled,
                 charging_tier_id=r.charging_tier_id,
+                dwell_alert_minutes=r.dwell_alert_minutes or 0,
+                absence_alert_minutes=r.absence_alert_minutes or 0,
             )
             for r in rows
         ]
@@ -65,6 +67,8 @@ class SqlZoneRepository(SqlRepositoryBase, ZoneRepository):
                     row.notify_on_exit = zone.notify_on_exit
                     row.enabled = zone.enabled
                     row.charging_tier_id = zone.charging_tier_id
+                    row.dwell_alert_minutes = zone.dwell_alert_minutes
+                    row.absence_alert_minutes = zone.absence_alert_minutes
                     await session.commit()
                     return zone
             # Create new
@@ -80,6 +84,8 @@ class SqlZoneRepository(SqlRepositoryBase, ZoneRepository):
                 notify_on_exit=zone.notify_on_exit,
                 enabled=zone.enabled,
                 charging_tier_id=zone.charging_tier_id,
+                dwell_alert_minutes=zone.dwell_alert_minutes,
+                absence_alert_minutes=zone.absence_alert_minutes,
             )
             session.add(row)
             await session.commit()

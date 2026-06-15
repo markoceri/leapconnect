@@ -26,3 +26,5 @@ class Zone:
     notify_on_exit: bool = True
     enabled: bool = True
     charging_tier_id: str | None = None  # tier to bill when charging inside
+    dwell_alert_minutes: int = 0  # alert if inside longer than this (0 = off)
+    absence_alert_minutes: int = 0  # alert if away longer than this (0 = off)

@@ -45,6 +45,8 @@ def _zone_to_response(zone: Zone) -> ZoneResponse:
         notify_on_exit=zone.notify_on_exit,
         enabled=zone.enabled,
         charging_tier_id=zone.charging_tier_id,
+        dwell_alert_minutes=zone.dwell_alert_minutes,
+        absence_alert_minutes=zone.absence_alert_minutes,
     )
 
 
@@ -55,6 +57,14 @@ async def get_zones(
     """List zones, optionally filtered by VIN."""
     zones = await repo.get_zones(vin=vin)
     return [_zone_to_response(z) for z in zones]
+
+
+@router.get("/api/zones/presence")
+async def get_zone_presence(container: ContainerDep) -> dict[str, list[str]]:
+    """Map each tracked VIN to the zone names it is currently inside."""
+    if not container.notification_dispatcher:
+        return {}
+    return container.notification_dispatcher.zone_presence()
 
 
 @router.post("/api/zones")
@@ -84,6 +94,8 @@ async def create_zone(
         notify_on_exit=body.notify_on_exit,
         enabled=body.enabled,
         charging_tier_id=body.charging_tier_id or None,
+        dwell_alert_minutes=body.dwell_alert_minutes,
+        absence_alert_minutes=body.absence_alert_minutes,
     )
     saved = await repo.save_zone(zone)
     await _reload_zones(container)
@@ -120,6 +132,10 @@ async def update_zone(
     if body.charging_tier_id is not None:
         # Empty string clears the assignment.
         existing.charging_tier_id = body.charging_tier_id or None
+    if body.dwell_alert_minutes is not None:
+        existing.dwell_alert_minutes = body.dwell_alert_minutes
+    if body.absence_alert_minutes is not None:
+        existing.absence_alert_minutes = body.absence_alert_minutes
     # Recompute geometry: polygons derive center from points, circles use lat/lon.
     if existing.shape_type == "polygon":
         if not existing.points or len(existing.points) < 3:

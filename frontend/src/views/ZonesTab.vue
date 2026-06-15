@@ -129,6 +129,17 @@
             <label class="chk"><input type="checkbox" v-model="form.notify_on_enter" /> Notify on enter</label>
             <label class="chk"><input type="checkbox" v-model="form.notify_on_exit" /> Notify on exit</label>
           </div>
+          <div class="dwell-row">
+            <label class="dwell-field">
+              <span>Alert if inside longer than</span>
+              <input v-model.number="form.dwell_alert_minutes" type="number" min="0" step="5" /> min
+            </label>
+            <label class="dwell-field">
+              <span>Alert if away longer than</span>
+              <input v-model.number="form.absence_alert_minutes" type="number" min="0" step="5" /> min
+            </label>
+            <span class="field-desc">0 = off. Requires the matching event enabled under Settings → Notifications.</span>
+          </div>
         </div>
 
         <div class="form-group">
@@ -234,6 +245,7 @@ const editingId = ref(null)
 const formShapeType = ref('circle')
 const form = reactive({
   name: '', notify_on_enter: true, notify_on_exit: true, charging_tier_id: '',
+  dwell_alert_minutes: 0, absence_alert_minutes: 0,
 })
 // Geometry captured from a freshly drawn shape (add flow only).
 let pendingGeometry = null
@@ -576,6 +588,8 @@ function openAddForm() {
   form.notify_on_enter = true
   form.notify_on_exit = true
   form.charging_tier_id = ''
+  form.dwell_alert_minutes = 0
+  form.absence_alert_minutes = 0
   showForm.value = true
 }
 
@@ -586,6 +600,8 @@ function openEditForm(z) {
   form.notify_on_enter = z.notify_on_enter
   form.notify_on_exit = z.notify_on_exit
   form.charging_tier_id = z.charging_tier_id || ''
+  form.dwell_alert_minutes = z.dwell_alert_minutes || 0
+  form.absence_alert_minutes = z.absence_alert_minutes || 0
   pendingGeometry = null
   showForm.value = true
 }
@@ -604,6 +620,8 @@ async function saveForm() {
         notify_on_enter: form.notify_on_enter,
         notify_on_exit: form.notify_on_exit,
         charging_tier_id: form.charging_tier_id || null,
+        dwell_alert_minutes: form.dwell_alert_minutes || 0,
+        absence_alert_minutes: form.absence_alert_minutes || 0,
         ...pendingGeometry,
       }
       if (pendingGeometry?.shape_type === 'polygon') {
@@ -618,6 +636,8 @@ async function saveForm() {
         notify_on_enter: form.notify_on_enter,
         notify_on_exit: form.notify_on_exit,
         charging_tier_id: form.charging_tier_id || '',
+        dwell_alert_minutes: form.dwell_alert_minutes || 0,
+        absence_alert_minutes: form.absence_alert_minutes || 0,
       })
       const idx = zones.value.findIndex(x => x.id === z.id)
       if (idx !== -1) zones.value[idx] = z
@@ -1170,6 +1190,26 @@ onBeforeUnmount(() => {
 .shape-pill-hint { font-size: 11px; color: var(--muted); }
 .toggle-row { display: flex; flex-direction: column; gap: 8px; }
 .chk { display: flex; align-items: center; gap: 7px; font-size: 13px; color: var(--text); cursor: pointer; }
+.dwell-row { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+.dwell-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text);
+}
+.dwell-field span { flex: 1; }
+.dwell-field input {
+  width: 72px;
+  padding: 6px 8px;
+  background: var(--input);
+  border: 1px solid var(--btn-border);
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 13px;
+  outline: none;
+}
+.dwell-field input:focus { border-color: #00d4ff55; }
 .field-desc { font-size: 11px; color: var(--sub); margin: 6px 0 0; line-height: 1.5; }
 
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }

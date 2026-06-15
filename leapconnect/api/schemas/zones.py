@@ -17,6 +17,8 @@ class ZoneCreate(BaseModel):
     notify_on_exit: bool = True
     enabled: bool = True
     charging_tier_id: str | None = None
+    dwell_alert_minutes: int = 0
+    absence_alert_minutes: int = 0
 
 
 class ZoneUpdate(BaseModel):
@@ -30,6 +32,8 @@ class ZoneUpdate(BaseModel):
     notify_on_exit: bool | None = None
     enabled: bool | None = None
     charging_tier_id: str | None = None
+    dwell_alert_minutes: int | None = None
+    absence_alert_minutes: int | None = None
 
 
 class ZoneResponse(BaseModel):
@@ -45,3 +49,5 @@ class ZoneResponse(BaseModel):
     notify_on_exit: bool
     enabled: bool
     charging_tier_id: str | None = None
+    dwell_alert_minutes: int = 0
+    absence_alert_minutes: int = 0

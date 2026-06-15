@@ -130,6 +130,7 @@ class ChargingSessionCostResponse(BaseModel):
     peak_power_kw: float | None = None
     cost: float | None = None
     note: str | None = None
+    zone_name: str | None = None
 
 
 class ChargingSessionCostCreate(BaseModel):

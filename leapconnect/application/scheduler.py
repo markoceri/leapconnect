@@ -556,21 +556,31 @@ class VehicleDataScheduler:
                     "Scheduler: transition poll failed for %s", vehicle.vin
                 )
 
-    async def _zone_charging_tier(self, vin: str, status) -> str | None:
-        """Charging tier of the first tier-assigned zone the vehicle is in."""
+    async def _zone_for_charge(self, vin: str, status) -> tuple[str | None, str | None]:
+        """Resolve ``(zone_name, charging_tier_id)`` for the charge location.
+
+        ``zone_name`` is the first enabled zone the vehicle is inside (recorded
+        for by-location analytics); ``charging_tier_id`` is the first such zone
+        that also declares a tier.
+        """
         from leapconnect.application.notifications.policies import StatusReading
         from leapconnect.domain.zones import zone_contains
 
         reading = StatusReading.from_status(status)
         if not (reading.lat and reading.lon):
-            return None
-        zones = await self._repo.get_zones(vin)
-        for zone in zones:
-            if not zone.enabled or not zone.charging_tier_id:
+            return None, None
+        zone_name: str | None = None
+        tier_id: str | None = None
+        for zone in await self._repo.get_zones(vin):
+            if not zone.enabled or not zone_contains(zone, reading.lat, reading.lon):
                 continue
-            if zone_contains(zone, reading.lat, reading.lon):
-                return zone.charging_tier_id
-        return None
+            if zone_name is None:
+                zone_name = zone.name
+            if tier_id is None and zone.charging_tier_id:
+                tier_id = zone.charging_tier_id
+            if zone_name and tier_id:
+                break
+        return zone_name, tier_id
 
     async def _handle_charging_cost_event(self, event, status) -> None:
         """Auto-create/finalize session cost on charge_start/charge_stop."""
@@ -590,16 +600,16 @@ class VehicleDataScheduler:
                 # charge_state 2 = DC fast charge typically
                 if charge_state == 2:
                     is_dc = True
+            zone_name, zone_tier = await self._zone_for_charge(event.vin, status)
             if is_dc:
                 tier_id = "public_dc"
-            else:
-                zone_tier = await self._zone_charging_tier(event.vin, status)
-                if zone_tier:
-                    tier_id = zone_tier
+            elif zone_tier:
+                tier_id = zone_tier
             sc = ChargingSessionCost(
                 vin=event.vin,
                 start_ts=event.timestamp,
                 tier_id=tier_id,
+                zone_name=zone_name,
             )
             await self._repo.upsert_session_cost(sc)
             _LOGGER.info(

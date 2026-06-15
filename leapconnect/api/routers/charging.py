@@ -242,6 +242,7 @@ def _cost_response(
         peak_power_kw=sc.peak_power_kw,
         cost=sc.cost,
         note=sc.note,
+        zone_name=sc.zone_name,
     )
 
 

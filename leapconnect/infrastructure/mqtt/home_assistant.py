@@ -95,6 +95,7 @@ class HomeAssistantMqttService:
         vehicle: Vehicle,
         status: VehicleStatus,
         image_package: CarImagePackage | None = None,
+        current_zone: str | None = None,
     ) -> None:
         """Publish full vehicle state to MQTT with HA discovery."""
         if not self._connected or not self._settings.enabled:
@@ -124,7 +125,7 @@ class HomeAssistantMqttService:
 
         # Publish individual sensor values for HA
         try:
-            await self._publish_sensors(prefix, status)
+            await self._publish_sensors(prefix, status, current_zone)
         except Exception as exc:
             _LOGGER.warning("MQTT sensor publish failed for %s: %s", vin, exc)
 
@@ -395,10 +396,16 @@ class HomeAssistantMqttService:
 
         return data
 
-    async def _publish_sensors(self, prefix: str, status: VehicleStatus) -> None:
+    async def _publish_sensors(
+        self, prefix: str, status: VehicleStatus, current_zone: str | None = None
+    ) -> None:
         """Publish individual sensor topics for HA entities."""
         _str = lambda v: str(v) if v is not None else ""  # noqa: E731
         _bool = lambda v: "ON" if v else "OFF"  # noqa: E731
+
+        await self._publish(
+            f"{prefix}/current_zone", current_zone or "Away", retain=True
+        )
 
         # -- Numeric sensors --
         if status.battery:
@@ -820,6 +827,11 @@ class HomeAssistantMqttService:
                 "dc": "energy",
                 "unit": "kWh",
                 "icon": "mdi:flash",
+            },
+            {
+                "key": "current_zone",
+                "name": "Current Zone",
+                "icon": "mdi:map-marker-radius",
             },
         ]
 

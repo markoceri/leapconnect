@@ -388,13 +388,31 @@ class AppContainer:
         if self.mqtt_service and result:
             await self.mqtt_service.publish_command_result(vin, command, result)
 
+    async def _current_zone_name(self, vin: str, status) -> str:
+        """Name of the first enabled zone the vehicle is inside, else 'Away'."""
+        location = getattr(status, "location", None)
+        if not self.repo or not location:
+            return "Away"
+        lat, lon = location.latitude, location.longitude
+        if lat is None or lon is None:
+            return "Away"
+        from leapconnect.domain.zones import zone_contains
+
+        for zone in await self.repo.get_zones(vin):
+            if zone.enabled and zone_contains(zone, lat, lon):
+                return zone.name
+        return "Away"
+
     async def mqtt_publish_status(self, vin: str, status) -> None:
         """Publish vehicle status to MQTT if enabled."""
         if not self.mqtt_service or not self.mqtt_service.is_connected:
             return
         vehicle = self.find_vehicle(vin)
         image_pkg = self.image_packages.get(vin)
-        await self.mqtt_service.publish_vehicle_status(vehicle, status, image_pkg)
+        current_zone = await self._current_zone_name(vin, status)
+        await self.mqtt_service.publish_vehicle_status(
+            vehicle, status, image_pkg, current_zone
+        )
         # Also publish current scheduler intervals
         if self.scheduler:
             s = self.scheduler.settings
@@ -452,7 +470,10 @@ class AppContainer:
         if not image_pkg:
             with suppress(Exception):
                 image_pkg = await self.get_image_package(vehicle.vin)
-        await self.mqtt_service.publish_vehicle_status(vehicle, status, image_pkg)
+        current_zone = await self._current_zone_name(vehicle.vin, status)
+        await self.mqtt_service.publish_vehicle_status(
+            vehicle, status, image_pkg, current_zone
+        )
 
         # Publish cloud stats (consumption rank + weekly breakdown)
         try:

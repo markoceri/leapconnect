@@ -206,7 +206,29 @@ class NotificationDispatcher:
         for zone in exited:
             if zone.notify_on_exit:
                 events.append(("geofence_exit", {"zone_name": zone.name}))
+        # Dwell / absence threshold crossings (per-zone minutes; emit once)
+        for zone, kind in self._zone_tracker.due_alerts(vin, self._zones):
+            minutes = (
+                zone.dwell_alert_minutes
+                if kind == "dwell"
+                else zone.absence_alert_minutes
+            )
+            events.append(
+                (f"zone_{kind}", {"zone_name": zone.name, "minutes": minutes})
+            )
         return events
+
+    def zone_presence(self) -> dict[str, list[str]]:
+        """Map each tracked VIN to the names of the zones it is currently in."""
+        by_id = {z.id: z.name for z in self._zones if z.id}
+        out: dict[str, list[str]] = {}
+        for vin in self._zone_tracker.tracked_vins():
+            out[vin] = [
+                by_id[zid]
+                for zid in self._zone_tracker.current_zone_ids(vin)
+                if zid in by_id
+            ]
+        return out
 
     def _check_cooldown(self, vin: str, event_type: str) -> bool:
         """Returns True if we can send (cooldown expired)."""
@@ -370,10 +392,11 @@ class NotificationDispatcher:
             for channel_id, notifier in self._notifiers.items():
                 if not self._is_event_enabled(channel_id, event_type):
                     continue
-                # Use zone-specific cooldown key for geofence events
+                # Use zone-specific cooldown key for per-zone events
                 cooldown_key = event_type
                 if (
-                    event_type in ("geofence_enter", "geofence_exit")
+                    event_type
+                    in ("geofence_enter", "geofence_exit", "zone_dwell", "zone_absence")
                     and "zone_name" in extra_context
                 ):
                     cooldown_key = f"{event_type}:{extra_context['zone_name']}"

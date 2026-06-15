@@ -154,3 +154,31 @@ def run_alembic_upgrade(sync_conn) -> None:
             sync_conn.execute(
                 text("ALTER TABLE geofences ADD COLUMN charging_tier_id VARCHAR(32)")
             )
+        # 0013: dwell/absence alert thresholds (per-zone minutes).
+        if "dwell_alert_minutes" not in geo_cols:
+            sync_conn.execute(
+                text(
+                    "ALTER TABLE geofences "
+                    "ADD COLUMN dwell_alert_minutes INTEGER NOT NULL DEFAULT 0"
+                )
+            )
+        if "absence_alert_minutes" not in geo_cols:
+            sync_conn.execute(
+                text(
+                    "ALTER TABLE geofences "
+                    "ADD COLUMN absence_alert_minutes INTEGER NOT NULL DEFAULT 0"
+                )
+            )
+
+    # Self-healing for charging_session_costs: 0014 adds zone_name. Add it
+    # idempotently when the create_all + "stamp to head" path skipped the ALTER.
+    sc_inspect = sqlalchemy.inspect(sync_conn)
+    if sc_inspect.has_table("charging_session_costs"):
+        sc_cols = {c["name"] for c in sc_inspect.get_columns("charging_session_costs")}
+        if "zone_name" not in sc_cols:
+            sync_conn.execute(
+                text(
+                    "ALTER TABLE charging_session_costs "
+                    "ADD COLUMN zone_name VARCHAR(128)"
+                )
+            )

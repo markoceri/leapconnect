@@ -161,6 +161,7 @@ class SqlChargingRepository(SqlRepositoryBase, ChargingRepository):
                 peak_power_kw=r.peak_power_kw,
                 cost=r.cost,
                 note=r.note,
+                zone_name=r.zone_name,
             )
             for r in rows
         ]
@@ -180,6 +181,7 @@ class SqlChargingRepository(SqlRepositoryBase, ChargingRepository):
                     row.peak_power_kw = sc.peak_power_kw
                     row.cost = sc.cost
                     row.note = sc.note
+                    row.zone_name = sc.zone_name
                     await session.commit()
                     return sc
             # Create new
@@ -193,6 +195,7 @@ class SqlChargingRepository(SqlRepositoryBase, ChargingRepository):
                 peak_power_kw=sc.peak_power_kw,
                 cost=sc.cost,
                 note=sc.note,
+                zone_name=sc.zone_name,
             )
             session.add(row)
             await session.commit()

@@ -56,7 +56,20 @@ async def test_charge_start_uses_zone_tier_for_ac():
     sched = VehicleDataScheduler(repo=repo)
     # AC charge (charge_state != 2) inside the tier-assigned zone
     await sched._handle_charging_cost_event(_start_event(), _status(45.0, 9.0, 1))
-    assert repo.saved and repo.saved[0].tier_id == "home_solar"
+    assert repo.saved
+    assert repo.saved[0].tier_id == "home_solar"
+    assert repo.saved[0].zone_name == "Home"
+
+
+async def test_charge_start_tags_zone_even_without_tier():
+    zone = _home_zone()
+    zone.charging_tier_id = None  # no tier, but still a known location
+    repo = _StubRepo([zone])
+    sched = VehicleDataScheduler(repo=repo)
+    await sched._handle_charging_cost_event(_start_event(), _status(45.0, 9.0, 1))
+    assert repo.saved
+    assert repo.saved[0].tier_id == "home_grid"  # default tier
+    assert repo.saved[0].zone_name == "Home"  # location still recorded
 
 
 async def test_charge_start_dc_overrides_zone():

@@ -49,3 +49,4 @@ class ChargingSessionCost:
     peak_power_kw: float | None = None
     cost: float | None = None
     note: str | None = None
+    zone_name: str | None = None  # zone the charge happened in (analytics)

@@ -92,3 +92,51 @@ class TestZoneTracker:
         t.update("V1", 45.0, 9.0, zones)  # V1 inside
         entered, exited = t.update("V2", 45.0, 9.0, zones)  # V2 first fix inside
         assert [z.name for z in entered] == ["Home"] and exited == []
+
+    def test_current_zone_ids(self):
+        t = ZoneTracker()
+        zones = [_zone()]
+        t.update("V1", 45.0, 9.0, zones)
+        assert t.current_zone_ids("V1") == {1}
+        t.update("V1", 46.0, 9.0, zones)
+        assert t.current_zone_ids("V1") == set()
+
+
+class TestDueAlerts:
+    def test_dwell_fires_once_after_threshold(self):
+        t = ZoneTracker()
+        zones = [_zone(dwell_alert_minutes=10)]
+        t.update("V1", 45.0, 9.0, zones)  # enter at t≈now
+        # Before the threshold: nothing
+        assert t.due_alerts("V1", zones, now=0) == []
+        # After 10 min: fires once
+        fired = t.due_alerts("V1", zones, now=10**9)
+        assert [(z.name, kind) for z, kind in fired] == [("Home", "dwell")]
+        # Does not fire again while still inside
+        assert t.due_alerts("V1", zones, now=10**9) == []
+
+    def test_dwell_resets_on_exit(self):
+        t = ZoneTracker()
+        zones = [_zone(dwell_alert_minutes=10)]
+        t.update("V1", 45.0, 9.0, zones)
+        assert t.due_alerts("V1", zones, now=10**9)  # fired
+        t.update("V1", 46.0, 9.0, zones)  # exit clears the guard
+        t.update("V1", 45.0, 9.0, zones)  # re-enter
+        assert [k for _, k in t.due_alerts("V1", zones, now=2 * 10**9)] == ["dwell"]
+
+    def test_absence_fires_once_after_exit(self):
+        t = ZoneTracker()
+        zones = [_zone(absence_alert_minutes=60)]
+        t.update("V1", 45.0, 9.0, zones)  # inside — no absence baseline yet
+        assert t.due_alerts("V1", zones, now=10**9) == []
+        t.update("V1", 46.0, 9.0, zones)  # exit records the baseline
+        assert t.due_alerts("V1", zones, now=0) == []  # not long enough
+        fired = t.due_alerts("V1", zones, now=10**9)
+        assert [(z.name, kind) for z, kind in fired] == [("Home", "absence")]
+        assert t.due_alerts("V1", zones, now=10**9) == []  # once only
+
+    def test_no_alerts_when_thresholds_off(self):
+        t = ZoneTracker()
+        zones = [_zone()]  # both thresholds default 0
+        t.update("V1", 45.0, 9.0, zones)
+        assert t.due_alerts("V1", zones, now=10**9) == []
