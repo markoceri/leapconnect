@@ -393,6 +393,8 @@ const showDatePicker = ref(false)
 const customRangeActive = ref(false)
 const customFrom = ref(null)
 const customTo = ref(null)
+// Monotonic counter to discard out-of-order range-snapshot responses.
+let rangeReqSeq = 0
 const calendarYear = ref(new Date().getFullYear())
 const calendarMonth = ref(new Date().getMonth()) // 0-based
 
@@ -711,17 +713,21 @@ async function fetchHistory() {
 
 async function fetchRangeSnapshots(from, to) {
   if (!props.vin || !from || !to) return
+  // Guard against out-of-order responses: a slow request for a previous day
+  // must not overwrite the data of a newer navigation.
+  const seq = ++rangeReqSeq
   loadingKpi.value = true
   loadingCharts.value = true
   chartsReady.value = false
   try {
-    const fromStr = from.toISOString().slice(0, 10)
-    const toStr = to.toISOString().slice(0, 10)
+    const fromStr = toDateStr(from)
+    const toStr = toDateStr(to)
     let url = `/api/vehicles/${props.vin}/history?from_date=${fromStr}&to_date=${toStr}`
     if (downsamplingEnabled.value) {
       url += `&max_points=${downsamplingMaxPoints.value}`
     }
     const res = await api('GET', url)
+    if (seq !== rangeReqSeq) return // superseded by a newer request
     const snaps = res.snapshots || []
     allSnapshots.value = snaps
     todaySnapshots.value = snaps.map(s => ({
@@ -741,6 +747,7 @@ async function fetchRangeSnapshots(from, to) {
     chartsReady.value = true
     loadingCharts.value = false
   } catch (err) {
+    if (seq !== rangeReqSeq) return // superseded — let the newer request own the UI state
     console.error('[HistoryTab] fetchRangeSnapshots failed:', err)
     loadingKpi.value = false
     loadingCharts.value = false
@@ -751,6 +758,16 @@ async function fetchRangeSnapshots(from, to) {
 function formatDate(isoDate) {
   const [, m, d] = isoDate.split('-')
   return `${d}/${m}`
+}
+
+// Local calendar date as YYYY-MM-DD. Must NOT use toISOString(), which
+// converts to UTC and rolls the date back a day for positive-UTC timezones
+// (e.g. Italy in summer), making the fetched day lag the displayed label.
+function toDateStr(d) {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
 }
 
 function formatTimestamp(iso) {
@@ -816,8 +833,8 @@ const data = computed(() => {
         sampleCount: 1,
       }))
     }
-    const fromStr = customFrom.value.toISOString().slice(0, 10)
-    const toStr = customTo.value.toISOString().slice(0, 10)
+    const fromStr = toDateStr(customFrom.value)
+    const toStr = toDateStr(customTo.value)
     return allData.value.filter(d => d.rawDate && d.rawDate >= fromStr && d.rawDate <= toStr)
   }
   // Default: today snapshots
