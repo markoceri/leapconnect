@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - **Home Assistant `Location` device tracker was stuck on "home"** (#16) — the MQTT discovery config forced the state via a `value_template` (`'home' if value_json.latitude`), so the tracker reported *home* whenever GPS coordinates were present, regardless of the actual position. The `state_topic`/`value_template` are dropped; with only the GPS attributes (`json_attributes_topic` + `source_type=gps`) Home Assistant now resolves the home/not_home/zone state from the published latitude/longitude. The discovery config is retained, so existing installs pick up the corrected entity on the next publish.
+- **History → Cloud consumption ranking gauge always showed 0%** (#22) — the *"Energy consumption per 100 km — last 6 weeks"* gauge read `rankResult.result`, which is only an API status code (0 = OK), instead of the actual percentile in the `rankResult.rank` string (e.g. `"85%"`). The gauge, badge and label now derive from the parsed `rank` value.
 
 ## [0.10.0] - 2026-06-13
 

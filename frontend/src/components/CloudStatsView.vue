@@ -150,27 +150,37 @@ const donutCanvas = ref(null)
 let donutChart = null
 
 // Gauge computed
+// The percentile is in `rank.rank`, a string like "85%". `rank.result` is
+// only the API status code (0 = OK), not the ranking — reading it pinned the
+// gauge to 0% for everyone.
+const rankPercent = computed(() => {
+  const raw = weeklyRank.value?.rank?.rank
+  if (raw == null || raw === '') return null
+  const m = String(raw).match(/-?\d+(?:\.\d+)?/)
+  return m ? parseFloat(m[0]) : null
+})
+
 const gaugeValue = computed(() => {
-  if (!weeklyRank.value?.rank) return '—'
-  return weeklyRank.value.rank.result
+  const r = rankPercent.value
+  return r != null ? r : '—'
 })
 
 const gaugeArc = computed(() => {
-  const val = weeklyRank.value?.rank?.result ?? 0
+  const val = rankPercent.value ?? 0
   // 0–100% rank, map to full 245 arc (270°)
   const pct = Math.min(val / 100, 1)
   return pct * 245
 })
 
 const gaugeColor = computed(() => {
-  const val = weeklyRank.value?.rank?.result ?? 0
+  const val = rankPercent.value ?? 0
   if (val > 80) return '#00B359'
   if (val >= 40) return '#0093FF'
   return '#FFA900'
 })
 
 const rankLabel = computed(() => {
-  const r = weeklyRank.value?.rank?.result
+  const r = rankPercent.value
   if (r == null) return '—'
   if (r > 80) return 'Excellent'
   if (r >= 40) return 'Good'
@@ -178,12 +188,12 @@ const rankLabel = computed(() => {
 })
 
 const rankPctText = computed(() => {
-  const r = weeklyRank.value?.rank?.result
+  const r = rankPercent.value
   return r != null ? `${r}%` : '—'
 })
 
 const rankBadgeColor = computed(() => {
-  const r = weeklyRank.value?.rank?.result
+  const r = rankPercent.value
   if (r == null) return 'var(--border)'
   if (r > 80) return '#00B359'
   if (r >= 40) return '#0093FF'
