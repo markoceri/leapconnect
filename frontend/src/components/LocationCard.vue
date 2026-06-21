@@ -64,7 +64,7 @@
       </div>
       <p class="dest-hint">Tap the map to select a destination, or enter it manually.</p>
       <div class="dest-form">
-        <input v-model="destAddress" class="dest-input" placeholder="Address" :disabled="!canSendDestination" />
+        <input v-model="destAddress" class="dest-input" placeholder="Address (optional)" :disabled="!canSendDestination" />
         <input v-model="destName" class="dest-input" placeholder="Name (optional)" :disabled="!canSendDestination" />
         <div class="dest-coords-row">
           <input v-model.number="destLat" class="dest-input dest-coord" type="number" step="any" placeholder="Latitude" :disabled="!canSendDestination" />
@@ -150,7 +150,7 @@ const vehicleLng = computed(() => props.location?.longitude || 0)
 const hasVehicleLocation = computed(() => !!(props.location?.latitude && props.location?.longitude))
 
 const canSendDest = computed(() =>
-  destAddress.value.trim() && destLat.value != null && destLng.value != null
+  destLat.value != null && destLng.value != null
 )
 
 // --- Custom marker icons ---

@@ -132,7 +132,7 @@ class MediaParams(BaseModel):
 
 
 class DestinationParams(BaseModel):
-    address: str = Field(min_length=1)
+    address: str = ""
     address_name: str = ""
     latitude: float
     longitude: float
@@ -229,10 +229,16 @@ async def _video(client, vin: str, p: MediaParams) -> dict:
 
 
 async def _send_destination(client, vin: str, p: DestinationParams) -> dict:
+    # When no address text is supplied, fall back to a plain-ASCII coordinate
+    # label so the head unit always has a parseable target without the
+    # non-ASCII street names that crash the T03 navigator (issue #14).
+    coord_label = f"{p.latitude:.6f}, {p.longitude:.6f}"
+    address = p.address or coord_label
+    address_name = p.address_name or p.address or coord_label
     return await client.send_destination(
         vin,
-        address=p.address,
-        address_name=p.address_name or p.address,
+        address=address,
+        address_name=address_name,
         latitude=p.latitude,
         longitude=p.longitude,
     )

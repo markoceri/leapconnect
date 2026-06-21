@@ -154,6 +154,39 @@ class TestGenericCommandEndpoint:
         assert resp.status_code == 200
         stub.windows.assert_awaited_once_with("VIN123", value="100")
 
+    def test_send_destination_with_address(self, command_client):
+        client, stub = command_client
+        stub.send_destination.return_value = {"status": "ok"}
+        resp = client.post(
+            "/api/vehicles/VIN123/commands/send-destination",
+            json={"address": "Home", "latitude": 1.5, "longitude": 2.5},
+        )
+        assert resp.status_code == 200
+        stub.send_destination.assert_awaited_once_with(
+            "VIN123",
+            address="Home",
+            address_name="Home",
+            latitude=1.5,
+            longitude=2.5,
+        )
+
+    def test_send_destination_coords_only_falls_back_to_label(self, command_client):
+        """Issue #14: omitting the address sends a plain-ASCII coordinate label."""
+        client, stub = command_client
+        stub.send_destination.return_value = {"status": "ok"}
+        resp = client.post(
+            "/api/vehicles/VIN123/commands/send-destination",
+            json={"latitude": 1.5, "longitude": 2.5},
+        )
+        assert resp.status_code == 200
+        stub.send_destination.assert_awaited_once_with(
+            "VIN123",
+            address="1.500000, 2.500000",
+            address_name="1.500000, 2.500000",
+            latitude=1.5,
+            longitude=2.5,
+        )
+
     def test_requires_session(self, client):
         resp = client.post("/api/vehicles/VIN123/commands/lock")
         assert resp.status_code == 401

@@ -30,7 +30,7 @@
 
             <!-- Form -->
             <div class="dm-form">
-              <input v-model="destAddress" class="dm-input" placeholder="Address" />
+              <input v-model="destAddress" class="dm-input" placeholder="Address (optional)" />
               <input v-model="destName" class="dm-input" placeholder="Name (optional)" />
               <div class="dm-coords-row">
                 <input v-model.number="destLat" class="dm-input dm-coord" type="number" step="any" placeholder="Latitude" />
@@ -93,7 +93,7 @@ const vehicleLng = computed(() => props.location?.longitude || 0)
 const hasVehicleLocation = computed(() => !!(props.location?.latitude && props.location?.longitude))
 
 const canSend = computed(() =>
-  destAddress.value.trim() && destLat.value != null && destLng.value != null
+  destLat.value != null && destLng.value != null
 )
 
 function createIcon(color, emoji) {
