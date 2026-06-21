@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-06-22
+
 ### Added
 - **Zones — a first-class bounded context with its own top-level tab** — geofences are promoted out of *Settings → Notifications* into a dedicated **Zones** tab built around a full-bleed map:
   - Draw **circular or polygonal** zones; reshape an existing zone's geometry directly on the map (geoman.io vertex editing, shown on demand rather than via a persistent toolbar).
