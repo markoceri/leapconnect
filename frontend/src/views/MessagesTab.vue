@@ -135,13 +135,13 @@ onMounted(() => {
 }
 
 .unread-badge {
-  background: #00d4ff18;
-  border: 1px solid #00d4ff44;
+  background: rgba(var(--accent-rgb), 0.094);
+  border: 1px solid rgba(var(--accent-rgb), 0.267);
   border-radius: 20px;
   padding: 4px 12px;
   font-size: 11px;
   font-weight: 700;
-  color: #00d4ff;
+  color: var(--accent);
   letter-spacing: 0.04em;
 }
 
@@ -198,8 +198,8 @@ onMounted(() => {
   border-color: var(--border);
 }
 .message-item.unread {
-  background: #00d4ff08;
-  border-color: #00d4ff22;
+  background: rgba(var(--accent-rgb), 0.031);
+  border-color: rgba(var(--accent-rgb), 0.133);
 }
 
 .message-indicator {
@@ -214,8 +214,8 @@ onMounted(() => {
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: #00d4ff;
-  box-shadow: 0 0 6px #00d4ff;
+  background: var(--accent);
+  box-shadow: 0 0 6px var(--accent);
 }
 
 .message-content {

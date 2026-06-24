@@ -501,7 +501,7 @@ watch(() => props.visible, (val) => {
   position: sticky; top: 0; background: var(--card); z-index: 1;
 }
 .acs-header-left { display: flex; align-items: center; gap: 8px; }
-.acs-header-icon { color: #00d4ff; }
+.acs-header-icon { color: var(--accent); }
 .acs-title { font-size: 15px; font-weight: 600; color: var(--text); }
 .acs-close {
   background: none; border: none; color: var(--muted); font-size: 22px;
@@ -531,7 +531,7 @@ watch(() => props.visible, (val) => {
   cursor: pointer; padding: 4px; border-radius: 8px;
   transition: all .15s; display: flex; align-items: center; justify-content: center;
 }
-.acs-time-arrow:hover { color: #00d4ff; background: rgba(0,212,255,.1); }
+.acs-time-arrow:hover { color: var(--accent); background: rgba(var(--accent-rgb), .1); }
 .acs-time-arrow:active { transform: scale(0.9); }
 .acs-time-digit {
   font-size: 32px; font-weight: 700; color: var(--text);
@@ -548,7 +548,7 @@ watch(() => props.visible, (val) => {
   background: var(--bg); color: var(--text); font-size: 14px;
   outline: none; transition: border-color .2s;
 }
-.acs-input:focus { border-color: #00d4ff; }
+.acs-input:focus { border-color: var(--accent); }
 
 /* Temperature */
 .acs-temp-control { display: flex; align-items: center; gap: 10px; }
@@ -558,7 +558,7 @@ watch(() => props.visible, (val) => {
   font-size: 18px; display: flex; align-items: center; justify-content: center;
   transition: border-color .2s;
 }
-.acs-step-btn:hover { border-color: #00d4ff; }
+.acs-step-btn:hover { border-color: var(--accent); }
 .acs-temp-value { font-size: 18px; font-weight: 700; color: var(--text); min-width: 56px; text-align: center; }
 
 /* Fan */
@@ -569,8 +569,8 @@ watch(() => props.visible, (val) => {
   font-size: 13px; font-weight: 600; transition: all .2s; text-align: center;
 }
 .acs-fan-btn.active {
-  border-color: #00d4ff; color: #00d4ff;
-  background: rgba(0,212,255,.1);
+  border-color: var(--accent); color: var(--accent);
+  background: rgba(var(--accent-rgb), .1);
 }
 
 /* Mode / Operate buttons */
@@ -582,8 +582,8 @@ watch(() => props.visible, (val) => {
   display: flex; align-items: center; justify-content: center; gap: 4px;
 }
 .acs-mode-btn.active {
-  border-color: #00d4ff; color: #00d4ff;
-  background: rgba(0,212,255,.1);
+  border-color: var(--accent); color: var(--accent);
+  background: rgba(var(--accent-rgb), .1);
 }
 
 /* Days */
@@ -594,8 +594,8 @@ watch(() => props.visible, (val) => {
   font-size: 11px; font-weight: 600; transition: all .2s; text-align: center;
 }
 .acs-day-btn.active {
-  border-color: #00d4ff; color: #00d4ff;
-  background: rgba(0,212,255,.08);
+  border-color: var(--accent); color: var(--accent);
+  background: rgba(var(--accent-rgb), .08);
 }
 
 /* Toggle */
@@ -616,7 +616,7 @@ watch(() => props.visible, (val) => {
 /* Apply */
 .acs-apply {
   width: 100%; padding: 12px; border: none; border-radius: 10px;
-  background: linear-gradient(135deg, #00d4ff, #7c6aff);
+  background: linear-gradient(135deg, var(--accent), #7c6aff);
   color: #fff; font-weight: 600; font-size: 14px;
   cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;
   transition: opacity .2s;
@@ -683,20 +683,20 @@ watch(() => props.visible, (val) => {
   background: transparent; transition: all .2s;
   display: flex; align-items: center; justify-content: center; gap: 4px;
 }
-.acs-card-btn.edit { color: #00d4ff; }
-.acs-card-btn.edit:hover { background: rgba(0,212,255,.1); border-color: #00d4ff44; }
+.acs-card-btn.edit { color: var(--accent); }
+.acs-card-btn.edit:hover { background: rgba(var(--accent-rgb), .1); border-color: rgba(var(--accent-rgb), 0.267); }
 .acs-card-btn.delete { color: #ff5050; }
 .acs-card-btn.delete:hover { background: rgba(255,80,80,.1); border-color: #ff505044; }
 
 /* Add button */
 .acs-add-btn {
   width: 100%; padding: 12px; border: 1px dashed rgba(255,255,255,.15);
-  border-radius: 10px; background: transparent; color: #00d4ff;
+  border-radius: 10px; background: transparent; color: var(--accent);
   font-weight: 600; font-size: 13px; cursor: pointer;
   display: flex; align-items: center; justify-content: center; gap: 6px;
   transition: all .2s;
 }
-.acs-add-btn:hover { background: rgba(0,212,255,.06); border-color: #00d4ff44; }
+.acs-add-btn:hover { background: rgba(var(--accent-rgb), .06); border-color: rgba(var(--accent-rgb), 0.267); }
 
 /* Back button */
 .acs-back-btn {
@@ -705,7 +705,7 @@ watch(() => props.visible, (val) => {
   cursor: pointer; padding: 0; margin-bottom: 4px; font-weight: 500;
   transition: color .2s;
 }
-.acs-back-btn:hover { color: #00d4ff; }
+.acs-back-btn:hover { color: var(--accent); }
 
 .modal-enter-active, .modal-leave-active { transition: opacity .2s; }
 .modal-enter-from, .modal-leave-to { opacity: 0; }

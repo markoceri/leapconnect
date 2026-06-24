@@ -21,6 +21,7 @@ from leapconnect.api.routers import (
     identity,
     maintenance,
     notifications,
+    styling,
     system,
     trips,
     vehicles,
@@ -86,6 +87,7 @@ def create_app() -> FastAPI:
     app.include_router(identity.router)
     app.include_router(connection.router)
     app.include_router(vehicles.router)
+    app.include_router(styling.router)
     app.include_router(history.router)
     app.include_router(commands.router)
     app.include_router(trips.router)

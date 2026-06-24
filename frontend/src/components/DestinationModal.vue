@@ -55,6 +55,7 @@
 
 <script setup>
 import { ref, computed, watch, nextTick, onBeforeUnmount } from 'vue'
+import { accentHex } from '../utils/theme'
 import { useAppStore } from '../stores/appStore'
 import { useToast } from '../composables/useToast'
 import L from 'leaflet'
@@ -111,7 +112,7 @@ function createIcon(color, emoji) {
   })
 }
 
-const vehicleIcon = createIcon('#00d4ff', '🚗')
+const vehicleIcon = createIcon(accentHex(), '🚗')
 const deviceIcon = createIcon('#00e676', '📍')
 const destIcon = createIcon('#ff7043', '🎯')
 
@@ -429,7 +430,7 @@ onBeforeUnmount(() => { destroyMap() })
   border-radius: 50%;
   display: inline-block;
 }
-.dm-legend-dot.vehicle { background: #00d4ff; box-shadow: 0 0 4px #00d4ff; }
+.dm-legend-dot.vehicle { background: var(--accent); box-shadow: 0 0 4px var(--accent); }
 .dm-legend-dot.device { background: #00e676; box-shadow: 0 0 4px #00e676; }
 .dm-legend-dot.dest { background: #ff7043; box-shadow: 0 0 4px #ff7043; }
 .dm-hint {
@@ -452,7 +453,7 @@ onBeforeUnmount(() => { destroyMap() })
   outline: none;
   transition: border-color 0.2s;
 }
-.dm-input:focus { border-color: #00d4ff; }
+.dm-input:focus { border-color: var(--accent); }
 .dm-input::placeholder { color: var(--muted2); }
 .dm-coords-row { display: flex; gap: 8px; }
 .dm-coord { flex: 1; }

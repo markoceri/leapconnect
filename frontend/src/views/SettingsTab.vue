@@ -108,7 +108,7 @@
         <InfoRow label="VIN" color="#e2e6f0">
           <span style="font-family:var(--mono);font-size:11px">{{ vehicle.vin || '—' }}</span>
         </InfoRow>
-        <InfoRow label="Nickname" :value="vehicle.vehicle_nickname || '—'" color="#00d4ff" />
+        <InfoRow label="Nickname" :value="vehicle.vehicle_nickname || '—'" color="var(--accent)" />
       </SectionCard>
 
       <SectionCard title="Preferences" :icon="SlidersHorizontal">
@@ -128,11 +128,53 @@
               :class="{ active: store.theme === 'light' }"
               @click="store.setTheme('light')"
             ><Sun :size="13" /> Light</button>
+            <button
+              class="theme-btn"
+              :class="{ active: store.theme === 'vehicle' }"
+              :disabled="!paletteColors.length"
+              @click="store.setTheme('vehicle')"
+            ><Palette :size="13" /> Car colour</button>
           </div>
         </div>
         <InfoRow label="Distance unit" value="km" color="#e2e6f0" />
         <InfoRow label="Pressure unit" value="bar" color="#e2e6f0" />
         <InfoRow label="Language" value="English" color="#e2e6f0" />
+      </SectionCard>
+
+      <SectionCard title="Car colour theme" :icon="Palette">
+        <div class="pref-row pref-row-stack">
+          <div class="pref-info">
+            <span class="pref-label">{{ vehicle.car_type || 'Vehicle' }} factory colours</span>
+            <span class="pref-hint">
+              Pick a colour to build the whole "Car colour" theme around it. Choose it as the active theme above.
+            </span>
+          </div>
+          <div class="color-swatches">
+            <button
+              v-for="c in paletteColors"
+              :key="c.key"
+              class="color-swatch"
+              :class="{ active: selectedColorKey === c.key }"
+              :style="{ background: c.hex }"
+              :title="c.name"
+              @click="selectColor(c.key)"
+            ><Check v-if="selectedColorKey === c.key" :size="13" /></button>
+          </div>
+          <span v-if="selectedColorName" class="color-selected-name">{{ selectedColorName }}</span>
+        </div>
+
+        <div class="pref-row">
+          <div class="pref-info">
+            <span class="pref-label">Auto-detect from vehicle</span>
+            <span class="pref-hint">Pick the colour automatically from the car's colour &amp; image, and use the car theme</span>
+          </div>
+          <ToggleSwitch :modelValue="store.autoThemeFromVehicle" @update:modelValue="store.setAutoTheme" />
+        </div>
+
+        <button class="save-btn detect-btn" style="margin-top:4px" :disabled="detectingColor" @click="autoDetectColor">
+          <Sparkles :size="14" /> <span>{{ detectingColor ? 'Detecting…' : 'Detect colour now' }}</span>
+        </button>
+        <div v-if="detectMessage" class="pref-hint" style="margin-top:8px">{{ detectMessage }}</div>
       </SectionCard>
 
       <SectionCard title="Database" :icon="Database">
@@ -963,7 +1005,7 @@
       <SectionCard title="About LeapConnect" :icon="Info">
         <div class="about-header">
           <div class="about-logo">
-            <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="#00d4ff" stroke-width="2">
+            <svg viewBox="0 0 24 24" width="32" height="32" fill="none" style="stroke: var(--accent)" stroke-width="2">
               <path d="M5 17H3a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v9a2 2 0 01-2 2h-2" />
               <circle cx="9" cy="17" r="2" /><circle cx="17" cy="17" r="2" />
             </svg>
@@ -1037,7 +1079,7 @@
         <div v-if="showLeapmotorEdit" class="mqtt-overlay" @click.self="closeLeapmotorModal">
           <div class="mqtt-modal">
             <div class="mqtt-modal-header">
-              <KeyRound :size="16" style="color:#00d4ff" />
+              <KeyRound :size="16" style="color:var(--accent)" />
               <span class="mqtt-modal-title">Leapmotor Credentials</span>
               <button class="mqtt-modal-close" @click="closeLeapmotorModal">&times;</button>
             </div>
@@ -1073,7 +1115,7 @@
         <div v-if="showCertEdit" class="mqtt-overlay" @click.self="closeCertModal">
           <div class="mqtt-modal">
             <div class="mqtt-modal-header">
-              <ShieldCheck :size="16" style="color:#00d4ff" />
+              <ShieldCheck :size="16" style="color:var(--accent)" />
               <span class="mqtt-modal-title">Update Certificates</span>
               <button class="mqtt-modal-close" @click="closeCertModal">&times;</button>
             </div>
@@ -1112,7 +1154,7 @@
         <div v-if="showMqttEdit" class="mqtt-overlay" @click.self="closeMqttModal">
           <div class="mqtt-modal">
             <div class="mqtt-modal-header">
-              <Wifi :size="16" style="color:#00d4ff" />
+              <Wifi :size="16" style="color:var(--accent)" />
               <span class="mqtt-modal-title">MQTT Configuration</span>
               <button class="mqtt-modal-close" @click="closeMqttModal">&times;</button>
             </div>
@@ -1171,7 +1213,7 @@
         <div v-if="showRaw" class="mqtt-overlay" @click.self="showRaw = false">
           <div class="mqtt-modal" style="max-width:560px">
             <div class="mqtt-modal-header">
-              <Code :size="16" style="color:#00d4ff" />
+              <Code :size="16" style="color:var(--accent)" />
               <span class="mqtt-modal-title">Raw JSON Data</span>
               <button class="mqtt-modal-close" @click="showRaw = false">&times;</button>
             </div>
@@ -1203,7 +1245,7 @@ import ToggleSwitch from '../components/ToggleSwitch.vue'
 import LogViewer from '../components/LogViewer.vue'
 import { api } from '../composables/useApi'
 import { useAppStore } from '../stores/appStore'
-import { User, Car, Bell, SlidersHorizontal, BarChart3, Code, KeyRound, ShieldCheck, Wifi, Wrench, Settings, Github, Info, Star, AlertTriangle, ExternalLink, Moon, Sun, RefreshCw, Terminal, Navigation, Activity, Eye, EyeOff, Send, ChevronDown, ChevronRight, Search, Locate, Zap, CarFront, Lock, X, Trash2, Link2, Copy, Check, Home, Plug, Clock, Plus, Database } from 'lucide-vue-next'
+import { User, Car, Bell, SlidersHorizontal, BarChart3, Code, KeyRound, ShieldCheck, Wifi, Wrench, Settings, Github, Info, Star, AlertTriangle, ExternalLink, Moon, Sun, RefreshCw, Terminal, Navigation, Activity, Eye, EyeOff, Send, ChevronDown, ChevronRight, Search, Locate, Zap, CarFront, Lock, X, Trash2, Link2, Copy, Check, Home, Plug, Clock, Plus, Database, Palette, Sparkles } from 'lucide-vue-next'
 
 const store = useAppStore()
 
@@ -1224,6 +1266,42 @@ const props = defineProps({
 
 const showRaw = ref(false)
 const rawTab = ref('vehicle')
+
+// --- Appearance / accent colour ---
+const paletteColors = computed(() => store.vehiclePalettes[props.vehicle?.vin]?.colors || [])
+const selectedColorKey = computed(() => store.vehiclePalettes[props.vehicle?.vin]?.selected?.key || null)
+const selectedColorName = computed(() => store.vehiclePalettes[props.vehicle?.vin]?.selected?.name || '')
+const detectingColor = ref(false)
+const detectMessage = ref('')
+
+async function selectColor(key) {
+  detectMessage.value = ''
+  await store.setVehicleColor(props.vehicle.vin, key)
+  await store.setTheme('vehicle')
+}
+
+async function autoDetectColor() {
+  detectingColor.value = true
+  detectMessage.value = ''
+  try {
+    const res = await store.detectVehicleColor(props.vehicle.vin)
+    if (res?.detected) {
+      const via = res.source === 'image' ? 'from the car image' : 'from the reported colour'
+      detectMessage.value = `Detected ${res.detected.name} ${via}.`
+      await store.setTheme('vehicle')
+    } else {
+      detectMessage.value = 'Could not detect a colour for this vehicle.'
+    }
+  } catch {
+    detectMessage.value = 'Colour detection failed.'
+  } finally {
+    detectingColor.value = false
+  }
+}
+
+onMounted(() => {
+  if (props.vehicle?.vin) store.loadVehiclePalette(props.vehicle.vin)
+})
 
 // LeapConnect user edit
 const showUserEdit = ref(false)
@@ -2476,9 +2554,9 @@ function stopTelegramUsersPolling() {
 }
 .nav-pill:hover { color: var(--sub); background: #ffffff06; }
 .nav-pill.active {
-  background: #00d4ff12;
-  color: #00d4ff;
-  box-shadow: 0 0 0 1px #00d4ff22;
+  background: rgba(var(--accent-rgb), 0.071);
+  color: var(--accent);
+  box-shadow: 0 0 0 1px rgba(var(--accent-rgb), 0.133);
 }
 
 /* Grid for compact cards */
@@ -2508,14 +2586,14 @@ function stopTelegramUsersPolling() {
   width: 52px;
   height: 52px;
   border-radius: 50%;
-  background: #00d4ff22;
-  border: 2px solid #00d4ff55;
+  background: rgba(var(--accent-rgb), 0.133);
+  border: 2px solid rgba(var(--accent-rgb), 0.333);
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 18px;
   font-weight: 700;
-  color: #00d4ff;
+  color: var(--accent);
 }
 .account-name {
   font-size: 15px;
@@ -2539,7 +2617,7 @@ function stopTelegramUsersPolling() {
   transition: all 0.2s;
   margin-bottom: 12px;
 }
-.action-btn:hover { color: #00d4ff; border-color: #00d4ff44; }
+.action-btn:hover { color: var(--accent); border-color: rgba(var(--accent-rgb), 0.267); }
 
 .edit-panel {
   padding: 12px 0;
@@ -2567,7 +2645,7 @@ function stopTelegramUsersPolling() {
   outline: none;
   transition: border-color 0.2s;
 }
-.form-group input:focus { border-color: #00d4ff55; }
+.form-group input:focus { border-color: rgba(var(--accent-rgb), 0.333); }
 .form-group input::placeholder { color: var(--muted2); }
 
 .form-divider {
@@ -2600,8 +2678,8 @@ function stopTelegramUsersPolling() {
   cursor: pointer;
   transition: border-color 0.2s;
 }
-.file-upload:hover { border-color: #00d4ff55; }
-.file-upload.filled { border-style: solid; border-color: #00d4ff44; color: var(--text); }
+.file-upload:hover { border-color: rgba(var(--accent-rgb), 0.333); }
+.file-upload.filled { border-style: solid; border-color: rgba(var(--accent-rgb), 0.267); color: var(--text); }
 
 .form-hint {
   display: block;
@@ -2613,17 +2691,19 @@ function stopTelegramUsersPolling() {
 .save-btn {
   width: 100%;
   padding: 10px;
-  background: linear-gradient(135deg, #00d4ff22, #00d4ff44);
-  border: 1px solid #00d4ff55;
+  background: linear-gradient(135deg, rgba(var(--accent-rgb), 0.133), rgba(var(--accent-rgb), 0.267));
+  border: 1px solid rgba(var(--accent-rgb), 0.333);
   border-radius: 8px;
-  color: #00d4ff;
+  color: var(--accent);
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s;
 }
-.save-btn:hover { background: linear-gradient(135deg, #00d4ff33, #00d4ff55); }
+.save-btn:hover { background: linear-gradient(135deg, rgba(var(--accent-rgb), 0.2), rgba(var(--accent-rgb), 0.333)); }
 .save-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.detect-btn { display: flex; align-items: center; justify-content: center; gap: 6px; }
+.detect-btn svg { flex-shrink: 0; }
 
 .field-error {
   margin-top: 0.6rem;
@@ -2732,7 +2812,7 @@ function stopTelegramUsersPolling() {
   font-family: var(--mono);
   transition: border 0.2s;
 }
-.secret-input-wrap input:focus { border-color: #00d4ff55; outline: none; }
+.secret-input-wrap input:focus { border-color: rgba(var(--accent-rgb), 0.333); outline: none; }
 .secret-input-wrap input::placeholder { color: var(--muted2); }
 .secret-toggle-btn {
   position: absolute;
@@ -2759,7 +2839,7 @@ function stopTelegramUsersPolling() {
   cursor: pointer;
   transition: all 0.2s;
 }
-.raw-toggle:hover { color: var(--sub); border-color: #00d4ff44; }
+.raw-toggle:hover { color: var(--sub); border-color: rgba(var(--accent-rgb), 0.267); }
 
 .raw-panel {
   max-height: 400px;
@@ -2875,8 +2955,8 @@ function stopTelegramUsersPolling() {
   transition: all 0.15s;
 }
 .interval-btn:hover:not(:disabled) {
-  border-color: #00d4ff55;
-  color: #00d4ff;
+  border-color: rgba(var(--accent-rgb), 0.333);
+  color: var(--accent);
 }
 .interval-btn:disabled {
   opacity: 0.3;
@@ -2885,7 +2965,7 @@ function stopTelegramUsersPolling() {
 .interval-value {
   font-size: 13px;
   font-weight: 600;
-  color: #00d4ff;
+  color: var(--accent);
   min-width: 52px;
   text-align: center;
   font-family: var(--mono);
@@ -2902,7 +2982,7 @@ function stopTelegramUsersPolling() {
   transition: all 0.15s;
   margin-left: 4px;
 }
-.interval-set-btn:hover:not(:disabled) { background: var(--btn-hover); color: #00d4ff; }
+.interval-set-btn:hover:not(:disabled) { background: var(--btn-hover); color: var(--accent); }
 .interval-set-btn:disabled { opacity: 0.35; cursor: not-allowed; }
 
 .pin-input-wrap {
@@ -2923,7 +3003,7 @@ function stopTelegramUsersPolling() {
   outline: none;
   transition: border-color 0.15s;
 }
-.pin-input:focus { border-color: #00d4ff55; }
+.pin-input:focus { border-color: rgba(var(--accent-rgb), 0.333); }
 .pin-input::placeholder { color: #444; letter-spacing: 0; }
 .pin-eye-btn {
   position: absolute;
@@ -3016,7 +3096,7 @@ function stopTelegramUsersPolling() {
   outline: none;
   transition: border-color 0.2s;
 }
-.pref-input:focus { border-color: #00d4ff55; }
+.pref-input:focus { border-color: rgba(var(--accent-rgb), 0.333); }
 .pref-unit {
   font-size: 11px;
   color: var(--muted);
@@ -3032,6 +3112,27 @@ function stopTelegramUsersPolling() {
 .theme-btn.active {
   background: #7c6aff22; border-color: #7c6aff66; color: #7c6aff;
 }
+
+/* Accent colour swatches */
+.pref-row-stack { flex-direction: column; align-items: flex-start; gap: 10px; }
+.color-swatches { display: flex; flex-wrap: wrap; gap: 8px; }
+.color-swatch {
+  width: 30px; height: 30px; border-radius: 50%;
+  border: 2px solid var(--border);
+  cursor: pointer; transition: all 0.15s;
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; padding: 0;
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,0.15);
+}
+.color-swatch:hover { transform: scale(1.1); }
+.color-swatch.active {
+  border-color: var(--text);
+  box-shadow: 0 0 0 2px var(--card), 0 0 0 4px var(--accent);
+}
+.color-swatch-default {
+  background: var(--input); color: var(--muted);
+}
+.color-selected-name { font-size: 12px; color: var(--sub); font-weight: 600; }
 
 /* MQTT Modal */
 .mqtt-overlay {
@@ -3114,7 +3215,7 @@ function stopTelegramUsersPolling() {
   cursor: pointer;
   transition: all 0.2s;
 }
-.test-btn:hover:not(:disabled) { color: #00d4ff; border-color: #00d4ff44; }
+.test-btn:hover:not(:disabled) { color: var(--accent); border-color: rgba(var(--accent-rgb), 0.267); }
 .test-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* ── About ── */
@@ -3127,7 +3228,7 @@ function stopTelegramUsersPolling() {
 .about-logo {
   width: 48px; height: 48px;
   border-radius: 12px;
-  background: rgba(0,212,255,0.08);
+  background: rgba(var(--accent-rgb), 0.08);
   display: flex; align-items: center; justify-content: center;
 }
 .about-app-name { font-size: 18px; font-weight: 700; color: #e2e6f0; }
@@ -3136,7 +3237,7 @@ function stopTelegramUsersPolling() {
   font-size: 13px; color: #8a90a0; line-height: 1.6; margin: 0;
 }
 .about-desc a {
-  color: #00d4ff; text-decoration: none;
+  color: var(--accent); text-decoration: none;
 }
 .about-desc a:hover { text-decoration: underline; }
 .about-links {
@@ -3153,8 +3254,8 @@ function stopTelegramUsersPolling() {
   transition: all 0.2s;
 }
 .about-link-card:hover {
-  background: rgba(0,212,255,0.06);
-  border-color: rgba(0,212,255,0.2);
+  background: rgba(var(--accent-rgb), 0.06);
+  border-color: rgba(var(--accent-rgb), 0.2);
 }
 .about-link-card.star { color: #fbbf24; }
 .about-link-card.star:hover { background: rgba(251,191,36,0.06); border-color: rgba(251,191,36,0.2); }
@@ -3187,7 +3288,7 @@ function stopTelegramUsersPolling() {
   outline: none;
   transition: border-color 0.2s;
 }
-.log-level-select:focus { border-color: #00d4ff55; }
+.log-level-select:focus { border-color: rgba(var(--accent-rgb), 0.333); }
 .log-level-select option {
   background: var(--card, #1a1e2e);
   color: var(--text);
@@ -3234,7 +3335,7 @@ function stopTelegramUsersPolling() {
   color: var(--sub);
   transition: border 0.2s;
 }
-.event-search-input:focus { border-color: #00d4ff55; outline: none; }
+.event-search-input:focus { border-color: rgba(var(--accent-rgb), 0.333); outline: none; }
 .event-search-input::placeholder { color: var(--muted2); }
 .event-search-clear {
   position: absolute;
@@ -3307,7 +3408,7 @@ function stopTelegramUsersPolling() {
   cursor: pointer;
   transition: all 0.15s;
 }
-.event-test-btn:hover { color: var(--sub); border-color: #00d4ff44; }
+.event-test-btn:hover { color: var(--sub); border-color: rgba(var(--accent-rgb), 0.267); }
 .event-test-btn:disabled { opacity: 0.3; cursor: not-allowed; }
 .notif-event-label {
   font-size: 13px;
@@ -3437,7 +3538,7 @@ function stopTelegramUsersPolling() {
   font-size: 12px;
   outline: none;
 }
-.band-name-input:focus { border-color: #00d4ff55; }
+.band-name-input:focus { border-color: rgba(var(--accent-rgb), 0.333); }
 .band-price-input { width: 65px; }
 .band-schedule {
   margin-left: 22px;
@@ -3469,9 +3570,9 @@ function stopTelegramUsersPolling() {
   justify-content: center;
 }
 .day-btn.active {
-  background: #00d4ff22;
-  border-color: #00d4ff;
-  color: #00d4ff;
+  background: rgba(var(--accent-rgb), 0.133);
+  border-color: var(--accent);
+  color: var(--accent);
 }
 .time-range {
   display: flex;
@@ -3492,7 +3593,7 @@ function stopTelegramUsersPolling() {
   text-align: center;
   outline: none;
 }
-.time-input:focus { border-color: #00d4ff55; }
+.time-input:focus { border-color: rgba(var(--accent-rgb), 0.333); }
 .icon-btn {
   display: flex;
   align-items: center;
@@ -3515,17 +3616,17 @@ function stopTelegramUsersPolling() {
   padding: 4px 10px;
   font-size: 11px;
   font-weight: 600;
-  color: #00d4ff;
+  color: var(--accent);
   background: transparent;
-  border: 1px dashed #00d4ff44;
+  border: 1px dashed rgba(var(--accent-rgb), 0.267);
   border-radius: 6px;
   cursor: pointer;
   margin-top: 6px;
   transition: all 0.15s;
 }
 .add-slot-btn:hover, .add-band-btn:hover {
-  background: #00d4ff11;
-  border-color: #00d4ff;
+  background: rgba(var(--accent-rgb), 0.067);
+  border-color: var(--accent);
 }
 
 @keyframes spin {
@@ -3542,7 +3643,7 @@ function stopTelegramUsersPolling() {
   color: var(--muted);
 }
 .cert-repo-link {
-  color: #00d4ff;
+  color: var(--accent);
   text-decoration: none;
   font-family: var(--mono);
   transition: color 0.15s;

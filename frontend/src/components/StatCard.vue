@@ -18,7 +18,7 @@ defineProps({
   value: [String, Number],
   unit: { type: String, default: '' },
   sub: { type: String, default: '' },
-  color: { type: String, default: '#00d4ff' },
+  color: { type: String, default: 'var(--accent)' },
   icon: { type: [Object, Function], default: null },
   pulse: Boolean,
 })

@@ -88,7 +88,7 @@
             <div class="charging-sub">Power</div>
           </div>
           <div class="charging-stat">
-            <div class="charging-val" style="color:#00d4ff">{{ Math.abs(s.battery?.battery_current ?? 0) }} A</div>
+            <div class="charging-val" style="color:var(--accent)">{{ Math.abs(s.battery?.battery_current ?? 0) }} A</div>
             <div class="charging-sub">Current</div>
           </div>
           <div class="charging-stat">
@@ -548,12 +548,12 @@ const controls = computed(() => {
   const base = [
     { action: 'lock', icon: Lock, label: 'Lock', color: '#ffab40', right: 110 },
     { action: 'unlock', icon: Unlock, label: 'Unlock', color: '#00e676', right: 110 },
-    { action: 'trunk-open', icon: TrunkOpenIcon, label: 'Open Trunk', color: '#00d4ff', right: 130 },
+    { action: 'trunk-open', icon: TrunkOpenIcon, label: 'Open Trunk', color: 'var(--accent)', right: 130 },
     { action: 'trunk-close', icon: ChevronDown, label: 'Close Trunk', color: '#5c6478', right: 130 },
-    { action: 'find', icon: Radio, label: 'Find Car', color: '#00d4ff', right: 120 },
+    { action: 'find', icon: Radio, label: 'Find Car', color: 'var(--accent)', right: 120 },
     { action: 'windows', icon: Columns2, label: 'Windows', color: '#7c6aff', modal: 'windows', right: 230 },
     { action: 'sunshade', icon: Sun, label: 'Sunshade', color: '#ffab40', modal: 'sunshade', right: 161 },
-    { action: 'climate', icon: Thermometer, label: 'Climate', color: '#00d4ff', modal: 'climate', right: 170 },
+    { action: 'climate', icon: Thermometer, label: 'Climate', color: 'var(--accent)', modal: 'climate', right: 170 },
     { action: 'ac-schedule', icon: CalendarClock, label: 'AC Schedule', color: '#7c6aff', modal: 'climateSchedule', right: 171 },
   ]
   return isT03.value ? base.filter(c => c.action !== 'trunk-close') : base
@@ -567,7 +567,7 @@ const chargingControls = [
   { action: 'battery-preheat-off', icon: BatteryCharging, label: 'Preheat Off', color: '#5c6478', right: 190 },
   { action: 'healthy-charging-on', icon: ShieldCheck, label: 'Healthy Charge On', color: '#00e676', right: 480 },
   { action: 'healthy-charging-off', icon: ShieldOff, label: 'Healthy Charge Off', color: '#ff5252', right: 480 },
-  { action: 'charge-schedule', icon: CalendarClock, label: 'Schedule', color: '#00d4ff', modal: 'chargeSchedule', right: 340 },
+  { action: 'charge-schedule', icon: CalendarClock, label: 'Schedule', color: 'var(--accent)', modal: 'chargeSchedule', right: 340 },
 ]
 
 const comfortControls = [
@@ -576,7 +576,7 @@ const comfortControls = [
   { action: 'steering-wheel-heat-off', icon: Heater, label: 'Wheel Heat Off', color: '#5c6478', right: 320 },
   { action: 'fuel-heating-on', icon: Flame, label: 'Fuel Heat On', color: '#ff9100', right: 380 },
   { action: 'fuel-heating-off', icon: Flame, label: 'Fuel Heat Off', color: '#5c6478', right: 380 },
-  { action: 'sunroof-open', icon: Sun, label: 'Sunroof Open', color: '#00d4ff', right: 160 },
+  { action: 'sunroof-open', icon: Sun, label: 'Sunroof Open', color: 'var(--accent)', right: 160 },
   { action: 'sunroof-close', icon: Sun, label: 'Sunroof Close', color: '#5c6478', right: 160 },
 ]
 
@@ -591,11 +591,11 @@ const vehicleControls = [
   { action: 'on3-on', icon: Power, label: 'ON3 On', color: '#00e676', right: 410 },
   { action: 'on3-off', icon: PowerOff, label: 'ON3 Off', color: '#ff5252', right: 410 },
   { action: 'ble-key-restart', icon: Key, label: 'BLE Restart', color: '#7c6aff', right: 430 },
-  { action: 'hotspot', icon: Wifi, label: 'Hotspot', color: '#00d4ff', right: 140 },
+  { action: 'hotspot', icon: Wifi, label: 'Hotspot', color: 'var(--accent)', right: 140 },
   { action: 'send-destination', icon: Navigation, label: 'Send Destination', color: '#ff7043', modal: 'destination', right: 180 },
   { action: 'speed-limit', icon: Gauge, label: 'Speed Limit', color: '#ff9100', modal: 'speedLimit', right: 510 },
   { action: 'autopark', icon: CircleParking, label: 'Autopark', color: '#7c6aff', right: 150 },
-  { action: 'piloted-parking', icon: CircleParking, label: 'Piloted Park', color: '#00d4ff', right: 350 },
+  { action: 'piloted-parking', icon: CircleParking, label: 'Piloted Park', color: 'var(--accent)', right: 350 },
   { action: 'prepare-car', icon: Car, label: 'Prepare Car', color: '#00e676', right: 360 },
   { action: 'media', icon: Music, label: 'Media', color: '#7c6aff', modal: 'media', right: 270 },
   { action: 'fota', icon: Download, label: 'Firmware', color: '#ff5252', modal: 'fota', right: 390 },
@@ -871,11 +871,11 @@ async function doSetChargeLimit() {
   width: 300px;
   height: 300px;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(0,212,255,0.025) 0%, transparent 70%);
+  background: radial-gradient(circle, rgba(var(--accent-rgb), 0.025) 0%, transparent 70%);
   pointer-events: none;
 }
 .hero-glow.charging { background: radial-gradient(circle, rgba(0,230,118,0.04) 0%, transparent 70%); }
-.hero-glow.ac { background: radial-gradient(circle, rgba(0,212,255,0.04) 0%, transparent 70%); }
+.hero-glow.ac { background: radial-gradient(circle, rgba(var(--accent-rgb), 0.04) 0%, transparent 70%); }
 .hero-car { display: flex; flex-direction: column; align-items: center; margin-bottom: 8px; }
 .hero-badges {
   display: flex;
@@ -894,8 +894,8 @@ async function doSetChargeLimit() {
 }
 .badge-charging { background: rgba(0,230,118,0.15); border: 1px solid rgba(0,230,118,0.5); }
 .badge-plugged { background: rgba(255,171,64,0.15); border: 1px solid rgba(255,171,64,0.5); }
-.badge-regen { background: rgba(0,212,255,0.15); border: 1px solid rgba(0,212,255,0.5); }
-.badge-ac { background: rgba(0,212,255,0.12); border: 1px solid rgba(0,212,255,0.45); }
+.badge-regen { background: rgba(var(--accent-rgb), 0.15); border: 1px solid rgba(var(--accent-rgb), 0.5); }
+.badge-ac { background: rgba(var(--accent-rgb), 0.12); border: 1px solid rgba(var(--accent-rgb), 0.45); }
 .badge-lock { background: rgba(255,171,64,0.15); border: 1px solid rgba(255,171,64,0.5); }
 .badge-trunk { background: rgba(255,171,64,0.15); border: 1px solid rgba(255,171,64,0.5); }
 .hero-bottom {

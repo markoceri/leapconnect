@@ -61,10 +61,10 @@ const interval = (it) => formatInterval(it)
 .pack-author { font-size: 11px; color: var(--muted); }
 .import-btn {
   display: flex; align-items: center; gap: 4px; padding: 5px 10px; border-radius: 8px;
-  border: 1px solid rgba(0,212,255,0.27); background: rgba(0,212,255,0.06); color: var(--cyan);
+  border: 1px solid rgba(var(--accent-rgb), 0.27); background: rgba(var(--accent-rgb), 0.06); color: var(--cyan);
   cursor: pointer; font-size: 12px; font-weight: 600; transition: all 0.15s;
 }
-.import-btn:hover { background: rgba(0,212,255,0.13); }
+.import-btn:hover { background: rgba(var(--accent-rgb), 0.13); }
 .import-btn:disabled { opacity: 0.45; cursor: default; }
 
 .pack-items { margin-top: 10px; display: flex; flex-direction: column; }

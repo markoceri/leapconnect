@@ -275,15 +275,15 @@ onBeforeUnmount(() => {
   background: #ffffff06;
 }
 .msg-item.unread {
-  background: #00d4ff06;
+  background: rgba(var(--accent-rgb), 0.024);
 }
 
 .msg-dot {
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: #00d4ff;
-  box-shadow: 0 0 6px #00d4ff88;
+  background: var(--accent);
+  box-shadow: 0 0 6px rgba(var(--accent-rgb), 0.533);
   flex-shrink: 0;
   margin-top: 6px;
 }
@@ -348,7 +348,7 @@ onBeforeUnmount(() => {
   width: 16px;
   height: 16px;
   border: 2px solid var(--border);
-  border-top-color: #00d4ff;
+  border-top-color: var(--accent);
   border-radius: 50%;
   animation: lm-spin 0.7s linear infinite;
 }
@@ -360,13 +360,13 @@ onBeforeUnmount(() => {
   padding: 10px;
   font-size: 12px;
   font-weight: 600;
-  color: #00d4ff;
+  color: var(--accent);
   cursor: pointer;
   text-align: center;
   transition: background 0.15s;
 }
 .msg-panel-viewall:hover {
-  background: #00d4ff0a;
+  background: rgba(var(--accent-rgb), 0.039);
 }
 
 /* Dropdown transition */

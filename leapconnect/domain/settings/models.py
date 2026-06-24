@@ -17,6 +17,7 @@ class UserPreferences:
     downsampling_max_points: int = 2000
     has_solar_panels: bool = False
     home_pricing_mode: str = "flat"  # "flat" or "time_of_use"
+    auto_theme_from_vehicle: bool = False  # auto-pick accent colour from the vehicle
 
 
 @dataclass

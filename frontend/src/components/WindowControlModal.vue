@@ -112,7 +112,7 @@ const windowIndicators = computed(() => {
   const w = props.windows
   if (!w) return []
   const defs = [
-    { key: 'lf', field: 'left_front_window_percent', label: 'Left Front', color: '#00d4ff', side: 'bottom' },
+    { key: 'lf', field: 'left_front_window_percent', label: 'Left Front', color: 'var(--accent)', side: 'bottom' },
     { key: 'rf', field: 'right_front_window_percent', label: 'Right Front', color: '#7c6aff', side: 'top' },
     { key: 'lr', field: 'left_rear_window_percent', label: 'Left Rear', color: '#00e676', side: 'bottom' },
     { key: 'rr', field: 'right_rear_window_percent', label: 'Right Rear', color: '#ffab40', side: 'top' },
@@ -248,11 +248,11 @@ async function applyCustom() {
 }
 
 .wc-quick-btn.close {
-  color: #00d4ff;
-  border-color: #00d4ff44;
+  color: var(--accent);
+  border-color: rgba(var(--accent-rgb), 0.267);
 }
 .wc-quick-btn.close:hover:not(:disabled) {
-  background: #00d4ff18;
+  background: rgba(var(--accent-rgb), 0.094);
 }
 
 .wc-quick-btn:disabled {
@@ -284,7 +284,7 @@ async function applyCustom() {
   top: 0;
   left: 0;
   bottom: 0;
-  background: linear-gradient(to right, #7c6aff, #00d4ff);
+  background: linear-gradient(to right, #7c6aff, var(--accent));
   border-radius: 20px 0 0 20px;
   transition: width 0.15s ease;
   pointer-events: none;
@@ -404,7 +404,7 @@ async function applyCustom() {
   padding: 10px;
   border-radius: 10px;
   border: none;
-  background: linear-gradient(135deg, #7c6aff, #00d4ff);
+  background: linear-gradient(135deg, #7c6aff, var(--accent));
   color: #fff;
   font-size: 13px;
   font-weight: 700;

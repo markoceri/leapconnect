@@ -89,6 +89,7 @@
 
 <script setup>
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import { accentHex } from '../utils/theme'
 import { useAppStore } from '../stores/appStore'
 import { useToast } from '../composables/useToast'
 import L from 'leaflet'
@@ -169,7 +170,7 @@ function createIcon(color, emoji) {
   })
 }
 
-const vehicleIcon = createIcon('#00d4ff', '🚗')
+const vehicleIcon = createIcon(accentHex(), '🚗')
 const deviceIcon = createIcon('#00e676', '📍')
 const destIcon = createIcon('#ff7043', '🎯')
 
@@ -421,7 +422,7 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
 }
-.expand-btn:hover { color: var(--cyan); border-color: #00d4ff44; }
+.expand-btn:hover { color: var(--cyan); border-color: rgba(var(--accent-rgb), 0.267); }
 
 /* Map */
 .map-wrapper {
@@ -464,7 +465,7 @@ onBeforeUnmount(() => {
   align-items: center;
   box-shadow: 0 4px 12px rgba(0,0,0,0.5);
 }
-.fs-close-btn:hover { border-color: #00d4ff44; }
+.fs-close-btn:hover { border-color: rgba(var(--accent-rgb), 0.267); }
 
 .map-legend {
   position: absolute;
@@ -492,7 +493,7 @@ onBeforeUnmount(() => {
   border-radius: 50%;
   display: inline-block;
 }
-.legend-dot.vehicle { background: #00d4ff; box-shadow: 0 0 4px #00d4ff; }
+.legend-dot.vehicle { background: var(--accent); box-shadow: 0 0 4px var(--accent); }
 .legend-dot.device { background: #00e676; box-shadow: 0 0 4px #00e676; }
 .legend-dot.dest { background: #ff7043; box-shadow: 0 0 4px #ff7043; }
 
@@ -511,7 +512,7 @@ onBeforeUnmount(() => {
 }
 .coord-row.muted { color: var(--muted2); }
 .coord-icon { flex-shrink: 0; }
-.vehicle-color { color: #00d4ff; }
+.vehicle-color { color: var(--accent); }
 .device-color { color: #00e676; }
 .coord-label { font-weight: 500; }
 .coord-value { font-family: var(--mono); color: var(--text); font-size: 11px; }
@@ -526,7 +527,7 @@ onBeforeUnmount(() => {
   cursor: pointer;
   transition: all 0.2s;
 }
-.locate-btn:hover { border-color: #00d4ff44; }
+.locate-btn:hover { border-color: rgba(var(--accent-rgb), 0.267); }
 
 /* Destination */
 .dest-section {
@@ -612,7 +613,7 @@ onBeforeUnmount(() => {
   outline: none;
   transition: border-color 0.2s;
 }
-.dest-input:focus { border-color: #00d4ff; }
+.dest-input:focus { border-color: var(--accent); }
 .dest-input::placeholder { color: var(--muted2); }
 .dest-coords-row { display: flex; gap: 8px; }
 .dest-coord { flex: 1; }

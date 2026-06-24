@@ -249,13 +249,13 @@ async function handleSubmit() {
   height: 44px;
   margin: 0 auto 1.2rem;
   border-radius: 12px;
-  background: linear-gradient(135deg, #00d4ff22, #00d4ff44);
-  border: 1px solid #00d4ff55;
+  background: linear-gradient(135deg, rgba(var(--accent-rgb), 0.133), rgba(var(--accent-rgb), 0.267));
+  border: 1px solid rgba(var(--accent-rgb), 0.333);
   display: flex;
   align-items: center;
   justify-content: center;
 }
-.setup-brand-icon svg { width: 22px; height: 22px; color: #00d4ff; }
+.setup-brand-icon svg { width: 22px; height: 22px; color: var(--accent); }
 
 .setup-brand h1 {
   font-size: 18px;
@@ -379,7 +379,7 @@ async function handleSubmit() {
   outline: none;
 }
 .form-group input:focus {
-  border-color: #00d4ff55;
+  border-color: rgba(var(--accent-rgb), 0.333);
 }
 .form-group input::placeholder {
   color: var(--muted2);
@@ -388,10 +388,10 @@ async function handleSubmit() {
 .btn-primary {
   flex: 1;
   padding: 14px;
-  background: linear-gradient(135deg, #00d4ff22, #00d4ff44);
-  border: 1px solid #00d4ff55;
+  background: linear-gradient(135deg, rgba(var(--accent-rgb), 0.133), rgba(var(--accent-rgb), 0.267));
+  border: 1px solid rgba(var(--accent-rgb), 0.333);
   border-radius: 10px;
-  color: #00d4ff;
+  color: var(--accent);
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
@@ -403,7 +403,7 @@ async function handleSubmit() {
   gap: 6px;
 }
 .btn-primary:hover {
-  background: linear-gradient(135deg, #00d4ff33, #00d4ff55);
+  background: linear-gradient(135deg, rgba(var(--accent-rgb), 0.2), rgba(var(--accent-rgb), 0.333));
 }
 .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
 

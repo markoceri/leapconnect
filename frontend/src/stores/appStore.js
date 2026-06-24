@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { api } from '../composables/useApi'
+import { generateVehicleTheme, THEME_VARS } from '../utils/colorTheme'
 
 export const useAppStore = defineStore('app', () => {
   // Screen: 'loading' | 'setup-user' | 'login' | 'setup-certs' | 'setup-account' | 'setup-services' | 'vehicles' | 'app'
@@ -24,10 +25,24 @@ export const useAppStore = defineStore('app', () => {
   const commandHistory = ref([])
   const showVehicleBar = ref(localStorage.getItem('showVehicleBar'))
 
+  // Theme is a tri-state: 'dark' | 'light' | 'vehicle'. 'vehicle' is a full
+  // standalone theme generated from the active vehicle's factory colour.
   function applyTheme(t) {
     theme.value = t
-    document.documentElement.setAttribute('data-theme', t)
     localStorage.setItem('theme', t)
+    if (t === 'vehicle') {
+      const hex = currentVehicleColorHex()
+      if (hex) {
+        _applyVehicleVars(hex)
+      } else {
+        // No colour available yet — show dark until a palette/colour loads.
+        _clearVehicleVars()
+        document.documentElement.setAttribute('data-theme', 'dark')
+      }
+    } else {
+      _clearVehicleVars()
+      document.documentElement.setAttribute('data-theme', t)
+    }
   }
 
   async function setTheme(t) {
@@ -41,11 +56,113 @@ export const useAppStore = defineStore('app', () => {
     try {
       const data = await api('GET', '/api/preferences')
       applyTheme(data.theme || 'dark')
+      autoThemeFromVehicle.value = !!data.auto_theme_from_vehicle
     } catch {
       // Fallback to localStorage (e.g. on login page before auth)
       const saved = localStorage.getItem('theme')
       if (saved) applyTheme(saved)
     }
+  }
+
+  // --- Per-vehicle colour theme ---
+  // The active vehicle's chosen/auto-detected factory colour drives a full
+  // generated theme (every CSS token) when theme === 'vehicle'.
+  const vehiclePalettes = ref({}) // vin -> { model_key, colors[], selected }
+  const autoThemeFromVehicle = ref(false)
+  const activeThemeHex = ref(null) // currently-applied vehicle colour, or null
+
+  // The colour to theme around for the active vehicle: explicit choice first,
+  // else the first palette entry.
+  function currentVehicleColorHex() {
+    const pal = vehiclePalettes.value[selectedVin.value]
+    return pal?.selected?.hex || pal?.colors?.[0]?.hex || null
+  }
+
+  function _applyVehicleVars(hex) {
+    const root = document.documentElement
+    const { vars, base } = generateVehicleTheme(hex)
+    for (const [name, value] of Object.entries(vars)) {
+      root.style.setProperty(name, value)
+    }
+    root.setAttribute('data-theme', base) // keep map/chart light/dark logic working
+    activeThemeHex.value = hex
+    localStorage.setItem('vehicleThemeHex', hex)
+  }
+
+  function _clearVehicleVars() {
+    const root = document.documentElement
+    for (const name of THEME_VARS) root.style.removeProperty(name)
+    activeThemeHex.value = null
+    localStorage.removeItem('vehicleThemeHex')
+  }
+
+  // Re-apply the vehicle theme if it is the active mode for the selected car.
+  function refreshVehicleTheme(vin) {
+    if (theme.value === 'vehicle' && vin === selectedVin.value) applyTheme('vehicle')
+  }
+
+  async function loadVehiclePalette(vin) {
+    if (!vin) return null
+    try {
+      const data = await api('GET', `/api/vehicles/${vin}/palette`)
+      vehiclePalettes.value[vin] = data
+      refreshVehicleTheme(vin)
+      return data
+    } catch {
+      return null
+    }
+  }
+
+  async function setVehicleColor(vin, colorKey) {
+    const data = await api('PUT', `/api/vehicles/${vin}/color`, { color_key: colorKey })
+    vehiclePalettes.value[vin] = data
+    refreshVehicleTheme(vin)
+    return data
+  }
+
+  async function detectVehicleColor(vin) {
+    const res = await api('POST', `/api/vehicles/${vin}/color/detect`)
+    await loadVehiclePalette(vin)
+    return res
+  }
+
+  // For every vehicle without an explicit choice, auto-detect its colour.
+  async function autoApplyVehicleColors() {
+    for (const v of vehicles.value) {
+      const pal = vehiclePalettes.value[v.vin] || (await loadVehiclePalette(v.vin))
+      if (pal && !pal.selected) {
+        try {
+          await detectVehicleColor(v.vin)
+        } catch {
+          // best-effort
+        }
+      }
+    }
+  }
+
+  async function setAutoTheme(enabled) {
+    autoThemeFromVehicle.value = enabled
+    try {
+      await api('PUT', '/api/preferences', { auto_theme_from_vehicle: enabled })
+    } catch {
+      /* ignore */
+    }
+    // Enabling auto-detection also switches to the vehicle-colour theme so the
+    // detected colour is actually shown.
+    if (enabled) {
+      await autoApplyVehicleColors()
+      await setTheme('vehicle')
+    } else if (theme.value === 'vehicle') {
+      await setTheme('dark')
+    }
+  }
+
+  // Load the active vehicle's accent on app entry; run auto-detection if on.
+  function initAccent() {
+    ;(async () => {
+      if (selectedVin.value) await loadVehiclePalette(selectedVin.value)
+      if (autoThemeFromVehicle.value) await autoApplyVehicleColors()
+    })()
   }
 
   const selectedVehicle = computed(() =>
@@ -71,6 +188,8 @@ export const useAppStore = defineStore('app', () => {
     } else {
       screen.value = 'vehicles'
     }
+    await loadThemeFromPrefs()
+    initAccent()
     return result
   }
 
@@ -163,6 +282,11 @@ export const useAppStore = defineStore('app', () => {
     hasPin.value = false
     sessionStorage.removeItem('hasPin')
     picturePackages.value = {}
+    vehiclePalettes.value = {}
+    if (theme.value === 'vehicle') {
+      _clearVehicleVars()
+      document.documentElement.setAttribute('data-theme', 'dark')
+    }
     activeTab.value = 'dashboard'
     screen.value = 'login'
   }
@@ -206,6 +330,7 @@ export const useAppStore = defineStore('app', () => {
         }
         screen.value = 'app'
         await loadThemeFromPrefs()
+        initAccent()
         return true
       }
 
@@ -361,6 +486,8 @@ export const useAppStore = defineStore('app', () => {
     activeTab.value = 'dashboard'
     screen.value = 'app'
     connectWebSocket(vin)
+    if (vehiclePalettes.value[vin]) refreshVehicleTheme(vin)
+    else loadVehiclePalette(vin)
   }
 
   function goToVehicleSelector() {
@@ -436,6 +563,13 @@ export const useAppStore = defineStore('app', () => {
     theme,
     applyTheme,
     setTheme,
+    vehiclePalettes,
+    autoThemeFromVehicle,
+    activeThemeHex,
+    loadVehiclePalette,
+    setVehicleColor,
+    detectVehicleColor,
+    setAutoTheme,
     showVehicleBar,
     mqttStatus,
     loadMqttStatus,

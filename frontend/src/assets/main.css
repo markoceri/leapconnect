@@ -25,7 +25,13 @@
   --heading: #c8cfe0;
   --sub:     #8892a8;
 
-  --cyan:    #00d4ff;
+  /* Accent — drives the primary UI colour. Defaults to cyan; the active
+     vehicle's chosen/auto-detected colour overrides --accent/--accent-rgb at
+     runtime (see appStore.applyAccent). --cyan aliases --accent so every
+     existing var(--cyan) usage follows the accent automatically. */
+  --accent:     #00d4ff;
+  --accent-rgb: 0, 212, 255;
+  --cyan:    var(--accent);
   --green:   #00e676;
   --amber:   #ffab40;
   --red:     #ff5252;
@@ -74,7 +80,9 @@
   --heading: #1a2420;
   --sub:     #4a6058;
 
-  --cyan:    #0099aa;
+  --accent:     #0099aa;
+  --accent-rgb: 0, 153, 170;
+  --cyan:    var(--accent);
   --green:   #00b368;
   --amber:   #d49000;
   --red:     #d63030;

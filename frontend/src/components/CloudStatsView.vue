@@ -354,7 +354,7 @@ fetchAll()
 .cs-loading, .cs-error { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 40px 20px; font-size: 13px; color: var(--muted); background: var(--card); border: 1px solid var(--border); border-radius: 14px; }
 .cs-error { color: #ff5252; flex-direction: column; gap: 12px; }
 .cs-retry-btn { padding: 6px 16px; border-radius: 8px; border: 1px solid var(--border); background: var(--btn-bg); color: var(--text); font-size: 12px; cursor: pointer; transition: all 0.15s; }
-.cs-retry-btn:hover { border-color: #00d4ff; color: #00d4ff; }
+.cs-retry-btn:hover { border-color: var(--accent); color: var(--accent); }
 
 .cs-card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 20px; }
 .cs-card-title { font-size: 13px; font-weight: 700; color: var(--heading); margin-bottom: 16px; }
@@ -414,7 +414,7 @@ fetchAll()
 .cs-charge-item { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--divider); }
 .cs-charge-item:last-child { border-bottom: none; }
 .cs-charge-icon { width: 36px; height: 36px; border-radius: 10px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-.cs-charge-icon.fast { background: rgba(0, 212, 255, 0.12); color: #00d4ff; }
+.cs-charge-icon.fast { background: rgba(var(--accent-rgb), 0.12); color: var(--accent); }
 .cs-charge-icon.slow { background: rgba(0, 230, 118, 0.12); color: #00e676; }
 .cs-charge-info { flex: 1; min-width: 0; }
 .cs-charge-date { font-size: 13px; font-weight: 600; color: var(--text); }
@@ -426,7 +426,7 @@ fetchAll()
 /* Pagination */
 .cs-page-controls { display: flex; align-items: center; gap: 6px; }
 .cs-page-btn { width: 28px; height: 28px; border-radius: 7px; border: 1px solid var(--border); background: var(--btn-bg); color: var(--text); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.15s; }
-.cs-page-btn:hover:not(:disabled) { border-color: #00d4ff; color: #00d4ff; }
+.cs-page-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
 .cs-page-btn:disabled { opacity: 0.3; cursor: not-allowed; }
 .cs-page-label { font-size: 12px; color: var(--muted); padding: 0 4px; }
 

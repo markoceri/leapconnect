@@ -212,7 +212,7 @@ onUnmounted(() => {
   cursor: pointer;
   transition: border-color 0.2s;
 }
-.log-select:focus { border-color: #00d4ff55; }
+.log-select:focus { border-color: rgba(var(--accent-rgb), 0.333); }
 .log-select option {
   background: var(--card, #1a1e2e);
   color: var(--text);
@@ -230,7 +230,7 @@ onUnmounted(() => {
   min-width: 80px;
 }
 .log-search::placeholder { color: var(--muted2); }
-.log-search:focus { border-color: #00d4ff55; }
+.log-search:focus { border-color: rgba(var(--accent-rgb), 0.333); }
 
 .log-actions {
   display: flex;
@@ -251,8 +251,8 @@ onUnmounted(() => {
   justify-content: center;
   transition: all 0.15s;
 }
-.log-action-btn:hover { color: #00d4ff; border-color: #00d4ff44; }
-.log-action-btn.active { color: #00d4ff; border-color: #00d4ff55; background: #00d4ff11; }
+.log-action-btn:hover { color: var(--accent); border-color: rgba(var(--accent-rgb), 0.267); }
+.log-action-btn.active { color: var(--accent); border-color: rgba(var(--accent-rgb), 0.333); background: rgba(var(--accent-rgb), 0.067); }
 
 .log-entries {
   flex: 1;
@@ -284,7 +284,7 @@ onUnmounted(() => {
   text-align: center;
 }
 .level-debug .log-level { color: #888; }
-.level-info .log-level { color: #00d4ff; }
+.level-info .log-level { color: var(--accent); }
 .level-warning .log-level { color: #ffab40; }
 .level-error .log-level { color: #ff5252; }
 .level-critical .log-level { color: #ff1744; font-weight: 700; }

@@ -6,6 +6,7 @@ session costs from the user's pricing configuration.
 
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING
 
 from leapconnect.domain.charging.costing import calculate_tou_cost, flat_cost
@@ -29,15 +30,17 @@ async def load_preferences(repo: AppRepository) -> UserPreferences:
     ds_max_points_raw = await repo.get_setting("downsampling_max_points")
     solar_raw = await repo.get_setting("has_solar_panels")
     pricing_mode_raw = await repo.get_setting("home_pricing_mode")
+    auto_theme_raw = await repo.get_setting("auto_theme_from_vehicle")
     return UserPreferences(
         electricity_price_kwh=float(raw) if raw else 0.25,
-        theme=theme_raw if theme_raw in ("dark", "light") else "dark",
+        theme=theme_raw if theme_raw in ("dark", "light", "vehicle") else "dark",
         downsampling_enabled=ds_enabled_raw != "false" if ds_enabled_raw else True,
         downsampling_max_points=int(ds_max_points_raw) if ds_max_points_raw else 2000,
         has_solar_panels=solar_raw == "true" if solar_raw else False,
         home_pricing_mode=pricing_mode_raw
         if pricing_mode_raw in ("flat", "time_of_use")
         else "flat",
+        auto_theme_from_vehicle=auto_theme_raw == "true" if auto_theme_raw else False,
     )
 
 
@@ -127,3 +130,38 @@ async def save_abrp_settings(
         return
     await repo.save_setting("abrp_enabled", "1" if settings.enabled else "0")
     await repo.save_setting("abrp_user_token", settings.user_token)
+
+
+# ---------------------------------------------------------------------------
+# Per-vehicle accent colour selection
+# ---------------------------------------------------------------------------
+_VEHICLE_COLORS_KEY = "vehicle_theme_colors"
+
+
+async def load_vehicle_colors(repo: AppRepository) -> dict[str, str]:
+    """Return the persisted ``{vin: palette_color_key}`` accent selections."""
+    raw = await repo.get_setting(_VEHICLE_COLORS_KEY)
+    if not raw:
+        return {}
+    try:
+        data = json.loads(raw)
+    except (ValueError, TypeError):
+        return {}
+    return {str(k): str(v) for k, v in data.items()} if isinstance(data, dict) else {}
+
+
+async def save_vehicle_color(
+    repo: AppRepository, vin: str, color_key: str | None
+) -> dict[str, str]:
+    """Set or clear a vehicle's accent colour, returning the updated map.
+
+    Passing ``None`` removes the override so the vehicle falls back to the
+    default accent.
+    """
+    colors = await load_vehicle_colors(repo)
+    if color_key:
+        colors[vin] = color_key
+    else:
+        colors.pop(vin, None)
+    await repo.save_setting(_VEHICLE_COLORS_KEY, json.dumps(colors))
+    return colors

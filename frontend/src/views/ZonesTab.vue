@@ -180,6 +180,7 @@
 
 <script setup>
 import { ref, reactive, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
+import { accentHex } from '../utils/theme'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import '@geoman-io/leaflet-geoman-free'
@@ -512,7 +513,7 @@ function renderZones(fit = true) {
 }
 
 function zoneStyle() {
-  return { color: '#00d4ff', fillColor: '#00d4ff', fillOpacity: 0.12, weight: 2 }
+  return { color: accentHex(), fillColor: accentHex(), fillOpacity: 0.12, weight: 2 }
 }
 
 function focusZone(z) {
@@ -821,7 +822,7 @@ onBeforeUnmount(() => {
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
   transition: color 0.15s, border-color 0.15s;
 }
-.map-btn:hover { color: #00d4ff; border-color: #00d4ff55; }
+.map-btn:hover { color: var(--accent); border-color: rgba(var(--accent-rgb), 0.333); }
 .map-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* Floating zones panel */
@@ -880,15 +881,15 @@ onBeforeUnmount(() => {
   justify-content: center;
   gap: 6px;
   padding: 8px;
-  background: linear-gradient(135deg, #00d4ff22, #00d4ff44);
-  border: 1px solid #00d4ff55;
+  background: linear-gradient(135deg, rgba(var(--accent-rgb), 0.133), rgba(var(--accent-rgb), 0.267));
+  border: 1px solid rgba(var(--accent-rgb), 0.333);
   border-radius: 8px;
-  color: #00d4ff;
+  color: var(--accent);
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
 }
-.add-btn:hover { background: linear-gradient(135deg, #00d4ff33, #00d4ff55); }
+.add-btn:hover { background: linear-gradient(135deg, rgba(var(--accent-rgb), 0.2), rgba(var(--accent-rgb), 0.333)); }
 .add-menu {
   position: absolute;
   top: calc(100% + 4px);
@@ -918,7 +919,7 @@ onBeforeUnmount(() => {
 .draw-hint {
   margin: 8px 0 0;
   font-size: 11px;
-  color: #00d4ff;
+  color: var(--accent);
 }
 
 .zone-list { margin-top: 10px; display: flex; flex-direction: column; gap: 4px; }
@@ -933,8 +934,8 @@ onBeforeUnmount(() => {
   transition: background 0.15s;
 }
 .zone-row:hover { background: var(--bg2); }
-.zone-row.editing { background: #00d4ff14; box-shadow: inset 0 0 0 1px #00d4ff55; }
-.zone-row-icon { color: #00d4ff; flex-shrink: 0; }
+.zone-row.editing { background: rgba(var(--accent-rgb), 0.078); box-shadow: inset 0 0 0 1px rgba(var(--accent-rgb), 0.333); }
+.zone-row-icon { color: var(--accent); flex-shrink: 0; }
 .zone-tip { margin: 8px 2px 0; font-size: 11px; color: var(--muted); line-height: 1.4; }
 .zone-row-main { flex: 1; min-width: 0; }
 .zone-row-name {
@@ -1027,7 +1028,7 @@ onBeforeUnmount(() => {
   gap: 12px;
   background: color-mix(in srgb, var(--card) 92%, transparent);
   backdrop-filter: blur(10px);
-  border: 1px solid #00d4ff55;
+  border: 1px solid rgba(var(--accent-rgb), 0.333);
   border-radius: 999px;
   padding: 7px 8px 7px 16px;
   font-size: 12px;
@@ -1035,10 +1036,10 @@ onBeforeUnmount(() => {
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25);
 }
 .edit-done {
-  background: linear-gradient(135deg, #00d4ff22, #00d4ff44);
-  border: 1px solid #00d4ff55;
+  background: linear-gradient(135deg, rgba(var(--accent-rgb), 0.133), rgba(var(--accent-rgb), 0.267));
+  border: 1px solid rgba(var(--accent-rgb), 0.333);
   border-radius: 999px;
-  color: #00d4ff;
+  color: var(--accent);
   font-size: 12px;
   font-weight: 600;
   padding: 4px 14px;
@@ -1064,7 +1065,7 @@ onBeforeUnmount(() => {
   width: 46px;
   height: 46px;
   border-radius: 50%;
-  border: 2px solid #00d4ff;
+  border: 2px solid var(--accent);
   background: var(--card);
   overflow: hidden;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
@@ -1097,7 +1098,7 @@ onBeforeUnmount(() => {
   height: 18px;
   border-radius: 50%;
   object-fit: cover;
-  border: 1px solid #00d4ff;
+  border: 1px solid var(--accent);
   background: var(--bg2);
   flex-shrink: 0;
 }
@@ -1176,7 +1177,7 @@ onBeforeUnmount(() => {
   background-position: right 12px center;
   cursor: pointer;
 }
-.form-group input[type="text"]:focus, .select:focus { border-color: #00d4ff55; }
+.form-group input[type="text"]:focus, .select:focus { border-color: rgba(var(--accent-rgb), 0.333); }
 .shape-pill {
   display: flex;
   align-items: center;
@@ -1209,7 +1210,7 @@ onBeforeUnmount(() => {
   font-size: 13px;
   outline: none;
 }
-.dwell-field input:focus { border-color: #00d4ff55; }
+.dwell-field input:focus { border-color: rgba(var(--accent-rgb), 0.333); }
 .field-desc { font-size: 11px; color: var(--sub); margin: 6px 0 0; line-height: 1.5; }
 
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
@@ -1224,10 +1225,10 @@ onBeforeUnmount(() => {
 }
 .btn-primary {
   padding: 9px 18px;
-  background: linear-gradient(135deg, #00d4ff22, #00d4ff44);
-  border: 1px solid #00d4ff55;
+  background: linear-gradient(135deg, rgba(var(--accent-rgb), 0.133), rgba(var(--accent-rgb), 0.267));
+  border: 1px solid rgba(var(--accent-rgb), 0.333);
   border-radius: 8px;
-  color: #00d4ff;
+  color: var(--accent);
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;

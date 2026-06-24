@@ -393,7 +393,7 @@ watch(() => props.vin, load)
 .prio-important { background: rgba(255,171,64,0.09); color: var(--amber); }
 .prio-urgent { background: rgba(255,82,82,0.09); color: var(--red); }
 .src-badge { font-size: 10px; padding: 2px 7px; border-radius: 8px; text-transform: uppercase; letter-spacing: 0.03em; background: var(--btn-bg); color: var(--muted); }
-.src-local { color: var(--cyan); background: rgba(0,212,255,0.08); }
+.src-local { color: var(--cyan); background: rgba(var(--accent-rgb), 0.08); }
 .src-repo { color: var(--amber); background: rgba(255,171,64,0.08); }
 
 .chip-list { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -418,7 +418,7 @@ watch(() => props.vin, load)
 .repo-url { font-size: 11px; color: var(--muted); text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .repo-url:hover { color: var(--cyan); }
 .repo-actions { display: flex; align-items: center; gap: 6px; }
-.official-badge { font-size: 10px; padding: 2px 7px; border-radius: 8px; text-transform: uppercase; letter-spacing: 0.03em; font-weight: 700; color: var(--cyan); background: rgba(0,212,255,0.08); }
+.official-badge { font-size: 10px; padding: 2px 7px; border-radius: 8px; text-transform: uppercase; letter-spacing: 0.03em; font-weight: 700; color: var(--cyan); background: rgba(var(--accent-rgb), 0.08); }
 .repo-status { font-size: 10px; padding: 2px 7px; border-radius: 8px; text-transform: uppercase; background: var(--btn-bg); color: var(--muted); }
 .st-ok { color: var(--green); background: rgba(0,230,118,0.08); }
 .st-error { color: var(--red); background: rgba(255,82,82,0.08); }

@@ -4,7 +4,7 @@
     <div class="vs-topbar">
       <div class="vs-brand">
         <div class="vs-logo">
-          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#00d4ff" stroke-width="2">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" style="stroke: var(--accent)" stroke-width="2">
             <path d="M5 17H3a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v9a2 2 0 01-2 2h-2" />
             <circle cx="9" cy="17" r="2" /><circle cx="17" cy="17" r="2" />
           </svg>
@@ -52,7 +52,7 @@
                 <div class="vs-stat-label">Battery</div>
               </div>
               <div class="vs-stat">
-                <div class="vs-stat-value" style="color:#00d4ff">
+                <div class="vs-stat-value" style="color:var(--accent)">
                   {{ getStatus(v.vin, 'battery', 'expected_mileage') ?? '—' }}{{ getStatus(v.vin, 'battery', 'expected_mileage') != null ? ' km' : '' }}
                 </div>
                 <div class="vs-stat-label">Range</div>
@@ -135,8 +135,8 @@ function formatOdo(vin) {
   width: 36px;
   height: 36px;
   border-radius: 9px;
-  background: #00d4ff18;
-  border: 1px solid #00d4ff44;
+  background: rgba(var(--accent-rgb), 0.094);
+  border: 1px solid rgba(var(--accent-rgb), 0.267);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -185,9 +185,9 @@ function formatOdo(vin) {
   transition: all 0.25s;
 }
 .vs-card:hover {
-  border-color: #00d4ff44;
+  border-color: rgba(var(--accent-rgb), 0.267);
   transform: translateY(-3px);
-  box-shadow: 0 12px 40px rgba(0,212,255,0.08);
+  box-shadow: 0 12px 40px rgba(var(--accent-rgb), 0.08);
 }
 .vs-card-hero {
   background: linear-gradient(160deg, #0e1525, #12192a);
@@ -219,7 +219,7 @@ function formatOdo(vin) {
   align-items: center;
   gap: 4px;
   font-size: 11px;
-  color: #00d4ff;
+  color: var(--accent);
   margin-top: 4px;
 }
 .vs-card-badge {

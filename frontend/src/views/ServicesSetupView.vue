@@ -209,11 +209,33 @@
         </Transition>
       </div>
 
+      <!-- ─── Accent colour ─── -->
+      <div class="service-card">
+        <div class="service-header">
+          <div class="service-icon color-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="13.5" cy="6.5" r=".5" fill="currentColor" /><circle cx="17.5" cy="10.5" r=".5" fill="currentColor" /><circle cx="8.5" cy="7.5" r=".5" fill="currentColor" /><circle cx="6.5" cy="12.5" r=".5" fill="currentColor" /><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z" />
+            </svg>
+          </div>
+          <div class="service-info">
+            <h3>Adaptive colour theme</h3>
+            <p>Automatically build the whole interface theme around each vehicle's factory colour, detected from the cloud and car image. You can change it later in Settings.</p>
+          </div>
+          <button
+            class="toggle-btn"
+            :class="{ active: colorAutoEnabled }"
+            @click="colorAutoEnabled = !colorAutoEnabled"
+          >
+            <span class="toggle-track"><span class="toggle-thumb" /></span>
+          </button>
+        </div>
+      </div>
+
       <!-- ─── Actions ─── -->
       <div v-if="error" class="setup-error">{{ error }}</div>
 
       <button class="btn-primary" :disabled="submitting" @click="handleContinue">
-        {{ submitting ? 'Saving…' : (historyEnabled || mqttEnabled || abrpEnabled || telegramEnabled) ? 'Save & Continue' : 'Skip & Continue' }}
+        {{ submitting ? 'Saving…' : (historyEnabled || mqttEnabled || abrpEnabled || telegramEnabled || colorAutoEnabled) ? 'Save & Continue' : 'Skip & Continue' }}
       </button>
       <div class="theme-row">
         <div class="theme-pills">
@@ -259,6 +281,9 @@ const mqttForm = reactive({
   password: '',
   use_tls: false,
 })
+
+// Adaptive accent colour
+const colorAutoEnabled = ref(false)
 
 // ABRP
 const abrpEnabled = ref(false)
@@ -386,6 +411,9 @@ async function handleContinue() {
       })
     }
 
+    // Persist the adaptive-accent choice; enabling also auto-detects colours.
+    await store.setAutoTheme(colorAutoEnabled.value)
+
     toast('Services configured', 'success')
     proceedToApp()
   } catch (err) {
@@ -474,13 +502,13 @@ async function handleContinue() {
   height: 44px;
   margin: 0 auto 1.2rem;
   border-radius: 12px;
-  background: linear-gradient(135deg, #00d4ff22, #00d4ff44);
-  border: 1px solid #00d4ff55;
+  background: linear-gradient(135deg, rgba(var(--accent-rgb), 0.133), rgba(var(--accent-rgb), 0.267));
+  border: 1px solid rgba(var(--accent-rgb), 0.333);
   display: flex;
   align-items: center;
   justify-content: center;
 }
-.setup-brand-icon svg { width: 22px; height: 22px; color: #00d4ff; }
+.setup-brand-icon svg { width: 22px; height: 22px; color: var(--accent); }
 
 .setup-brand h1 {
   font-size: 18px;
@@ -529,12 +557,14 @@ async function handleContinue() {
 .service-icon svg { width: 18px; height: 18px; }
 .history-icon { background: #7c6aff22; border: 1px solid #7c6aff44; }
 .history-icon svg { color: #7c6aff; }
-.ha-icon { background: #00d4ff22; border: 1px solid #00d4ff44; }
-.ha-icon svg { color: #00d4ff; }
+.ha-icon { background: rgba(var(--accent-rgb), 0.133); border: 1px solid rgba(var(--accent-rgb), 0.267); }
+.ha-icon svg { color: var(--accent); }
 .abrp-icon { background: #4caf5022; border: 1px solid #4caf5044; }
 .abrp-icon svg { color: #4caf50; }
 .telegram-icon { background: #039be522; border: 1px solid #039be544; }
 .telegram-icon svg { color: #039be5; }
+.color-icon { background: rgba(var(--accent-rgb), 0.133); border: 1px solid rgba(var(--accent-rgb), 0.267); }
+.color-icon svg { color: var(--accent); }
 
 .service-info {
   flex: 1;
@@ -570,7 +600,7 @@ async function handleContinue() {
   transition: background 0.25s;
 }
 .toggle-btn.active .toggle-track {
-  background: #00d4ff;
+  background: var(--accent);
 }
 .toggle-thumb {
   display: block;
@@ -694,7 +724,7 @@ async function handleContinue() {
   transition: border-color 0.2s;
 }
 .form-group input:focus {
-  border-color: #00d4ff;
+  border-color: var(--accent);
 }
 .form-group input::placeholder {
   color: var(--muted);
@@ -712,7 +742,7 @@ async function handleContinue() {
   padding: 12px;
   border: none;
   border-radius: 12px;
-  background: linear-gradient(135deg, #00d4ff, #0099cc);
+  background: linear-gradient(135deg, var(--accent), #0099cc);
   color: #000;
   font-size: 14px;
   font-weight: 600;

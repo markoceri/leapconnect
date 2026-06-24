@@ -72,6 +72,12 @@ from leapconnect.api.schemas.notifications import (  # noqa: F401
     TelegramLinkTokenResponse,
     TelegramUserResponse,
 )
+from leapconnect.api.schemas.styling import (  # noqa: F401
+    ColorDetectResponse,
+    PaletteColorSchema,
+    VehicleColorUpdate,
+    VehiclePaletteResponse,
+)
 from leapconnect.api.schemas.system import (  # noqa: F401
     AbrpStatusResponse,
     DatabaseSizeResponse,
@@ -137,6 +143,7 @@ __all__ = [
     "ChargingTimeBandResponse",
     "ChargingTimeBandUpdate",
     "ClimateSchema",
+    "ColorDetectResponse",
     "ConnectionStatusResponse",
     "ConnectivitySchema",
     "ConsumptionLastWeekResponse",
@@ -183,6 +190,7 @@ __all__ = [
     "NotificationEventStatus",
     "NotificationPreferenceItem",
     "NotificationPreferencesUpdate",
+    "PaletteColorSchema",
     "PreferencesResponse",
     "ReconnectResponse",
     "SchedulerStatusResponse",
@@ -199,8 +207,10 @@ __all__ = [
     "UserCreateResponse",
     "UserInfoResponse",
     "UserUpdateResponse",
+    "VehicleColorUpdate",
     "VehicleHistoryResponse",
     "VehicleListResponse",
+    "VehiclePaletteResponse",
     "VehicleSchema",
     "VehicleSnapshotSchema",
     "VehicleStatusResponse",

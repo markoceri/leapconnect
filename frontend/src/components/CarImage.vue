@@ -157,7 +157,7 @@ watch(hasStatus, (val) => {
 }
 
 .car-image.glow-ac {
-  filter: drop-shadow(0 0 14px rgba(0, 212, 255, 0.6));
+  filter: drop-shadow(0 0 14px rgba(var(--accent-rgb), 0.6));
 }
 
 .layers-container {

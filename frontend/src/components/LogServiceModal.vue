@@ -156,11 +156,11 @@ async function submit() {
 .mileage-row input { flex: 1; }
 .fetch-km-btn {
   display: flex; align-items: center; gap: 6px; white-space: nowrap;
-  padding: 8px 14px; border-radius: 8px; border: 1px solid rgba(0,212,255,0.27);
-  background: rgba(0,212,255,0.06); color: var(--cyan); cursor: pointer; font-size: 12px; font-weight: 600;
+  padding: 8px 14px; border-radius: 8px; border: 1px solid rgba(var(--accent-rgb), 0.27);
+  background: rgba(var(--accent-rgb), 0.06); color: var(--cyan); cursor: pointer; font-size: 12px; font-weight: 600;
   transition: all 0.15s;
 }
-.fetch-km-btn:hover { background: rgba(0,212,255,0.13); border-color: rgba(0,212,255,0.53); }
+.fetch-km-btn:hover { background: rgba(var(--accent-rgb), 0.13); border-color: rgba(var(--accent-rgb), 0.53); }
 .fetch-km-btn:disabled { opacity: 0.5; cursor: default; }
 .spinning { animation: spin 0.8s linear infinite; }
 .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }

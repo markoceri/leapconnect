@@ -189,8 +189,8 @@ const modes = [
 ]
 
 const quickActions = [
-  { action: 'ac', label: 'A/C Toggle', icon: Power, color: '#00d4ff' },
-  { action: 'quick-cool', label: 'Quick Cool', icon: Snowflake, color: '#00d4ff' },
+  { action: 'ac', label: 'A/C Toggle', icon: Power, color: 'var(--accent)' },
+  { action: 'quick-cool', label: 'Quick Cool', icon: Snowflake, color: 'var(--accent)' },
   { action: 'quick-heat', label: 'Quick Heat', icon: Flame, color: '#ff7043' },
   { action: 'defrost', label: 'Defrost', icon: ThermometerSnowflake, color: '#7c6aff' },
 ]
@@ -301,7 +301,7 @@ async function applyCustom() {
 }
 
 .cc-header-icon {
-  color: #00d4ff;
+  color: var(--accent);
 }
 
 .cc-title {
@@ -479,9 +479,9 @@ async function applyCustom() {
   transition: all 0.15s;
 }
 .cc-step-btn:hover {
-  background: #00d4ff18;
-  border-color: #00d4ff44;
-  color: #00d4ff;
+  background: rgba(var(--accent-rgb), 0.094);
+  border-color: rgba(var(--accent-rgb), 0.267);
+  color: var(--accent);
 }
 
 .cc-temp-value {
@@ -512,9 +512,9 @@ async function applyCustom() {
   transition: all 0.15s;
 }
 .cc-fan-btn.active {
-  background: #00d4ff18;
-  border-color: #00d4ff44;
-  color: #00d4ff;
+  background: rgba(var(--accent-rgb), 0.094);
+  border-color: rgba(var(--accent-rgb), 0.267);
+  color: var(--accent);
 }
 .cc-fan-btn:hover:not(.active) {
   color: var(--text);
@@ -544,9 +544,9 @@ async function applyCustom() {
   transition: all 0.15s;
 }
 .cc-mode-btn.active {
-  background: #00d4ff18;
-  border-color: #00d4ff44;
-  color: #00d4ff;
+  background: rgba(var(--accent-rgb), 0.094);
+  border-color: rgba(var(--accent-rgb), 0.267);
+  color: var(--accent);
 }
 .cc-mode-btn:hover:not(.active) {
   color: var(--text);
@@ -562,7 +562,7 @@ async function applyCustom() {
   padding: 12px;
   border-radius: 10px;
   border: none;
-  background: linear-gradient(135deg, #00d4ff, #7c6aff);
+  background: linear-gradient(135deg, var(--accent), #7c6aff);
   color: #fff;
   font-size: 13px;
   font-weight: 700;

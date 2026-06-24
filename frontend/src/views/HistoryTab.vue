@@ -312,6 +312,7 @@
 
 <script setup>
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import { accentHex, accentRgba } from '../utils/theme'
 import { Chart, registerables } from 'chart.js'
 import { api } from '../composables/useApi'
 import { Battery, Map, Zap, Route, Thermometer, BarChart3, Table2, Gauge, Clock, CircleDot, MapPin, Circle, BatteryWarning, CalendarDays, ChevronLeft, ChevronRight, MoreVertical, Download, Maximize2, Minimize2, HardDrive, Cloud, Activity } from 'lucide-vue-next'
@@ -915,7 +916,7 @@ const kpiCards = computed(() => {
   const realAutonomy = consumption > 0 && batteryCapacityKwh ? Math.round((batteryCapacityKwh / consumption) * 100) : null
 
   const cards = [
-    { label: 'km driven', value: Math.round(totalKm).toLocaleString(), color: '#00d4ff' },
+    { label: 'km driven', value: Math.round(totalKm).toLocaleString(), color: 'var(--accent)' },
     { label: 'Energy used', value: `${energyUsed.toFixed(1)} kWh`, color: '#ffab40' },
     { label: 'Total charged', value: `${(energyCharged + regenEnergy).toFixed(1)} kWh`, color: '#00e676' },
     { label: 'Charged (grid)', value: `${energyCharged.toFixed(1)} kWh`, color: '#66bb6a' },
@@ -1233,7 +1234,7 @@ function buildCharts() {
   if (rangeCanvas.value) {
     charts.push(new Chart(rangeCanvas.value, {
       type: 'line',
-      data: { labels, datasets: [{ data: d.map(x => x.range), borderColor: '#00d4ff', backgroundColor: 'rgba(0,212,255,0.07)', fill: true, tension: 0.4, pointRadius: pointR, pointHoverRadius: 5, borderWidth: 2 }] },
+      data: { labels, datasets: [{ data: d.map(x => x.range), borderColor: accentHex(), backgroundColor: accentRgba(0.07), fill: true, tension: 0.4, pointRadius: pointR, pointHoverRadius: 5, borderWidth: 2 }] },
       options: { ...chartDefaults.value, scales: { ...chartDefaults.value.scales, y: { ...chartDefaults.value.scales.y, ticks: { ...chartDefaults.value.scales.y.ticks, callback: v => `${v} km` } } } },
     }))
   }
@@ -1360,7 +1361,7 @@ function buildCharts() {
         data: {
           labels: realLabels,
           datasets: [
-            { label: 'Estimated range', data: estimated, backgroundColor: 'rgba(0,212,255,0.4)', borderColor: '#00d4ff', borderWidth: 1, borderRadius: 4 },
+            { label: 'Estimated range', data: estimated, backgroundColor: accentRgba(0.4), borderColor: accentHex(), borderWidth: 1, borderRadius: 4 },
             { label: 'Actual km driven', data: actual, backgroundColor: 'rgba(124,106,255,0.4)', borderColor: '#7c6aff', borderWidth: 1, borderRadius: 4 },
           ],
         },
@@ -1413,7 +1414,7 @@ function buildCharts() {
       type: 'doughnut',
       data: {
         labels: [`Parked`, `In use`],
-        datasets: [{ data: [parkedPct, drivingPct], backgroundColor: [getChartColors().grid, '#00d4ff'], borderColor: [getChartColors().tick, '#00d4ff'], borderWidth: 1 }],
+        datasets: [{ data: [parkedPct, drivingPct], backgroundColor: [getChartColors().grid, accentHex()], borderColor: [getChartColors().tick, accentHex()], borderWidth: 1 }],
       },
       options: {
         responsive: true, maintainAspectRatio: false,
@@ -1470,7 +1471,7 @@ function buildCharts() {
         data: {
           labels: tireLabels,
           datasets: [
-            { label: 'FL', data: tireSnaps.map(s => toBar(s.tire_front_left_pressure)), borderColor: '#00d4ff', borderWidth: 2, tension: 0.3, pointRadius: 0, pointHoverRadius: 5 },
+            { label: 'FL', data: tireSnaps.map(s => toBar(s.tire_front_left_pressure)), borderColor: accentHex(), borderWidth: 2, tension: 0.3, pointRadius: 0, pointHoverRadius: 5 },
             { label: 'FR', data: tireSnaps.map(s => toBar(s.tire_front_right_pressure)), borderColor: '#7c6aff', borderWidth: 2, tension: 0.3, pointRadius: 0, pointHoverRadius: 5 },
             { label: 'RL', data: tireSnaps.map(s => toBar(s.tire_rear_left_pressure)), borderColor: '#ffab40', borderWidth: 2, tension: 0.3, pointRadius: 0, pointHoverRadius: 5 },
             { label: 'RR', data: tireSnaps.map(s => toBar(s.tire_rear_right_pressure)), borderColor: '#ff7043', borderWidth: 2, tension: 0.3, pointRadius: 0, pointHoverRadius: 5 },
@@ -1509,7 +1510,7 @@ function buildCharts() {
         data: {
           labels: tireLabels,
           datasets: [
-            { label: 'Front (L-R)', data: tireSnaps.map(s => Math.round((toBar(s.tire_front_left_pressure) - toBar(s.tire_front_right_pressure)) * 100) / 100), borderColor: '#00d4ff', borderWidth: 2, tension: 0.3, pointRadius: 0, pointHoverRadius: 5 },
+            { label: 'Front (L-R)', data: tireSnaps.map(s => Math.round((toBar(s.tire_front_left_pressure) - toBar(s.tire_front_right_pressure)) * 100) / 100), borderColor: accentHex(), borderWidth: 2, tension: 0.3, pointRadius: 0, pointHoverRadius: 5 },
             { label: 'Rear (L-R)', data: tireSnaps.map(s => Math.round((toBar(s.tire_rear_left_pressure) - toBar(s.tire_rear_right_pressure)) * 100) / 100), borderColor: '#ffab40', borderWidth: 2, tension: 0.3, pointRadius: 0, pointHoverRadius: 5 },
           ],
         },
@@ -1611,7 +1612,7 @@ onBeforeUnmount(destroyCharts)
 }
 .source-toggle { display: flex; gap: 2px; background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 3px; }
 .source-btn { display: flex; align-items: center; gap: 5px; padding: 6px 14px; border-radius: 7px; border: none; cursor: pointer; font-size: 12px; font-weight: 600; background: transparent; color: var(--muted); transition: all 0.2s; }
-.source-btn.active { background: var(--btn-bg); color: #00d4ff; }
+.source-btn.active { background: var(--btn-bg); color: var(--accent); }
 .source-btn:hover:not(.active) { color: var(--text); }
 .history-header h2 {
   font-size: 16px;
@@ -1647,7 +1648,7 @@ onBeforeUnmount(destroyCharts)
 }
 .toolbar-btn:hover:not(:disabled) {
   background: var(--btn-bg);
-  color: #00d4ff;
+  color: var(--accent);
 }
 .toolbar-btn:disabled {
   opacity: 0.3;
@@ -1673,7 +1674,7 @@ onBeforeUnmount(destroyCharts)
   border-radius: 14px;
   border: 1.5px solid #00b8d4;
   background: transparent;
-  color: #00d4ff;
+  color: var(--accent);
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
@@ -1722,7 +1723,7 @@ onBeforeUnmount(destroyCharts)
 }
 .toolbar-menu-item:hover {
   background: var(--btn-bg);
-  color: #00d4ff;
+  color: var(--accent);
 }
 
 /* Date picker overlay & dropdown */
@@ -1769,7 +1770,7 @@ onBeforeUnmount(destroyCharts)
 }
 .preset-btn:hover {
   background: var(--btn-bg);
-  color: #00d4ff;
+  color: var(--accent);
 }
 .date-picker-calendar {
   padding: 16px 20px 60px;
@@ -2108,7 +2109,7 @@ onBeforeUnmount(destroyCharts)
 }
 .view-btn.active {
   background: var(--btn-bg);
-  color: #00d4ff;
+  color: var(--accent);
 }
 
 /* Data table */

@@ -31,16 +31,16 @@
           <div class="certs-found-divider"><span>or upload new ones</span></div>
         </div>
 
-        <div v-if="!certsOnDisk" class="certs-found-banner" style="border-color:#00d4ff44">
-          <div class="certs-found-icon" style="background:#00d4ff18;border-color:#00d4ff44">
-            <Download :size="18" style="color:#00d4ff" />
+        <div v-if="!certsOnDisk" class="certs-found-banner" style="border-color:rgba(var(--accent-rgb), 0.267)">
+          <div class="certs-found-icon" style="background:rgba(var(--accent-rgb), 0.094);border-color:rgba(var(--accent-rgb), 0.267)">
+            <Download :size="18" style="color:var(--accent)" />
           </div>
           <div class="certs-found-text">
             <strong>Download from GitHub</strong>
             <span>Automatically fetch the latest Leapmotor certificates from:</span>
             <a href="https://github.com/markoceri/leapmotor-certs" target="_blank" rel="noopener" class="cert-repo-link">github.com/markoceri/leapmotor-certs</a>
           </div>
-          <button class="btn-adopt" style="background:#00d4ff22;border-color:#00d4ff44;color:#00d4ff" :disabled="downloadFromGH" @click="handleGitHubDownload">
+          <button class="btn-adopt" style="background:rgba(var(--accent-rgb), 0.133);border-color:rgba(var(--accent-rgb), 0.267);color:var(--accent)" :disabled="downloadFromGH" @click="handleGitHubDownload">
             {{ downloadFromGH ? 'Downloading…' : 'Download from GitHub' }}
           </button>
           <div v-if="ghError" class="setup-error">{{ ghError }}</div>
@@ -356,12 +356,12 @@ async function handleSubmit() {
 }
 .file-upload:hover,
 .file-upload.dragover {
-  border-color: #00d4ff55;
-  background: #00d4ff08;
+  border-color: rgba(var(--accent-rgb), 0.333);
+  background: rgba(var(--accent-rgb), 0.031);
 }
 .file-upload.filled {
   border-style: solid;
-  border-color: #00d4ff44;
+  border-color: rgba(var(--accent-rgb), 0.267);
   color: var(--text);
 }
 .file-upload svg {
@@ -374,10 +374,10 @@ async function handleSubmit() {
   width: 100%;
   padding: 14px;
   margin-top: 6px;
-  background: linear-gradient(135deg, #00d4ff22, #00d4ff44);
-  border: 1px solid #00d4ff55;
+  background: linear-gradient(135deg, rgba(var(--accent-rgb), 0.133), rgba(var(--accent-rgb), 0.267));
+  border: 1px solid rgba(var(--accent-rgb), 0.333);
   border-radius: 10px;
-  color: #00d4ff;
+  color: var(--accent);
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
@@ -385,7 +385,7 @@ async function handleSubmit() {
   letter-spacing: 0.04em;
 }
 .btn-primary:hover {
-  background: linear-gradient(135deg, #00d4ff33, #00d4ff55);
+  background: linear-gradient(135deg, rgba(var(--accent-rgb), 0.2), rgba(var(--accent-rgb), 0.333));
 }
 .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
 
@@ -470,7 +470,7 @@ async function handleSubmit() {
 
 .cert-repo-link {
   display: block;
-  color: #00d4ff;
+  color: var(--accent);
   text-decoration: none;
   font-family: var(--mono);
   font-size: 12px;

@@ -64,7 +64,7 @@ function iconComp(type) {
 }
 .toast.success { border-color: #00e67655; border-left: 3px solid #00e676; }
 .toast.error { border-color: #ff525255; border-left: 3px solid #ff5252; }
-.toast.info { border-color: #00d4ff55; border-left: 3px solid #00d4ff; }
+.toast.info { border-color: rgba(var(--accent-rgb), 0.333); border-left: 3px solid var(--accent); }
 .toast.removing { opacity: 0; transform: translateX(40px); transition: all 0.3s; }
 
 .toast-icon { font-weight: 700; font-size: 15px; }

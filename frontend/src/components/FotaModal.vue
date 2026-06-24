@@ -114,7 +114,7 @@ const existingSchedules = ref([])
 const loadingSchedules = ref(false)
 
 const actions = [
-  { value: 'download', label: 'Download', icon: Download, color: '#00d4ff' },
+  { value: 'download', label: 'Download', icon: Download, color: 'var(--accent)' },
   { value: 'install', label: 'Install', icon: Play, color: '#00e676' },
   { value: 'schedule', label: 'Schedule', icon: Clock, color: '#ffab40' },
 ]

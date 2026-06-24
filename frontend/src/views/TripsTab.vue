@@ -15,7 +15,7 @@
     <!-- Totals KPI -->
     <div v-if="totals" class="summary-grid">
       <div class="summary-card">
-        <div class="summary-value" style="color: #00d4ff">{{ formatKm(totals.total_mileage) }}</div>
+        <div class="summary-value" style="color: var(--accent)">{{ formatKm(totals.total_mileage) }}</div>
         <div class="summary-label">Total distance</div>
       </div>
       <div class="summary-card">
@@ -136,7 +136,7 @@
               </div>
               <div class="detail-stat">
                 <span class="stat-label">Distance</span>
-                <span class="stat-value" style="color: #00d4ff">{{ formatTripKm(selectedTrip.travelMile) }}</span>
+                <span class="stat-value" style="color: var(--accent)">{{ formatTripKm(selectedTrip.travelMile) }}</span>
               </div>
               <div class="detail-stat">
                 <span class="stat-label">Avg speed</span>
@@ -364,6 +364,7 @@
 
 <script setup>
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import { accentHex, accentRgba } from '../utils/theme'
 import { api } from '../composables/useApi'
 import { Clock, Navigation, Zap, ChevronRight, ChevronLeft, Map, Gauge, Search, GitCompare, Diff, X } from 'lucide-vue-next'
 import { Chart, registerables } from 'chart.js'
@@ -689,7 +690,7 @@ function renderSimpleMap() {
   const coords = points.map(p => [p.lat || p.latitude, p.lng || p.longitude])
 
   // Single-color polyline
-  L.polyline(coords, { color: '#00d4ff', weight: 3, opacity: 0.8 }).addTo(mapInstance)
+  L.polyline(coords, { color: accentHex(), weight: 3, opacity: 0.8 }).addTo(mapInstance)
 
   // Start / end markers
   L.circleMarker(coords[0], { radius: 8, color: '#fff', fillColor: '#66bb6a', fillOpacity: 1, weight: 2 })
@@ -813,8 +814,8 @@ function renderSpeedChart() {
       datasets: [{
         label: 'Speed (km/h)',
         data: speeds,
-        borderColor: '#00d4ff',
-        backgroundColor: 'rgba(0,212,255,0.08)',
+        borderColor: accentHex(),
+        backgroundColor: accentRgba(0.08),
         fill: true,
         tension: 0.3,
         pointRadius: 2,
@@ -1114,16 +1115,16 @@ onBeforeUnmount(() => {
   color: var(--muted); font-size: 13px; cursor: pointer;
   transition: all 0.2s;
 }
-.compare-bar-btn:hover:not(:disabled) { color: #00d4ff; border-color: #00d4ff44; }
+.compare-bar-btn:hover:not(:disabled) { color: var(--accent); border-color: rgba(var(--accent-rgb), 0.267); }
 .compare-bar-btn:disabled { opacity: 0.4; cursor: default; }
-.compare-bar-btn.active { border-color: #00d4ff55; color: #00d4ff; background: #00d4ff11; }
+.compare-bar-btn.active { border-color: rgba(var(--accent-rgb), 0.333); color: var(--accent); background: rgba(var(--accent-rgb), 0.067); }
 .compare-bar-btn.primary {
-  background: linear-gradient(135deg, #00d4ff22, #00d4ff44);
-  border: 1px solid #00d4ff55;
-  color: #00d4ff; font-weight: 600;
+  background: linear-gradient(135deg, rgba(var(--accent-rgb), 0.133), rgba(var(--accent-rgb), 0.267));
+  border: 1px solid rgba(var(--accent-rgb), 0.333);
+  color: var(--accent); font-weight: 600;
 }
 .compare-bar-btn.primary:hover:not(:disabled) {
-  background: linear-gradient(135deg, #00d4ff33, #00d4ff55);
+  background: linear-gradient(135deg, rgba(var(--accent-rgb), 0.2), rgba(var(--accent-rgb), 0.333));
 }
 .compare-bar-btn.primary:disabled { opacity: 0.5; cursor: not-allowed; }
 .compare-bar-btn.clear {

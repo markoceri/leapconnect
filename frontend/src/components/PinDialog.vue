@@ -152,7 +152,7 @@ defineExpose({ setError })
 }
 
 .pin-input:focus {
-  border-color: #00d4ff55;
+  border-color: rgba(var(--accent-rgb), 0.333);
 }
 
 .pin-input::placeholder {
@@ -172,7 +172,7 @@ defineExpose({ setError })
 }
 
 .pin-remember input[type="checkbox"] {
-  accent-color: #00d4ff;
+  accent-color: var(--accent);
   width: 15px;
   height: 15px;
   cursor: pointer;
@@ -206,13 +206,13 @@ defineExpose({ setError })
 }
 
 .pin-btn.confirm {
-  background: linear-gradient(135deg, #00d4ff22, #00d4ff44);
-  border-color: #00d4ff55;
-  color: #00d4ff;
+  background: linear-gradient(135deg, rgba(var(--accent-rgb), 0.133), rgba(var(--accent-rgb), 0.267));
+  border-color: rgba(var(--accent-rgb), 0.333);
+  color: var(--accent);
 }
 
 .pin-btn.confirm:hover {
-  background: linear-gradient(135deg, #00d4ff33, #00d4ff55);
+  background: linear-gradient(135deg, rgba(var(--accent-rgb), 0.2), rgba(var(--accent-rgb), 0.333));
 }
 
 .pin-btn:disabled {

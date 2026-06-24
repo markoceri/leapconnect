@@ -18,13 +18,13 @@
 
     <!-- Climate -->
     <SectionCard title="Climate" :icon="Thermometer">
-      <InfoRow label="A/C" :value="climate.ac_switch ? 'On' : 'Off'" :color="climate.ac_switch ? '#00d4ff' : 'var(--muted)'" :dot="!!climate.ac_switch" />
+      <InfoRow label="A/C" :value="climate.ac_switch ? 'On' : 'Off'" :color="climate.ac_switch ? 'var(--accent)' : 'var(--muted)'" :dot="!!climate.ac_switch" />
       <InfoRow label="Set Temperature" :value="climate.ac_setting != null ? `${climate.ac_setting}°C` : '—'" color="var(--text)" />
       <InfoRow v-if="climate.ac_setting_right != null" label="Right Temp" :value="`${climate.ac_setting_right}°C`" color="var(--text)" />
       <InfoRow v-if="climate.interior_temp != null" label="Interior Temp" :value="`${climate.interior_temp}°C`" color="var(--sub)" />
       <InfoRow label="Outside Temperature" :value="climate.outdoor_temp != null ? `${climate.outdoor_temp}°C` : '—'" color="var(--sub)" />
       <InfoRow label="Fan Volume" :value="climate.ac_air_volume ?? '—'" color="var(--text)" />
-      <InfoRow label="Mode" :value="climateMode(climate.ac_cooling_and_heating)" :color="climate.ac_cooling_and_heating ? '#00d4ff' : 'var(--muted)'" />
+      <InfoRow label="Mode" :value="climateMode(climate.ac_cooling_and_heating)" :color="climate.ac_cooling_and_heating ? 'var(--accent)' : 'var(--muted)'" />
       <InfoRow label="Air Circulation" :value="climate.ac_circle_mode != null ? (climate.ac_circle_mode ? 'Recirculate' : 'Fresh') : '—'" color="var(--sub)" />
       <InfoRow v-if="climate.recirculation_mode != null" label="Recirculation" :value="climate.recirculation_mode === 0 ? 'Fresh Air' : 'Recirculation'" color="var(--sub)" />
       <InfoRow v-if="climate.windshield_defrost != null" label="Windshield Defrost" :value="climate.windshield_defrost > 0 ? 'Active' : 'Off'" :color="climate.windshield_defrost > 0 ? '#ff9100' : 'var(--muted)'" />
@@ -58,7 +58,7 @@
       <InfoRow label="Charging" :value="props.status?.is_charging === true ? 'Yes' : props.status?.is_charging === false ? 'No' : '—'" :color="props.status?.is_charging ? '#00e676' : 'var(--muted)'" :dot="!!props.status?.is_charging" />
       <InfoRow label="Plugged In" :value="props.status?.is_plugged === true ? 'Yes' : props.status?.is_plugged === false ? 'No' : '—'" :color="props.status?.is_plugged ? '#ffab40' : 'var(--muted)'" :dot="!!props.status?.is_plugged" />
       <InfoRow label="Discharging" :value="bat.is_discharging === true ? 'Yes' : bat.is_discharging === false ? 'No' : '—'" :color="bat.is_discharging ? '#ffab40' : 'var(--muted)'" />
-      <InfoRow label="Regen Braking" :value="props.status?.is_regening === true ? 'Yes' : props.status?.is_regening === false ? 'No' : '—'" :color="props.status?.is_regening ? '#00d4ff' : 'var(--muted)'" />
+      <InfoRow label="Regen Braking" :value="props.status?.is_regening === true ? 'Yes' : props.status?.is_regening === false ? 'No' : '—'" :color="props.status?.is_regening ? 'var(--accent)' : 'var(--muted)'" />
       <InfoRow label="Charge State" :value="bat.charge_state_label || '—'" :color="bat.charge_state != null && bat.charge_state > 0 ? '#00e676' : 'var(--muted)'" />
       <InfoRow label="Time Remaining" :value="props.status?.is_charging ? `${bat.charge_remain_time ?? '—'} min` : '—'" color="var(--text)" />
       <InfoRow label="Charge Limit" :value="bat.charge_soc_setting != null ? `${bat.charge_soc_setting}%` : '—'" color="var(--text)" />
@@ -67,7 +67,7 @@
       <InfoRow label="Battery Power" :value="bat.battery_power != null ? `${bat.battery_power} kW` : '—'" color="#ff9100" />
       <InfoRow label="Charging Power" :value="bat.charging_power_kw != null ? `${bat.charging_power_kw} kW` : '—'" color="#00e676" />
       <InfoRow label="Discharging Power" :value="bat.discharging_power_kw != null ? `${bat.discharging_power_kw} kW` : '—'" color="#ffab40" />
-      <InfoRow label="Energy Available" :value="bat.dump_energy_kwh != null ? `${bat.dump_energy_kwh} kWh` : '—'" color="#00d4ff" />
+      <InfoRow label="Energy Available" :value="bat.dump_energy_kwh != null ? `${bat.dump_energy_kwh} kWh` : '—'" color="var(--accent)" />
       <InfoRow v-if="bat.precise_soc != null" label="Precise SoC" :value="`${bat.precise_soc}%`" color="var(--sub)" />
       <InfoRow v-if="bat.min_battery_temp != null" label="Min Battery Temp" :value="`${bat.min_battery_temp}°C`" color="var(--sub)" />
       <InfoRow v-if="bat.healthy_charge_enabled != null" label="Healthy Charge" :value="bat.healthy_charge_enabled ? 'Enabled' : 'Disabled'" :color="bat.healthy_charge_enabled ? '#00e676' : 'var(--muted)'" />
@@ -90,9 +90,9 @@
     <!-- Seat Comfort -->
     <SectionCard title="Seat Comfort" :icon="Armchair">
       <InfoRow label="Driver Heat" :value="seatComfort.driver_seat_heating != null ? `Level ${seatComfort.driver_seat_heating}` : '—'" :color="seatComfort.driver_seat_heating > 0 ? '#ff9100' : 'var(--muted)'" />
-      <InfoRow label="Driver Ventilation" :value="seatComfort.driver_seat_ventilation != null ? `Level ${seatComfort.driver_seat_ventilation}` : '—'" :color="seatComfort.driver_seat_ventilation > 0 ? '#00d4ff' : 'var(--muted)'" />
+      <InfoRow label="Driver Ventilation" :value="seatComfort.driver_seat_ventilation != null ? `Level ${seatComfort.driver_seat_ventilation}` : '—'" :color="seatComfort.driver_seat_ventilation > 0 ? 'var(--accent)' : 'var(--muted)'" />
       <InfoRow label="Passenger Heat" :value="seatComfort.passenger_seat_heating != null ? `Level ${seatComfort.passenger_seat_heating}` : '—'" :color="seatComfort.passenger_seat_heating > 0 ? '#ff9100' : 'var(--muted)'" />
-      <InfoRow label="Passenger Ventilation" :value="seatComfort.passenger_seat_ventilation != null ? `Level ${seatComfort.passenger_seat_ventilation}` : '—'" :color="seatComfort.passenger_seat_ventilation > 0 ? '#00d4ff' : 'var(--muted)'" />
+      <InfoRow label="Passenger Ventilation" :value="seatComfort.passenger_seat_ventilation != null ? `Level ${seatComfort.passenger_seat_ventilation}` : '—'" :color="seatComfort.passenger_seat_ventilation > 0 ? 'var(--accent)' : 'var(--muted)'" />
       <InfoRow label="Steering Wheel Heat" :value="seatComfort.steering_wheel_heating != null ? (seatComfort.steering_wheel_heating ? 'On' : 'Off') : '—'" :color="seatComfort.steering_wheel_heating ? '#ff9100' : 'var(--muted)'" />
       <InfoRow v-if="seatComfort.steering_wheel_heater_minutes != null" label="SW Heat Remaining" :value="`${seatComfort.steering_wheel_heater_minutes} min`" color="var(--sub)" />
     </SectionCard>
@@ -111,7 +111,7 @@
 
     <!-- Connectivity -->
     <SectionCard title="Connectivity" :icon="Wifi">
-      <InfoRow label="Bluetooth" :value="connectivity.bluetooth_state ? 'On' : connectivity.bluetooth_state === false ? 'Off' : '—'" :color="connectivity.bluetooth_state ? '#00d4ff' : 'var(--muted)'" :dot="!!connectivity.bluetooth_state" />
+      <InfoRow label="Bluetooth" :value="connectivity.bluetooth_state ? 'On' : connectivity.bluetooth_state === false ? 'Off' : '—'" :color="connectivity.bluetooth_state ? 'var(--accent)' : 'var(--muted)'" :dot="!!connectivity.bluetooth_state" />
       <InfoRow label="Wi-Fi Hotspot" :value="connectivity.hotspot_state ? 'On' : connectivity.hotspot_state === false ? 'Off' : '—'" :color="connectivity.hotspot_state ? '#00e676' : 'var(--muted)'" :dot="!!connectivity.hotspot_state" />
       <InfoRow label="Ignition ON1" :value="ignition.bcm_key_position_on1 != null ? (ignition.bcm_key_position_on1 ? 'Yes' : 'No') : '—'" :color="ignition.bcm_key_position_on1 ? '#00e676' : 'var(--muted)'" />
       <InfoRow v-if="ignition.bcm_key_position_on2 != null" label="Ignition ON2" :value="ignition.bcm_key_position_on2 ? 'Yes' : 'No'" :color="ignition.bcm_key_position_on2 ? '#00e676' : 'var(--muted)'" />
@@ -129,7 +129,7 @@
         <span style="font-family:var(--mono);font-size:11px">{{ vehicle.vin || '—' }}</span>
       </InfoRow>
       <InfoRow label="Model" :value="vehicle.car_type || '—'" color="var(--text)" />
-      <InfoRow label="Nickname" :value="vehicle.vehicle_nickname || '—'" color="#00d4ff" />
+      <InfoRow label="Nickname" :value="vehicle.vehicle_nickname || '—'" color="var(--accent)" />
       <InfoRow label="Plate Number" :value="vehicle.plate_number || '—'" color="var(--text)" />
       <InfoRow label="Color" :value="vehicle.out_color || '—'" color="var(--text)" />
       <InfoRow label="Year" :value="vehicle.year || '—'" color="var(--text)" />
@@ -142,7 +142,7 @@
     <SectionCard title="Mileage & Energy" :icon="Zap">
       <InfoRow label="Total Mileage" :value="driving.total_mileage != null ? `${driving.total_mileage.toLocaleString()} km` : '—'" color="#ffab40" />
       <InfoRow label="Total Mileage (mi)" :value="driving.total_mileage != null ? `${(driving.total_mileage * 0.621371).toFixed(1)} mi` : '—'" color="var(--sub)" />
-      <InfoRow label="Energy Available" :value="bat.dump_energy_kwh != null ? `${bat.dump_energy_kwh} kWh` : '—'" color="#00d4ff" />
+      <InfoRow label="Energy Available" :value="bat.dump_energy_kwh != null ? `${bat.dump_energy_kwh} kWh` : '—'" color="var(--accent)" />
       <InfoRow v-if="mileage?.deliveryDays != null" label="Days Since Delivery" :value="mileage.deliveryDays" color="var(--text)" />
     </SectionCard>
   </div>
@@ -269,7 +269,7 @@ function tireColor(val) {
 }
 .batt-bar-fill {
   height: 100%;
-  background: linear-gradient(90deg, #00d4ff, #00e676);
+  background: linear-gradient(90deg, var(--accent), #00e676);
   border-radius: 4px;
   transition: width 0.6s;
 }
@@ -293,11 +293,11 @@ function tireColor(val) {
   position: absolute;
   width: 12px;
   height: 12px;
-  background: #00d4ff;
+  background: var(--accent);
   border-radius: 50%;
   top: -4px;
   transition: left 0.4s;
-  box-shadow: 0 0 8px #00d4ff;
+  box-shadow: 0 0 8px var(--accent);
 }
 .temp-slider-range {
   display: flex;

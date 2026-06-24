@@ -24,8 +24,8 @@ defineEmits(['update:modelValue'])
   flex-shrink: 0;
 }
 .toggle.on {
-  background: #00d4ff44;
-  border-color: #00d4ff66;
+  background: rgba(var(--accent-rgb), 0.267);
+  border-color: rgba(var(--accent-rgb), 0.4);
 }
 .toggle-knob {
   position: absolute;
@@ -39,7 +39,7 @@ defineEmits(['update:modelValue'])
 }
 .toggle.on .toggle-knob {
   left: 18px;
-  background: #00d4ff;
-  box-shadow: 0 0 6px #00d4ff;
+  background: var(--accent);
+  box-shadow: 0 0 6px var(--accent);
 }
 </style>

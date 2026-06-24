@@ -48,6 +48,7 @@ def _prefs_response(prefs) -> PreferencesResponse:
         downsampling_max_points=prefs.downsampling_max_points,
         has_solar_panels=prefs.has_solar_panels,
         home_pricing_mode=prefs.home_pricing_mode,
+        auto_theme_from_vehicle=prefs.auto_theme_from_vehicle,
     )
 
 
@@ -76,9 +77,9 @@ async def update_preferences(request: Request, repo: RepoDep) -> PreferencesResp
         await repo.save_setting("electricity_price_kwh", str(price))
     theme = body.get("theme")
     if theme is not None:
-        if theme not in ("dark", "light"):
+        if theme not in ("dark", "light", "vehicle"):
             raise HTTPException(
-                status_code=422, detail="'theme' must be 'dark' or 'light'"
+                status_code=422, detail="'theme' must be 'dark', 'light' or 'vehicle'"
             )
         await repo.save_setting("theme", theme)
     ds_enabled = body.get("downsampling_enabled")
@@ -138,6 +139,16 @@ async def update_preferences(request: Request, repo: RepoDep) -> PreferencesResp
                 detail="'home_pricing_mode' must be 'flat' or 'time_of_use'",
             )
         await repo.save_setting("home_pricing_mode", pricing_mode)
+    # -- auto accent colour from vehicle --
+    auto_theme = body.get("auto_theme_from_vehicle")
+    if auto_theme is not None:
+        if not isinstance(auto_theme, bool):
+            raise HTTPException(
+                status_code=422, detail="'auto_theme_from_vehicle' must be a boolean"
+            )
+        await repo.save_setting(
+            "auto_theme_from_vehicle", "true" if auto_theme else "false"
+        )
     return _prefs_response(await load_preferences(repo))
 
 

@@ -88,7 +88,7 @@ function cancel() {
 }
 .confirm-icon-wrap.danger  { background: #ff525218; color: #ff5252; }
 .confirm-icon-wrap.warning { background: #ffb30018; color: #ffb300; }
-.confirm-icon-wrap.info    { background: #00d4ff18; color: #00d4ff; }
+.confirm-icon-wrap.info    { background: rgba(var(--accent-rgb), 0.094); color: var(--accent); }
 
 .confirm-title {
   font-size: 16px; font-weight: 700;
@@ -138,12 +138,12 @@ function cancel() {
 }
 
 .confirm-btn.info {
-  background: linear-gradient(135deg, #00d4ff22, #00d4ff44);
-  border-color: #00d4ff55;
-  color: #00d4ff;
+  background: linear-gradient(135deg, rgba(var(--accent-rgb), 0.133), rgba(var(--accent-rgb), 0.267));
+  border-color: rgba(var(--accent-rgb), 0.333);
+  color: var(--accent);
 }
 .confirm-btn.info:hover {
-  background: linear-gradient(135deg, #00d4ff33, #00d4ff55);
+  background: linear-gradient(135deg, rgba(var(--accent-rgb), 0.2), rgba(var(--accent-rgb), 0.333));
 }
 
 .confirm-btn:disabled {

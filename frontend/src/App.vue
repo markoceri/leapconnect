@@ -32,7 +32,7 @@
     <div class="navbar">
       <div class="navbar-left">
         <div class="navbar-logo">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#00d4ff" stroke-width="2">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" style="stroke: var(--accent)" stroke-width="2">
             <path d="M5 17H3a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v9a2 2 0 01-2 2h-2" />
             <circle cx="9" cy="17" r="2" /><circle cx="17" cy="17" r="2" />
           </svg>
@@ -561,7 +561,7 @@ onBeforeUnmount(() => {
 @media (min-width: 640px) { .navbar-left { gap: 10px; } }
 .navbar-logo {
   width: 32px; height: 32px; border-radius: 8px;
-  background: #00d4ff18; border: 1px solid #00d4ff44;
+  background: rgba(var(--accent-rgb), 0.094); border: 1px solid rgba(var(--accent-rgb), 0.267);
   display: flex; align-items: center; justify-content: center;
 }
 .navbar-title {
@@ -704,8 +704,8 @@ onBeforeUnmount(() => {
 }
 .vtab:hover { color: var(--text); }
 .vtab.active {
-  border-bottom-color: #00d4ff;
-  color: #00d4ff;
+  border-bottom-color: var(--accent);
+  color: var(--accent);
 }
 .vtab-name { font-size: 12px; font-weight: 700; }
 .vtab-id { font-size: 10px; color: var(--muted); font-family: var(--mono); }
@@ -756,8 +756,8 @@ onBeforeUnmount(() => {
   gap: 13px; padding: 0 11px;
 }
 .sidebar-btn.active {
-  background: #00d4ff18;
-  color: #00d4ff;
+  background: rgba(var(--accent-rgb), 0.094);
+  color: var(--accent);
 }
 .sidebar-btn:hover { color: #5c6478; }
 .sidebar-label {
@@ -767,7 +767,7 @@ onBeforeUnmount(() => {
   position: absolute; left: 0; top: 50%;
   transform: translateY(-50%);
   width: 3px; height: 20px;
-  background: #00d4ff;
+  background: var(--accent);
   border-radius: 0 2px 2px 0;
 }
 .sidebar.expanded .sidebar-indicator { left: -11px; }
@@ -850,7 +850,7 @@ onBeforeUnmount(() => {
   padding: 6px 12px;
   -webkit-tap-highlight-color: transparent;
 }
-.bottom-tab.active { color: #00d4ff; }
+.bottom-tab.active { color: var(--accent); }
 .bottom-tab-label {
   font-size: 10px;
   font-weight: 600;
@@ -893,8 +893,8 @@ onBeforeUnmount(() => {
 }
 .more-sheet-row:active { background: var(--elevated); }
 .more-sheet-icon { color: var(--muted3); display: inline-flex; flex-shrink: 0; }
-.more-sheet-row.active { color: #00d4ff; }
-.more-sheet-row.active .more-sheet-icon { color: #00d4ff; }
+.more-sheet-row.active { color: var(--accent); }
+.more-sheet-row.active .more-sheet-icon { color: var(--accent); }
 .more-sheet-label { flex: 1; text-align: left; }
 .more-sheet-badge {
   background: #ff5252; color: #fff;
