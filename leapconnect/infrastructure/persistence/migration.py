@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 from sqlalchemy import text
 
 
@@ -181,4 +183,144 @@ def run_alembic_upgrade(sync_conn) -> None:
                     "ALTER TABLE charging_session_costs "
                     "ADD COLUMN zone_name VARCHAR(128)"
                 )
+            )
+
+    # Self-healing: seed default charging price tiers and time-of-use bands.
+    # Migration 0007's upgrade() seeds these, but when Base.metadata.create_all
+    # pre-creates the tables and Alembic gets stamped to head (because
+    # vehicle_events already exists), the upgrade function never runs, leaving
+    # the tables empty. Seed idempotently here so every installation has the
+    # default tiers regardless of the boot path.
+    ct_inspect = sqlalchemy.inspect(sync_conn)
+    if ct_inspect.has_table("charging_price_tiers"):
+        result = sync_conn.execute(text("SELECT COUNT(*) FROM charging_price_tiers"))
+        if result.scalar() == 0:
+            # Read the user's electricity price if already set, else default
+            price_result = sync_conn.execute(
+                text(
+                    "SELECT value FROM app_settings WHERE key = 'electricity_price_kwh'"
+                )
+            )
+            price_row = price_result.fetchone()
+            home_grid_price = float(price_row[0]) if price_row else 0.25
+
+            sync_conn.execute(
+                text(
+                    "INSERT INTO charging_price_tiers"
+                    " (id, label, price_kwh, enabled)"
+                    " VALUES (:id, :label, :price, :enabled)"
+                ),
+                [
+                    {
+                        "id": "home_grid",
+                        "label": "Home (grid)",
+                        "price": home_grid_price,
+                        "enabled": True,
+                    },
+                    {
+                        "id": "home_solar",
+                        "label": "Home (solar)",
+                        "price": 0.0,
+                        "enabled": False,
+                    },
+                    {
+                        "id": "public_ac",
+                        "label": "Public AC",
+                        "price": 0.40,
+                        "enabled": True,
+                    },
+                    {
+                        "id": "public_dc",
+                        "label": "Public DC (fast)",
+                        "price": 0.55,
+                        "enabled": True,
+                    },
+                ],
+            )
+
+    # Self-healing: seed default time-of-use bands for home_grid (Italian ARERA).
+    if ct_inspect.has_table("charging_time_bands"):
+        result = sync_conn.execute(text("SELECT COUNT(*) FROM charging_time_bands"))
+        if result.scalar() == 0:
+            # Default Italian ARERA time-of-use schedules
+            F1_SCHEDULE = [
+                {
+                    "days": [0, 1, 2, 3, 4],
+                    "start_hour": 8,
+                    "start_min": 0,
+                    "end_hour": 19,
+                    "end_min": 0,
+                }
+            ]
+            F2_SCHEDULE = [
+                {
+                    "days": [0, 1, 2, 3, 4],
+                    "start_hour": 7,
+                    "start_min": 0,
+                    "end_hour": 8,
+                    "end_min": 0,
+                },
+                {
+                    "days": [0, 1, 2, 3, 4],
+                    "start_hour": 19,
+                    "start_min": 0,
+                    "end_hour": 23,
+                    "end_min": 0,
+                },
+                {
+                    "days": [5],
+                    "start_hour": 7,
+                    "start_min": 0,
+                    "end_hour": 23,
+                    "end_min": 0,
+                },
+            ]
+            F3_SCHEDULE = [
+                {
+                    "days": [0, 1, 2, 3, 4, 5],
+                    "start_hour": 23,
+                    "start_min": 0,
+                    "end_hour": 7,
+                    "end_min": 0,
+                },
+                {
+                    "days": [6],
+                    "start_hour": 0,
+                    "start_min": 0,
+                    "end_hour": 24,
+                    "end_min": 0,
+                },
+            ]
+            sync_conn.execute(
+                text(
+                    "INSERT INTO charging_time_bands"
+                    " (tier_id, name, price_kwh, schedule, color, position)"
+                    " VALUES (:tier_id, :name, :price, :schedule, :color, :pos)"
+                ),
+                [
+                    {
+                        "tier_id": "home_grid",
+                        "name": "F1 Peak",
+                        "price": 0.30,
+                        "schedule": json.dumps(F1_SCHEDULE),
+                        "color": "#ef4444",
+                        "pos": 1,
+                    },
+                    {
+                        "tier_id": "home_grid",
+                        "name": "F2 Mid-Peak",
+                        "price": 0.27,
+                        "schedule": json.dumps(F2_SCHEDULE),
+                        "color": "#f59e0b",
+                        "pos": 2,
+                    },
+                    {
+                        "tier_id": "home_grid",
+                        "name": "F3 Off-Peak",
+                        "price": 0.22,
+                        "schedule": json.dumps(F3_SCHEDULE),
+                        "color": "#22c55e",
+                        "pos": 3,
+                    },
+                ],
             )

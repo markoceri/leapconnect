@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - **"Car colour" theme — a third theme alongside Dark and Light** — the whole interface can be rebuilt around one of the vehicle's factory exterior colours, selectable in *Settings*. Per-model palettes (T03, B10, C10) are stored **per VIN**, so the theme follows the active vehicle; brightness, saturation and the accent colour are derived from the paint at runtime. Colour can also be **detected automatically** (from the cloud-reported colour, or sampled from the car image) via a new `domain/styling`/`theme_detection` backend and an `/api/vehicles/{vin}/palette|color|color/detect` router — opt in during initial setup or in *Settings*.
 
+### Fixed
+- **Charging price tiers not appearing for fresh installs** (#27) — when `Base.metadata.create_all` pre-creates the `charging_price_tiers` and `charging_time_bands` tables, Alembic is stamped to head without running migration 0007's `upgrade()` function, leaving both tables empty and the Settings UI with no tier input fields. Added a self-healing fallback in the startup migration that idempotently seeds the four default tiers (`home_grid`, `home_solar`, `public_ac`, `public_dc`) and the three default Italian ARERA time-of-use bands when the tables are empty.
+
 ## [0.11.0] - 2026-06-22
 
 ### Added
