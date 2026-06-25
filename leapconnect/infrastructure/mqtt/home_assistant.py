@@ -1306,7 +1306,7 @@ class HomeAssistantMqttService:
         config["availability_topic"] = self._availability_topic
         config["payload_available"] = "online"
         config["payload_not_available"] = "offline"
-        await self._publish_config(topic, config)
+        await self._publish(topic, json.dumps(config), retain=True)
 
     def _ensure_running(self) -> None:
         if self._task and not self._task.done():
