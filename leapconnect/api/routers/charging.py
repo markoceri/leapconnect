@@ -294,6 +294,7 @@ async def create_charging_cost(
         peak_power_kw=body.peak_power_kw,
         cost=cost,
         note=body.note,
+        zone_name=body.zone_name or None,
     )
     sc = await repo.upsert_session_cost(sc)
     return _cost_response(sc, tiers, {})
@@ -324,6 +325,9 @@ async def update_charging_cost(
         sc.peak_power_kw = body.peak_power_kw
     if body.note is not None:
         sc.note = body.note
+    if body.zone_name is not None:
+        # Empty string clears the zone assignment.
+        sc.zone_name = body.zone_name or None
     # Recalculate cost
     if sc.energy_kwh is not None:
         sc.cost = await calculate_session_cost(

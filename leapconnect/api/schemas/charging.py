@@ -140,6 +140,7 @@ class ChargingSessionCostCreate(BaseModel):
     energy_kwh: float | None = None
     peak_power_kw: float | None = None
     note: str | None = None
+    zone_name: str | None = None
 
 
 class ChargingSessionCostUpdate(BaseModel):
@@ -148,6 +149,7 @@ class ChargingSessionCostUpdate(BaseModel):
     energy_kwh: float | None = None
     peak_power_kw: float | None = None
     note: str | None = None
+    zone_name: str | None = None
 
 
 class ConsumptionRankSchema(BaseModel):

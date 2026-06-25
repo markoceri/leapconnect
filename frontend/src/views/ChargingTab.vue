@@ -158,6 +158,14 @@
             </select>
           </div>
           <div class="form-group">
+            <label>Zone</label>
+            <select v-model="editForm.zone_name">
+              <option :value="''">No zone</option>
+              <option v-for="z in availableZones" :key="z.id" :value="z.name">{{ z.name }}</option>
+              <option v-if="editForm.zone_name && !availableZones.some(z => z.name === editForm.zone_name)" :value="editForm.zone_name">{{ editForm.zone_name }}</option>
+            </select>
+          </div>
+          <div class="form-group">
             <label>Energy (kWh)</label>
             <input v-model.number="editForm.energy_kwh" type="number" step="0.1" min="0" />
           </div>
@@ -209,6 +217,7 @@ const selectedMonth = ref(new Date())
 const sessionCosts = ref([])
 const detectedSessions = ref([])
 const availableTiers = ref([])
+const availableZones = ref([])
 const timeBands = ref([])
 const homePricingMode = ref('flat')
 const hasSolarPanels = ref(false)
@@ -377,6 +386,7 @@ function editSession(session) {
   editingSession.value = session
   editForm.value = {
     tier_id: session.tier_id || (availableTiers.value[0]?.id || 'home_grid'),
+    zone_name: session.zone_name || '',
     energy_kwh: session.energy_kwh,
     cost: session.cost,
     note: session.note || '',
@@ -391,6 +401,7 @@ async function saveSession() {
     const s = editingSession.value
     const body = {
       tier_id: editForm.value.tier_id,
+      zone_name: editForm.value.zone_name ?? '',
       energy_kwh: editForm.value.energy_kwh || undefined,
       peak_power_kw: s.peak_power_kw ?? undefined,
       note: editForm.value.note || undefined,
@@ -489,12 +500,14 @@ async function loadData() {
     const lastDay = new Date(y, m + 1, 0).getDate()
     const toDate = `${y}-${String(m + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
 
-    const [tiersData, costs, prefs, historyData] = await Promise.all([
+    const [tiersData, costs, prefs, historyData, zonesData] = await Promise.all([
       api('GET', '/api/charging/tiers'),
       api('GET', `/api/vehicles/${props.vin}/charging-costs`),
       api('GET', '/api/preferences'),
       api('GET', `/api/vehicles/${props.vin}/history?from_date=${fromDate}&to_date=${toDate}&max_points=5000`),
+      api('GET', `/api/zones?vin=${props.vin}`),
     ])
+    availableZones.value = zonesData || []
     availableTiers.value = tiersData.tiers || []
     timeBands.value = tiersData.time_bands || []
     homePricingMode.value = tiersData.home_pricing_mode || 'flat'
