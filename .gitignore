@@ -51,5 +51,8 @@ logs/
 ignore/
 
 # Ignore AI assistant files
+.agents/
+.claude/
 .pi/
+_bmad*/
 CLAUDE.md
