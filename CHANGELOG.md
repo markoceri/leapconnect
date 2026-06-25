@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Recalculate a charging session's energy & cost** — each stored session in the Charging tab gains a *recalculate* action that re-measures the total energy from the recorded snapshots and recomputes the cost at the tier's current price (TOU-aware). This fixes sessions whose cost was first computed mid-charge, before the full energy and final pricing were known. Backed by a shared `recalculate_session` helper (`application/settings_store`) now used by both the manual action — `POST /api/vehicles/{vin}/charging-costs/{id}/recalculate` — and the auto-finalize on charge stop, so both paths produce identical results.
 - **"Car colour" theme — a third theme alongside Dark and Light** — the whole interface can be rebuilt around one of the vehicle's factory exterior colours, selectable in *Settings*. Per-model palettes (T03, B10, C10) are stored **per VIN**, so the theme follows the active vehicle; brightness, saturation and the accent colour are derived from the paint at runtime. Colour can also be **detected automatically** (from the cloud-reported colour, or sampled from the car image) via a new `domain/styling`/`theme_detection` backend and an `/api/vehicles/{vin}/palette|color|color/detect` router — opt in during initial setup or in *Settings*.
 
 ### Fixed

@@ -7,6 +7,7 @@ session costs from the user's pricing configuration.
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from typing import TYPE_CHECKING
 
 from leapconnect.domain.charging.costing import calculate_tou_cost, flat_cost
@@ -17,9 +18,8 @@ from leapconnect.domain.settings.models import (
 )
 
 if TYPE_CHECKING:
-    from datetime import datetime
-
     from leapconnect.application.ports.repositories import AppRepository
+    from leapconnect.domain.charging.models import ChargingSessionCost
 
 
 async def load_preferences(repo: AppRepository) -> UserPreferences:
@@ -72,6 +72,57 @@ async def calculate_session_cost(
             )
 
     return flat_cost(energy_kwh, tier.price_kwh)
+
+
+async def recompute_session_energy(
+    repo: AppRepository, sc: ChargingSessionCost
+) -> float | None:
+    """Measure a session's total energy from the stored snapshots.
+
+    Returns the battery dump-energy delta (kWh) between the first and last
+    snapshot inside the session window, or ``None`` when there aren't at least
+    two snapshots with an energy reading to measure it.
+    """
+    if not sc.start_ts:
+        return None
+    end_ts = sc.end_ts
+    from_date = sc.start_ts.date().isoformat()
+    to_date = (end_ts or datetime.now()).date().isoformat()
+    history = await repo.get_history(
+        sc.vin, from_date=from_date, to_date=to_date, max_points=None
+    )
+    snaps = [
+        s
+        for s in history
+        if s.battery_dump_energy is not None
+        and s.timestamp >= sc.start_ts
+        and (end_ts is None or s.timestamp <= end_ts)
+    ]
+    if len(snaps) < 2:
+        return None
+    energy = abs(snaps[-1].battery_dump_energy - snaps[0].battery_dump_energy) / 1000
+    return round(energy, 2) if energy > 0 else None
+
+
+async def recalculate_session(
+    repo: AppRepository, sc: ChargingSessionCost
+) -> ChargingSessionCost:
+    """Refresh a session's total energy and cost from current data in place.
+
+    Re-measures ``energy_kwh`` from the stored snapshots and recomputes ``cost``
+    using the tier's current price (TOU-aware). This is the single source of
+    truth for finalizing a session, shared by the auto-finalize on charge stop
+    and the manual "recalculate" action. Energy is left untouched when it cannot
+    be measured, so a cost computed mid-session is never silently discarded.
+    """
+    energy = await recompute_session_energy(repo, sc)
+    if energy is not None:
+        sc.energy_kwh = energy
+    if sc.energy_kwh is not None:
+        sc.cost = await calculate_session_cost(
+            repo, sc.tier_id, sc.energy_kwh, sc.start_ts, sc.end_ts
+        )
+    return sc
 
 
 async def load_mqtt_settings(repo: AppRepository | None) -> MqttSettings:

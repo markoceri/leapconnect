@@ -622,32 +622,15 @@ class VehicleDataScheduler:
             open_session = next((c for c in costs if c.end_ts is None), None)
             if open_session:
                 open_session.end_ts = event.timestamp
-                # Try to compute energy from snapshots
+                # Measure total energy from snapshots and (re)compute the cost
+                # with the tier's current price — shared with the manual
+                # "recalculate" action so both paths stay consistent.
                 try:
-                    history = await self._repo.get_history(event.vin, days=1)
-                    # Find snapshots in session window
-                    session_snaps = [
-                        s
-                        for s in history
-                        if s.timestamp >= open_session.start_ts
-                        and s.timestamp <= event.timestamp
-                    ]
-                    if len(session_snaps) >= 2:
-                        start_energy = (
-                            session_snaps[0].battery_dump_energy or 0
-                        ) / 1000
-                        end_energy = (session_snaps[-1].battery_dump_energy or 0) / 1000
-                        energy = end_energy - start_energy
-                        if energy > 0:
-                            open_session.energy_kwh = round(energy, 2)
-                            # Get tier price
-                            tiers = await self._repo.get_price_tiers()
-                            tier = next(
-                                (t for t in tiers if t.id == open_session.tier_id),
-                                None,
-                            )
-                            if tier:
-                                open_session.cost = round(energy * tier.price_kwh, 4)
+                    from leapconnect.application.settings_store import (
+                        recalculate_session,
+                    )
+
+                    await recalculate_session(self._repo, open_session)
                 except Exception as exc:
                     _LOGGER.debug("Charging cost: energy calc error: %s", exc)
 

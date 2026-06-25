@@ -24,6 +24,7 @@ from leapconnect.api.schemas import (
 from leapconnect.application.settings_store import (
     calculate_session_cost,
     load_preferences,
+    recalculate_session,
 )
 from leapconnect.domain.charging.models import ChargingSessionCost, ChargingTimeBand
 
@@ -328,6 +329,28 @@ async def update_charging_cost(
         sc.cost = await calculate_session_cost(
             repo, sc.tier_id, sc.energy_kwh, sc.start_ts, sc.end_ts
         )
+    await repo.upsert_session_cost(sc)
+    tiers = {t.id: t for t in await repo.get_price_tiers()}
+    bands = {b.id: b for b in await repo.get_time_bands("home_grid")}
+    return _cost_response(sc, tiers, bands)
+
+
+@router.post(
+    "/api/vehicles/{vin}/charging-costs/{cost_id}/recalculate",
+    response_model=ChargingSessionCostResponse,
+)
+async def recalculate_charging_cost(vin: str, cost_id: int, repo: RepoDep):
+    """Re-measure a session's total energy and cost from current data.
+
+    Re-reads the session's energy from the stored snapshots and recomputes the
+    cost with the tier's current price. Useful when the cost was first computed
+    mid-session, before the full energy and final pricing were known.
+    """
+    costs = await repo.get_session_costs(vin)
+    sc = next((c for c in costs if c.id == cost_id), None)
+    if not sc:
+        raise HTTPException(status_code=404, detail=f"Session cost {cost_id} not found")
+    await recalculate_session(repo, sc)
     await repo.upsert_session_cost(sc)
     tiers = {t.id: t for t in await repo.get_price_tiers()}
     bands = {b.id: b for b in await repo.get_time_bands("home_grid")}

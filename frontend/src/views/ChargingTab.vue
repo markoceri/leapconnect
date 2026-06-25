@@ -170,6 +170,17 @@
             <input v-model="editForm.note" type="text" placeholder="Optional note" />
           </div>
           <div class="modal-actions">
+            <button
+              v-if="editingSession.id"
+              class="btn-recalc"
+              :disabled="recalculatingId === editingSession.id"
+              @click="recalcSession(editingSession)"
+              title="Recalculate energy &amp; cost from current data"
+            >
+              <RotateCw :size="14" :class="{ spinning: recalculatingId === editingSession.id }" />
+              {{ recalculatingId === editingSession.id ? 'Recalculating…' : 'Recalculate' }}
+            </button>
+            <span class="modal-actions-spacer" />
             <button class="btn-cancel" @click="editingSession = null">Cancel</button>
             <button class="btn-save" :disabled="saving" @click="saveSession">{{ saving ? 'Saving…' : 'Save' }}</button>
           </div>
@@ -185,7 +196,7 @@ import { ref, computed, onMounted, watch, nextTick, onUnmounted } from 'vue'
 import { Chart, registerables } from 'chart.js'
 import { api } from '../composables/useApi'
 import { parseUTC } from '../utils/maintenance'
-import { Zap, TrendingUp, PieChart, Clock, CalendarDays, ChevronLeft, ChevronRight, List, Pencil, MapPin } from 'lucide-vue-next'
+import { Zap, TrendingUp, PieChart, Clock, CalendarDays, ChevronLeft, ChevronRight, List, Pencil, MapPin, RotateCw } from 'lucide-vue-next'
 
 Chart.register(...registerables)
 
@@ -205,6 +216,7 @@ const editingSession = ref(null)
 const editForm = ref({})
 const editError = ref('')
 const saving = ref(false)
+const recalculatingId = ref(null)
 const loading = ref(true)
 
 // Charts
@@ -398,6 +410,19 @@ async function saveSession() {
     editError.value = e.message || 'Failed to save'
   } finally {
     saving.value = false
+  }
+}
+
+// Recalculate a stored session's total energy & cost from current data
+async function recalcSession(session) {
+  if (!session.id || recalculatingId.value) return
+  recalculatingId.value = session.id
+  try {
+    await api('POST', `/api/vehicles/${props.vin}/charging-costs/${session.id}/recalculate`)
+    await loadData()
+    editingSession.value = null
+  } catch { /* ignore */ } finally {
+    recalculatingId.value = null
   }
 }
 
@@ -724,6 +749,9 @@ watch(selectedMonth, loadData)
 .tier-none { background: rgba(136,136,136,0.1); color: #888; }
 .edit-btn { background: none; border: 1px solid var(--border); border-radius: 6px; padding: 4px 6px; color: var(--muted); cursor: pointer; display: flex; align-items: center; }
 .edit-btn:hover { color: var(--text); border-color: var(--text); }
+.edit-btn:disabled { cursor: default; opacity: 0.6; }
+.spinning { animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
 
 /* Mobile: each session becomes a compact labelled card */
 @media (max-width: 640px) {
@@ -761,7 +789,11 @@ watch(selectedMonth, loadData)
 .form-group { margin-bottom: 12px; }
 .form-group label { display: block; font-size: 11px; color: var(--muted); margin-bottom: 4px; }
 .form-group input, .form-group select { width: 100%; background: var(--input); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; color: var(--text); font-size: 13px; }
-.modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+.modal-actions { display: flex; gap: 8px; align-items: center; margin-top: 16px; }
+.modal-actions-spacer { flex: 1; }
+.btn-recalc { display: inline-flex; align-items: center; gap: 6px; background: var(--btn-bg); border: 1px solid var(--btn-border); border-radius: 8px; padding: 8px 14px; color: var(--text); cursor: pointer; font-size: 13px; }
+.btn-recalc:hover:not(:disabled) { border-color: var(--text); }
+.btn-recalc:disabled { opacity: 0.6; cursor: default; }
 .btn-cancel { background: var(--btn-bg); border: 1px solid var(--btn-border); border-radius: 8px; padding: 8px 16px; color: var(--muted); cursor: pointer; font-size: 13px; }
 .btn-save { background: var(--green); border: none; border-radius: 8px; padding: 8px 16px; color: #000; font-weight: 600; cursor: pointer; font-size: 13px; }
 .btn-save:disabled { opacity: 0.5; }
