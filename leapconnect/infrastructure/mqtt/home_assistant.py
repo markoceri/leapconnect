@@ -32,8 +32,6 @@ class HomeAssistantMqttService:
         self._client: aiomqtt.Client | None = None
         self._connected: bool = False
         self._task: asyncio.Task | None = None
-        self._stop_event = asyncio.Event()
-        self._publish_queue: asyncio.Queue[tuple[str, str, bool]] = asyncio.Queue()
         self._last_error: str | None = None
         self._discovery_sent: set[str] = set()
         self._mqtt_interval_seconds: int = 60
@@ -59,6 +57,11 @@ class HomeAssistantMqttService:
     def last_error(self) -> str | None:
         return self._last_error
 
+    @property
+    def _availability_topic(self) -> str:
+        """Bridge availability topic (online/offline) used by HA entities."""
+        return f"{self._settings.topic_prefix}/bridge/state"
+
     def update_settings(self, **kwargs: Any) -> MqttSettings:
         """Update MQTT settings and reconnect if needed."""
         changed = False
@@ -83,12 +86,20 @@ class HomeAssistantMqttService:
 
     async def stop(self) -> None:
         """Stop the MQTT connection."""
+        # Best-effort graceful "offline" so HA marks entities unavailable
+        # immediately (the Last Will only fires on an ungraceful disconnect).
+        if self._connected and self._client:
+            with contextlib.suppress(Exception):
+                await self._client.publish(
+                    self._availability_topic, "offline", qos=1, retain=True
+                )
         self._request_stop()
         if self._task and not self._task.done():
             with contextlib.suppress(TimeoutError, asyncio.CancelledError):
                 await asyncio.wait_for(self._task, timeout=5)
         self._task = None
         self._connected = False
+        self._client = None
 
     async def publish_vehicle_status(
         self,
@@ -849,7 +860,7 @@ class HomeAssistantMqttService:
                 config["device_class"] = s["dc"]
 
             topic = f"{disc_prefix}/sensor/{device_id}/{s['key']}/config"
-            await self._publish(topic, json.dumps(config), retain=True)
+            await self._publish_config(topic, config)
 
         # ── Binary sensors ─────────────────────────────────────────────────
         binary_sensors: list[dict[str, Any]] = [
@@ -954,7 +965,7 @@ class HomeAssistantMqttService:
                 config["device_class"] = bs["dc"]
 
             topic = f"{disc_prefix}/binary_sensor/{device_id}/{bs['key']}/config"
-            await self._publish(topic, json.dumps(config), retain=True)
+            await self._publish_config(topic, config)
 
         # ── Device tracker (GPS) ───────────────────────────────────────────
         # No state_topic / value_template: a state_topic would override the
@@ -971,7 +982,7 @@ class HomeAssistantMqttService:
             "source_type": "gps",
         }
         topic = f"{disc_prefix}/device_tracker/{device_id}/config"
-        await self._publish(topic, json.dumps(tracker_config), retain=True)
+        await self._publish_config(topic, tracker_config)
 
         # ── Image (dynamic car image) ──────────────────────────────────────
         image_config = {
@@ -983,7 +994,7 @@ class HomeAssistantMqttService:
             "content_type": "image/png",
         }
         topic = f"{disc_prefix}/image/{device_id}/image/config"
-        await self._publish(topic, json.dumps(image_config), retain=True)
+        await self._publish_config(topic, image_config)
 
         # Buttons (commands) — gated by vehicle rights/abilities
         commands = [
@@ -1110,7 +1121,7 @@ class HomeAssistantMqttService:
                 "icon": cmd["icon"],
             }
             topic = f"{disc_prefix}/button/{device_id}/{cmd['key']}/config"
-            await self._publish(topic, json.dumps(cmd_config), retain=True)
+            await self._publish_config(topic, cmd_config)
 
         # ── Switch entities (on/off pairs) ─────────────────────────────
         switches = [
@@ -1173,7 +1184,7 @@ class HomeAssistantMqttService:
                 "icon": sw["icon"],
             }
             topic = f"{disc_prefix}/switch/{device_id}/{sw['key']}/config"
-            await self._publish(topic, json.dumps(sw_config), retain=True)
+            await self._publish_config(topic, sw_config)
 
         # ── Climate number entities ────────────────────────────────────
         if self._has_right(vehicle, 170):
@@ -1191,7 +1202,7 @@ class HomeAssistantMqttService:
                 "icon": "mdi:thermometer",
             }
             topic = f"{disc_prefix}/number/{device_id}/ac_temperature/config"
-            await self._publish(topic, json.dumps(ac_temp_config), retain=True)
+            await self._publish_config(topic, ac_temp_config)
 
         # ── Number entities ────────────────────────────────────────────
         if self._has_right(vehicle, 340):
@@ -1209,7 +1220,7 @@ class HomeAssistantMqttService:
                 "icon": "mdi:battery-lock",
             }
             topic = f"{disc_prefix}/number/{device_id}/charge_limit/config"
-            await self._publish(topic, json.dumps(charge_limit_config), retain=True)
+            await self._publish_config(topic, charge_limit_config)
         ha_poll_config = {
             "name": "Polling Interval",
             "unique_id": f"{device_id}_polling_interval",
@@ -1225,7 +1236,7 @@ class HomeAssistantMqttService:
             "entity_category": "config",
         }
         topic = f"{disc_prefix}/number/{device_id}/polling_interval/config"
-        await self._publish(topic, json.dumps(ha_poll_config), retain=True)
+        await self._publish_config(topic, ha_poll_config)
 
         # Publish initial value for number entity
         await self._publish(
@@ -1272,42 +1283,77 @@ class HomeAssistantMqttService:
     async def _publish(
         self, topic: str, payload: str | bytes, *, retain: bool = False
     ) -> None:
-        """Queue a message for publishing."""
-        if self._connected and self._client:
-            try:
-                await self._client.publish(topic, payload, retain=retain)
-            except Exception as exc:
-                _LOGGER.debug("MQTT publish failed: %s", exc)
+        """Publish a message to the broker if connected."""
+        if not (self._connected and self._client):
+            return
+        try:
+            await self._client.publish(topic, payload, retain=retain)
+        except aiomqtt.MqttError as exc:
+            # Connection is dead. Flag it so we stop spamming failed publishes;
+            # the message-iteration loop will raise too and trigger a reconnect.
+            self._connected = False
+            self._last_error = str(exc)
+            _LOGGER.warning("MQTT publish failed (%s), will reconnect: %s", topic, exc)
+        except Exception as exc:
+            _LOGGER.warning("MQTT publish error for %s: %s", topic, exc)
+
+    async def _publish_config(self, topic: str, config: dict[str, Any]) -> None:
+        """Publish a retained HA discovery config wired to bridge availability.
+
+        Adds the availability topic so HA shows the entity as unavailable when
+        the bridge goes offline (Last Will) and live again once it reconnects.
+        """
+        config["availability_topic"] = self._availability_topic
+        config["payload_available"] = "online"
+        config["payload_not_available"] = "offline"
+        await self._publish_config(topic, config)
 
     def _ensure_running(self) -> None:
         if self._task and not self._task.done():
-            self._stop_event.set()
             return
-        self._stop_event.clear()
         self._task = asyncio.create_task(self._connection_loop(), name="mqtt-ha")
 
     def _request_stop(self) -> None:
         self._connected = False
-        self._stop_event.set()
+        if self._task and not self._task.done():
+            self._task.cancel()
 
     def _restart(self) -> None:
         """Stop and restart the connection."""
         self._discovery_sent.clear()
+        # Cancel the current connection task (if any) and start a fresh one.
+        # Cancellation unwinds the old aiomqtt client cleanly; the new task
+        # connects independently. We do NOT reuse a shared stop flag, which
+        # previously could stay set and silently kill all later reconnects.
         if self._task and not self._task.done():
-            self._request_stop()
-            # Schedule a new start after current task ends
-            asyncio.get_event_loop().call_soon(self._ensure_running)
-        else:
-            self._ensure_running()
+            self._task.cancel()
+        self._task = asyncio.create_task(self._connection_loop(), name="mqtt-ha")
 
     async def _connection_loop(self) -> None:
         """Main connection loop with reconnection logic."""
         _LOGGER.info(
             "MQTT connecting to %s:%d", self._settings.broker, self._settings.port
         )
+        try:
+            await self._run_connection_loop()
+        finally:
+            self._connected = False
+            self._client = None
+            _LOGGER.info("MQTT disconnected")
+
+    async def _run_connection_loop(self) -> None:
         while self._settings.enabled:
             try:
                 tls_params = aiomqtt.TLSParameters() if self._settings.use_tls else None
+                # Last Will: broker publishes "offline" on the availability
+                # topic if we disconnect ungracefully, so HA marks the entities
+                # unavailable instead of showing stale values forever.
+                will = aiomqtt.Will(
+                    topic=self._availability_topic,
+                    payload="offline",
+                    qos=1,
+                    retain=True,
+                )
                 async with aiomqtt.Client(
                     hostname=self._settings.broker,
                     port=self._settings.port,
@@ -1315,24 +1361,32 @@ class HomeAssistantMqttService:
                     password=self._settings.password or None,
                     tls_params=tls_params,
                     keepalive=60,
+                    will=will,
                 ) as client:
                     self._client = client
                     self._connected = True
                     self._last_error = None
+                    # Re-publish discovery on every (re)connect: retained
+                    # configs may have been lost (broker/HA restart), so clear
+                    # the cache and let the next poll recreate the entities.
+                    self._discovery_sent.clear()
                     _LOGGER.info(
                         "MQTT connected to %s:%d",
                         self._settings.broker,
                         self._settings.port,
                     )
 
+                    # Announce availability (clears the retained "offline" LWT)
+                    await client.publish(
+                        self._availability_topic, "online", qos=1, retain=True
+                    )
+
                     # Subscribe to command topics and number set topics
                     await client.subscribe(f"{self._settings.topic_prefix}/+/command")
                     await client.subscribe(f"{self._settings.topic_prefix}/+/+/set")
 
-                    # Process incoming messages and wait for stop
+                    # Process incoming messages until disconnect or cancellation
                     async for message in client.messages:
-                        if self._stop_event.is_set():
-                            break
                         topic_str = str(message.topic)
 
                         # Handle command messages
@@ -1401,12 +1455,9 @@ class HomeAssistantMqttService:
                 _LOGGER.warning("MQTT connection error: %s", exc)
                 if not self._settings.enabled:
                     break
-                # Wait before reconnecting
-                try:
-                    await asyncio.wait_for(self._stop_event.wait(), timeout=30)
-                    break  # stop was requested
-                except TimeoutError:
-                    pass  # retry connection
+                # Back off before reconnecting. A stop/restart cancels the task,
+                # interrupting this sleep with CancelledError so we exit cleanly.
+                await asyncio.sleep(30)
             except asyncio.CancelledError:
                 break
             except Exception as exc:
@@ -1416,15 +1467,7 @@ class HomeAssistantMqttService:
                 _LOGGER.exception("MQTT unexpected error")
                 if not self._settings.enabled:
                     break
-                try:
-                    await asyncio.wait_for(self._stop_event.wait(), timeout=30)
-                    break
-                except TimeoutError:
-                    pass
-
-        self._connected = False
-        self._client = None
-        _LOGGER.info("MQTT disconnected")
+                await asyncio.sleep(30)
 
     # Command handling
     _command_callback = None
