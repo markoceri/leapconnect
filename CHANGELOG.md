@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.1] - 2026-06-26
+
 ### Added
 - **Recalculate a charging session's energy & cost** — the *Edit session cost* dialog in the Charging tab gains a *Recalculate* action that re-measures the total energy from the recorded snapshots and recomputes the cost at the tier's current price (TOU-aware). This fixes sessions whose cost was first computed mid-charge, before the full energy and final pricing were known. Backed by a shared `recalculate_session` helper (`application/settings_store`) now used by both the manual action — `POST /api/vehicles/{vin}/charging-costs/{id}/recalculate` — and the auto-finalize on charge stop, so both paths produce identical results.
 - **Assign or reassign a charging session's zone** — the *Edit session cost* dialog now has a **Zone** selector to set or clear the zone a session is attributed to (used by the "Charging by location" analytics), choosing from the vehicle's zones. The zone is stored as a name snapshot, so deleting a zone leaves past sessions attributed to it untouched.
