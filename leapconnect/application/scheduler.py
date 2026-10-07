@@ -556,60 +556,39 @@ class VehicleDataScheduler:
                     "Scheduler: transition poll failed for %s", vehicle.vin
                 )
 
-    async def _zone_for_charge(self, vin: str, status) -> tuple[str | None, str | None]:
-        """Resolve ``(zone_name, charging_tier_id)`` for the charge location.
-
-        ``zone_name`` is the first enabled zone the vehicle is inside (recorded
-        for by-location analytics); ``charging_tier_id`` is the first such zone
-        that also declares a tier.
-        """
-        from leapconnect.application.notifications.policies import StatusReading
-        from leapconnect.domain.zones import zone_contains
-
-        reading = StatusReading.from_status(status)
-        if not (reading.lat and reading.lon):
-            return None, None
-        zone_name: str | None = None
-        tier_id: str | None = None
-        for zone in await self._repo.get_zones(vin):
-            if not zone.enabled or not zone_contains(zone, reading.lat, reading.lon):
-                continue
-            if zone_name is None:
-                zone_name = zone.name
-            if tier_id is None and zone.charging_tier_id:
-                tier_id = zone.charging_tier_id
-            if zone_name and tier_id:
-                break
-        return zone_name, tier_id
-
     async def _handle_charging_cost_event(self, event, status) -> None:
         """Auto-create/finalize session cost on charge_start/charge_stop."""
 
+        from leapconnect.application.notifications.policies import StatusReading
+        from leapconnect.domain.charging.location import (
+            DC_CHARGE_STATE,
+            resolve_charge_location,
+        )
         from leapconnect.domain.charging.models import ChargingSessionCost
 
         if event.event_type == "charge_start":
             # Tier precedence: DC fast charge (physical) → public_dc; else a
             # zone with a configured charging tier the vehicle is inside; else
             # the home_grid default.
-            tier_id = "home_grid"  # default
             is_dc = False
             if hasattr(status, "battery") and status.battery:
                 charge_state = getattr(status.battery, "charge_state", None)
                 if hasattr(charge_state, "value"):
                     charge_state = charge_state.value
-                # charge_state 2 = DC fast charge typically
-                if charge_state == 2:
-                    is_dc = True
-            zone_name, zone_tier = await self._zone_for_charge(event.vin, status)
-            if is_dc:
-                tier_id = "public_dc"
-            elif zone_tier:
-                tier_id = zone_tier
+                is_dc = charge_state == DC_CHARGE_STATE
+            reading = StatusReading.from_status(status)
+            location = resolve_charge_location(
+                await self._repo.get_zones(event.vin),
+                reading.lat,
+                reading.lon,
+                is_dc=is_dc,
+            )
+            tier_id = location.tier_id or "home_grid"
             sc = ChargingSessionCost(
                 vin=event.vin,
                 start_ts=event.timestamp,
                 tier_id=tier_id,
-                zone_name=zone_name,
+                zone_name=location.zone_name,
             )
             await self._repo.upsert_session_cost(sc)
             _LOGGER.info(

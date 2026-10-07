@@ -8,6 +8,8 @@ from fastapi import APIRouter, HTTPException
 
 from leapconnect.api.deps import ClientDep, RepoDep, VehicleDep
 from leapconnect.api.schemas import (
+    CalculateMissingCostsRequest,
+    CalculateMissingCostsResponse,
     ChargingHistoryResponse,
     ChargingPriceTierResponse,
     ChargingPriceTierUpdate,
@@ -20,6 +22,11 @@ from leapconnect.api.schemas import (
     ChargingTimeBandUpdate,
     ConsumptionLastWeekResponse,
     ConsumptionWeeklyRankResponse,
+    SkippedSessionSchema,
+)
+from leapconnect.application.charging_costs import (
+    MissingCostSession,
+    calculate_missing_costs,
 )
 from leapconnect.application.settings_store import (
     calculate_session_cost,
@@ -298,6 +305,49 @@ async def create_charging_cost(
     )
     sc = await repo.upsert_session_cost(sc)
     return _cost_response(sc, tiers, {})
+
+
+@router.post(
+    "/api/vehicles/{vin}/charging-costs/calculate-missing",
+    response_model=CalculateMissingCostsResponse,
+)
+async def calculate_missing_charging_costs(
+    vin: str, body: CalculateMissingCostsRequest, repo: RepoDep
+) -> CalculateMissingCostsResponse:
+    """Compute costs for many sessions at once (the month's cost-less rows).
+
+    Sessions detected only from snapshots get their tier inferred from the
+    charge location (DC → public_dc, else the tier of the zone they're in);
+    when it can't be inferred ``fallback_tier_id`` is used, or the session is
+    skipped if none is given.
+    """
+    if body.fallback_tier_id is not None:
+        tiers = {t.id for t in await repo.get_price_tiers()}
+        if body.fallback_tier_id not in tiers:
+            raise HTTPException(
+                status_code=422, detail=f"Unknown tier: {body.fallback_tier_id}"
+            )
+    result = await calculate_missing_costs(
+        repo,
+        vin,
+        [
+            MissingCostSession(
+                start_ts=datetime.fromisoformat(s.start_ts),
+                end_ts=datetime.fromisoformat(s.end_ts) if s.end_ts else None,
+                cost_id=s.cost_id,
+            )
+            for s in body.sessions
+        ],
+        fallback_tier_id=body.fallback_tier_id,
+        close_orphans=body.close_orphans,
+    )
+    return CalculateMissingCostsResponse(
+        calculated=result.calculated,
+        skipped=[
+            SkippedSessionSchema(start_ts=s.start_ts.isoformat(), reason=s.reason)
+            for s in result.skipped
+        ],
+    )
 
 
 @router.put(

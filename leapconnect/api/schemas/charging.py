@@ -152,6 +152,30 @@ class ChargingSessionCostUpdate(BaseModel):
     zone_name: str | None = None
 
 
+class MissingCostSessionItem(BaseModel):
+    start_ts: str
+    end_ts: str | None = None
+    cost_id: int | None = None  # set when a stored record already exists
+
+
+class CalculateMissingCostsRequest(BaseModel):
+    sessions: list[MissingCostSessionItem]
+    # Tier for sessions whose tier can't be inferred; None skips them.
+    fallback_tier_id: str | None = None
+    # Close open records whose charge stop was missed, using end_ts.
+    close_orphans: bool = False
+
+
+class SkippedSessionSchema(BaseModel):
+    start_ts: str
+    reason: str  # ongoing | no_tier | no_energy | not_found
+
+
+class CalculateMissingCostsResponse(BaseModel):
+    calculated: int
+    skipped: list[SkippedSessionSchema]
+
+
 class ConsumptionRankSchema(BaseModel):
     result: int
     rank: str

@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Calculate missing charging costs in one click** — the Charging tab's session list gains a *Calculate missing costs (N)* button that costs every session of the displayed month that has no cost yet, instead of opening and saving each one. Stored sessions are re-measured and re-costed; sessions detected only from snapshots (charge start never seen, shown as "No tier") get their tier inferred from the charge location — DC fast charge → `public_dc`, else the tier of the zone they happened in. When the tier can't be inferred (outside every zone, no GPS fix) the dialog lets you pick a fallback tier or skip them (the default) for manual assignment; the zone is still recorded as the session's location, independently of the tier. An opt-in option also closes "orphan" sessions whose charge stop was missed (e.g. backend offline), taking the end time from the vehicle history. The dialog reports how many sessions were costed and why any were skipped. Backed by `POST /api/vehicles/{vin}/charging-costs/calculate-missing` (`application/charging_costs`).
+
+### Changed
+- **Charge-location resolution shared between live and bulk costing** — the zone/tier precedence used at charge start is extracted into a pure `resolve_charge_location` (`domain/charging/location`), now used by both the scheduler and the bulk calculation so they can't diverge. Live sessions keep the `home_grid` default when no tier can be inferred.
+
 ## [0.11.1] - 2026-06-26
 
 ### Added

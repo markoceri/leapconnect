@@ -95,7 +95,18 @@
 
     <!-- Session list -->
     <div class="chart-card wide">
-      <div class="chart-header"><List :size="16" class="chart-icon" /> Charging sessions</div>
+      <div class="chart-header">
+        <List :size="16" class="chart-icon" /> Charging sessions
+        <span class="chart-header-spacer" />
+        <button
+          v-if="missingCosts.total"
+          class="btn-bulk"
+          @click="openBulkDialog"
+          title="Calculate the cost of every session in this month that doesn't have one"
+        >
+          <Calculator :size="14" /> Calculate missing costs ({{ missingCosts.total }})
+        </button>
+      </div>
       <div class="session-list">
         <div class="session-head">
           <span>Date</span>
@@ -196,6 +207,83 @@
         </div>
       </div>
     </Teleport>
+
+    <!-- Calculate missing costs dialog -->
+    <Teleport to="body">
+      <div v-if="bulkOpen" class="modal-backdrop" @click.self="closeBulkDialog">
+        <div class="modal-dialog">
+          <h3>Calculate missing costs</h3>
+          <p class="edit-date">{{ monthLabel }}</p>
+
+          <template v-if="!bulkResult">
+            <ul class="bulk-summary">
+              <li v-if="missingCosts.stored.length">
+                <strong>{{ missingCosts.stored.length }}</strong> session{{ missingCosts.stored.length === 1 ? '' : 's' }}
+                with a tier — energy and cost re-measured
+              </li>
+              <li v-if="missingCosts.detected.length">
+                <strong>{{ missingCosts.detected.length }}</strong> session{{ missingCosts.detected.length === 1 ? '' : 's' }}
+                without a tier — tier inferred from the charge location
+              </li>
+            </ul>
+
+            <div v-if="missingCosts.detected.length" class="form-group">
+              <label>Tier when it can't be inferred</label>
+              <select v-model="bulkFallbackTier">
+                <option :value="null">Skip — assign it manually later</option>
+                <option v-for="t in availableTiers" :key="t.id" :value="t.id">{{ t.label }}</option>
+              </select>
+              <p class="form-hint">
+                A DC fast charge is priced as Public DC; a charge inside a zone with a charging tier uses that
+                tier. Anything else (outside every zone, or no GPS fix) gets this tier, or is skipped.
+              </p>
+            </div>
+
+            <div v-if="missingCosts.orphans.length" class="form-group">
+              <label class="check-label">
+                <input v-model="bulkCloseOrphans" type="checkbox" />
+                Also close {{ missingCosts.orphans.length }} unfinished session{{ missingCosts.orphans.length === 1 ? '' : 's' }}
+              </label>
+              <p class="form-hint">
+                These sessions were recorded when charging started, but the app never saw the charge stop (e.g. the
+                backend was offline), so they still look "ongoing" and have no cost. The vehicle history shows the
+                charge actually ended: enabling this sets the end time from the history, then measures energy and
+                cost. Leave it off if you think a charge is genuinely still in progress.
+              </p>
+            </div>
+
+            <div class="modal-actions">
+              <span class="modal-actions-spacer" />
+              <button class="btn-cancel" @click="closeBulkDialog">Cancel</button>
+              <button class="btn-save" :disabled="bulkRunning || !bulkSelection.length" @click="runBulkCalculation">
+                {{ bulkRunning ? 'Calculating…' : `Calculate (${bulkSelection.length})` }}
+              </button>
+            </div>
+            <div v-if="bulkError" class="field-error">{{ bulkError }}</div>
+          </template>
+
+          <template v-else>
+            <p class="bulk-result">
+              <strong>{{ bulkResult.calculated }}</strong> session{{ bulkResult.calculated === 1 ? '' : 's' }} costed.
+            </p>
+            <div v-if="bulkResult.skipped.length">
+              <p class="bulk-result">{{ bulkResult.skipped.length }} skipped:</p>
+              <ul class="bulk-skipped">
+                <li v-for="sk in bulkResult.skipped" :key="sk.start_ts">
+                  <span>{{ formatDate(sk.start_ts) }} {{ formatTime(sk.start_ts) }}</span>
+                  <span class="skip-reason">{{ skipReasonLabel(sk.reason) }}</span>
+                </li>
+              </ul>
+              <p class="form-hint">Use the edit button on those rows to set the tier or energy manually.</p>
+            </div>
+            <div class="modal-actions">
+              <span class="modal-actions-spacer" />
+              <button class="btn-save" @click="closeBulkDialog">Done</button>
+            </div>
+          </template>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -204,7 +292,7 @@ import { ref, computed, onMounted, watch, nextTick, onUnmounted } from 'vue'
 import { Chart, registerables } from 'chart.js'
 import { api } from '../composables/useApi'
 import { parseUTC } from '../utils/maintenance'
-import { Zap, TrendingUp, PieChart, Clock, CalendarDays, ChevronLeft, ChevronRight, List, Pencil, MapPin, RotateCw } from 'lucide-vue-next'
+import { Zap, TrendingUp, PieChart, Clock, CalendarDays, ChevronLeft, ChevronRight, List, Pencil, MapPin, RotateCw, Calculator } from 'lucide-vue-next'
 
 Chart.register(...registerables)
 
@@ -227,6 +315,12 @@ const editError = ref('')
 const saving = ref(false)
 const recalculatingId = ref(null)
 const loading = ref(true)
+const bulkOpen = ref(false)
+const bulkFallbackTier = ref(null)
+const bulkCloseOrphans = ref(false)
+const bulkRunning = ref(false)
+const bulkResult = ref(null)
+const bulkError = ref('')
 
 // Charts
 const energyCanvas = ref(null)
@@ -268,7 +362,8 @@ const filteredSessions = computed(() => {
       sc.start_ts && Math.abs(parseUTC(sc.start_ts) - parseUTC(ds.start_ts)) < 120000
     )
     if (match) {
-      return { ...match, energy_kwh: match.energy_kwh ?? ds.energy_kwh, peak_power_kw: match.peak_power_kw ?? ds.peak_power_kw, _detected: true }
+      // _detected_end_ts lets an open record whose charge stop was missed be closed
+      return { ...match, energy_kwh: match.energy_kwh ?? ds.energy_kwh, peak_power_kw: match.peak_power_kw ?? ds.peak_power_kw, _detected: true, _detected_end_ts: ds.end_ts }
     }
     // No cost record — return detected session as-is
     return { ...ds, id: null, tier_id: null, tier_label: null, cost: null, _detected: true }
@@ -375,9 +470,12 @@ function formatDate(ts) {
   if (!ts) return '—'
   return parseUTC(ts).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
 }
+function formatTime(ts) {
+  return parseUTC(ts).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+}
 function formatTimeRange(start, end) {
-  const s = start ? parseUTC(start).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : ''
-  const e = end ? parseUTC(end).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : 'ongoing'
+  const s = start ? formatTime(start) : ''
+  const e = end ? formatTime(end) : 'ongoing'
   return `${s} – ${e}`
 }
 
@@ -487,6 +585,69 @@ function detectSessionsFromSnapshots(snapshots) {
     })
   }
   return sessions
+}
+
+// Calculate missing costs (current month only)
+const missingCosts = computed(() => {
+  const stored = []    // record with a tier, finished, no cost
+  const detected = []  // snapshot-only session, finished — tier to infer
+  const orphans = []   // open record, but the history shows the charge ended
+  for (const s of filteredSessions.value) {
+    if (s.cost != null) continue
+    if (s.id && s.end_ts) stored.push(s)
+    else if (!s.id && s.end_ts) detected.push(s)
+    else if (s.id && !s.end_ts && s._detected_end_ts) orphans.push(s)
+  }
+  return { stored, detected, orphans, total: stored.length + detected.length + orphans.length }
+})
+
+const bulkSelection = computed(() => {
+  const { stored, detected, orphans } = missingCosts.value
+  const items = [...stored, ...detected].map(s => ({ start_ts: s.start_ts, end_ts: s.end_ts, cost_id: s.id ?? null }))
+  if (bulkCloseOrphans.value) {
+    for (const s of orphans) items.push({ start_ts: s.start_ts, end_ts: s._detected_end_ts, cost_id: s.id })
+  }
+  return items
+})
+
+function openBulkDialog() {
+  bulkFallbackTier.value = null
+  bulkCloseOrphans.value = false
+  bulkResult.value = null
+  bulkError.value = ''
+  bulkOpen.value = true
+}
+
+function closeBulkDialog() {
+  if (bulkRunning.value) return
+  bulkOpen.value = false
+  bulkResult.value = null
+}
+
+async function runBulkCalculation() {
+  bulkRunning.value = true
+  bulkError.value = ''
+  try {
+    bulkResult.value = await api('POST', `/api/vehicles/${props.vin}/charging-costs/calculate-missing`, {
+      sessions: bulkSelection.value,
+      fallback_tier_id: bulkFallbackTier.value,
+      close_orphans: bulkCloseOrphans.value,
+    })
+    await loadData()
+  } catch (e) {
+    bulkError.value = e.message || 'Failed to calculate costs'
+  } finally {
+    bulkRunning.value = false
+  }
+}
+
+function skipReasonLabel(reason) {
+  return {
+    no_tier: 'tier not inferable',
+    no_energy: 'energy not measurable',
+    ongoing: 'still in progress',
+    not_found: 'session no longer exists',
+  }[reason] || reason
 }
 
 // Data loading
@@ -698,6 +859,9 @@ watch(selectedMonth, loadData)
 .chart-card.wide + .chart-card.wide { margin-top: 12px; }
 .chart-header { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 10px; }
 .chart-icon { opacity: 0.7; }
+.chart-header-spacer { flex: 1; }
+.btn-bulk { display: inline-flex; align-items: center; gap: 6px; background: var(--btn-bg); border: 1px solid var(--btn-border); border-radius: 8px; padding: 5px 10px; color: var(--text); cursor: pointer; font-size: 12px; font-weight: 500; }
+.btn-bulk:hover { border-color: var(--text); }
 .chart-area { height: 200px; position: relative; }
 
 /* TOU bands */
@@ -811,6 +975,14 @@ watch(selectedMonth, loadData)
 .btn-save { background: var(--green); border: none; border-radius: 8px; padding: 8px 16px; color: #000; font-weight: 600; cursor: pointer; font-size: 13px; }
 .btn-save:disabled { opacity: 0.5; }
 .field-error { color: #ff5252; font-size: 12px; margin-top: 8px; }
+.form-hint { font-size: 11px; color: var(--muted); margin: 6px 0 0; line-height: 1.45; }
+.check-label { display: flex !important; align-items: center; gap: 8px; font-size: 13px !important; color: var(--text) !important; cursor: pointer; }
+.form-group .check-label input { width: auto; }
+.bulk-summary { margin: 0 0 14px; padding-left: 18px; font-size: 13px; color: var(--text); display: flex; flex-direction: column; gap: 4px; }
+.bulk-result { font-size: 13px; color: var(--text); margin: 0 0 8px; }
+.bulk-skipped { list-style: none; margin: 0; padding: 0; font-size: 12px; max-height: 200px; overflow-y: auto; }
+.bulk-skipped li { display: flex; justify-content: space-between; gap: 12px; padding: 5px 0; border-bottom: 1px solid var(--border); color: var(--text); }
+.skip-reason { color: var(--muted); }
 
 @media (max-width: 640px) {
   .charts-grid { grid-template-columns: 1fr; }

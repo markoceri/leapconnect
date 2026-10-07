@@ -1,6 +1,8 @@
 """Pydantic DTOs for the LeapConnect API, grouped by bounded context."""
 
 from leapconnect.api.schemas.charging import (  # noqa: F401
+    CalculateMissingCostsRequest,
+    CalculateMissingCostsResponse,
     ChargeRecordSchema,
     ChargingHistoryResponse,
     ChargingPriceTierResponse,
@@ -15,6 +17,7 @@ from leapconnect.api.schemas.charging import (  # noqa: F401
     ConsumptionLastWeekResponse,
     ConsumptionRankSchema,
     ConsumptionWeeklyRankResponse,
+    SkippedSessionSchema,
     TimeBandScheduleEntry,
     WeeklyConsumptionSchema,
 )
@@ -127,6 +130,8 @@ __all__ = [
     "AccountTestResponse",
     "AuthLoginResponse",
     "BatterySchema",
+    "CalculateMissingCostsRequest",
+    "CalculateMissingCostsResponse",
     "CertificateFetchResponse",
     "CertificateStatusResponse",
     "CertificateUploadResponse",
@@ -197,6 +202,7 @@ __all__ = [
     "SeatComfortSchema",
     "SecuritySchema",
     "SetupStatusResponse",
+    "SkippedSessionSchema",
     "StatusResponse",
     "TelegramLinkTokenResponse",
     "TelegramUserResponse",
