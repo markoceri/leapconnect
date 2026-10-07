@@ -219,6 +219,20 @@
           </div>
         </div>
 
+        <!-- Month-end automatic cost calculation -->
+        <div class="pref-row">
+          <div class="pref-info">
+            <Calculator :size="15" class="pref-icon" />
+            <span class="pref-label">Calculate missing costs at month end</span>
+            <span class="pref-hint">
+              On the 2nd of each month, cost the previous month's sessions that have none: the tier is inferred from the
+              charge location, sessions left open are closed from the history, and sessions whose tier can't be inferred
+              are skipped and reported by the "Monthly charging costs incomplete" notification
+            </span>
+          </div>
+          <ToggleSwitch :modelValue="autoCalculateMonthlyCosts" @update:modelValue="toggleAutoMonthlyCosts" />
+        </div>
+
         <div class="divider" />
 
         <!-- Price Tiers -->
@@ -1245,7 +1259,7 @@ import ToggleSwitch from '../components/ToggleSwitch.vue'
 import LogViewer from '../components/LogViewer.vue'
 import { api } from '../composables/useApi'
 import { useAppStore } from '../stores/appStore'
-import { User, Car, Bell, SlidersHorizontal, BarChart3, Code, KeyRound, ShieldCheck, Wifi, Wrench, Settings, Github, Info, Star, AlertTriangle, ExternalLink, Moon, Sun, RefreshCw, Terminal, Navigation, Activity, Eye, EyeOff, Send, ChevronDown, ChevronRight, Search, Locate, Zap, CarFront, Lock, X, Trash2, Link2, Copy, Check, Home, Plug, Clock, Plus, Database, Palette, Sparkles } from 'lucide-vue-next'
+import { User, Car, Bell, SlidersHorizontal, BarChart3, Code, KeyRound, ShieldCheck, Wifi, Wrench, Settings, Github, Info, Star, AlertTriangle, ExternalLink, Moon, Sun, RefreshCw, Terminal, Navigation, Activity, Eye, EyeOff, Send, ChevronDown, ChevronRight, Search, Locate, Zap, CarFront, Lock, X, Trash2, Link2, Copy, Check, Home, Plug, Clock, Plus, Database, Palette, Sparkles, Calculator } from 'lucide-vue-next'
 
 const store = useAppStore()
 
@@ -1831,6 +1845,7 @@ const electricityError = ref('')
 const electricitySuccess = ref('')
 
 const hasSolarPanels = ref(false)
+const autoCalculateMonthlyCosts = ref(true)
 const homePricingMode = ref('flat')
 const chargingTiers = ref([])
 const timeBands = ref([])
@@ -1856,6 +1871,7 @@ async function loadPreferences() {
     electricityPrice.value = data.electricity_price_kwh
     savedElectricityPrice.value = data.electricity_price_kwh
     hasSolarPanels.value = data.has_solar_panels || false
+    autoCalculateMonthlyCosts.value = data.auto_calculate_monthly_costs ?? true
     homePricingMode.value = data.home_pricing_mode || 'flat'
   } catch { /* ignore */ }
 }
@@ -1881,6 +1897,13 @@ async function toggleSolarPanels(newVal) {
     await loadChargingTiers()
   } catch { /* ignore */ }
   finally { chargingTiersSaving.value = false }
+}
+
+async function toggleAutoMonthlyCosts(newVal) {
+  try {
+    await api('PUT', '/api/preferences', { auto_calculate_monthly_costs: newVal })
+    autoCalculateMonthlyCosts.value = newVal
+  } catch { /* ignore */ }
 }
 
 async function setHomePricingMode(mode) {

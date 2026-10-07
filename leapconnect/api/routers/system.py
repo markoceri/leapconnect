@@ -49,6 +49,7 @@ def _prefs_response(prefs) -> PreferencesResponse:
         has_solar_panels=prefs.has_solar_panels,
         home_pricing_mode=prefs.home_pricing_mode,
         auto_theme_from_vehicle=prefs.auto_theme_from_vehicle,
+        auto_calculate_monthly_costs=prefs.auto_calculate_monthly_costs,
     )
 
 
@@ -148,6 +149,17 @@ async def update_preferences(request: Request, repo: RepoDep) -> PreferencesResp
             )
         await repo.save_setting(
             "auto_theme_from_vehicle", "true" if auto_theme else "false"
+        )
+    # -- month-end charging cost calculation --
+    auto_costs = body.get("auto_calculate_monthly_costs")
+    if auto_costs is not None:
+        if not isinstance(auto_costs, bool):
+            raise HTTPException(
+                status_code=422,
+                detail="'auto_calculate_monthly_costs' must be a boolean",
+            )
+        await repo.save_setting(
+            "auto_calculate_monthly_costs", "true" if auto_costs else "false"
         )
     return _prefs_response(await load_preferences(repo))
 

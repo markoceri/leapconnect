@@ -73,6 +73,7 @@ class PreferencesResponse(BaseModel):
     has_solar_panels: bool = False
     home_pricing_mode: str = "flat"
     auto_theme_from_vehicle: bool = False
+    auto_calculate_monthly_costs: bool = True
 
 
 class MqttStatusResponse(BaseModel):

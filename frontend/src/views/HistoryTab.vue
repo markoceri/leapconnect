@@ -101,6 +101,7 @@
           <option value="charge_stop">Charge stop</option>
           <option value="plugged_in">Plugged in</option>
           <option value="unplugged">Unplugged</option>
+          <option value="charging_costs_incomplete">Monthly costs incomplete</option>
           <option value="driving_start">Driving start</option>
           <option value="parked">Parked</option>
           <option value="locked">Locked</option>
@@ -360,6 +361,7 @@ const EVENT_TYPE_LABELS = {
   geofence_exit: 'Zone left',
   zone_dwell: 'Zone dwell too long',
   zone_absence: 'Zone absence too long',
+  charging_costs_incomplete: 'Monthly charging costs incomplete',
 }
 
 function formatEventType(type) {

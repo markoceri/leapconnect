@@ -8,6 +8,9 @@ Handles three kinds of sessions that lack a cost:
   → zone/tier resolved from the snapshots in its window and a record created;
 - a stored record left open because the charge stop was missed ("orphan")
   → closed with the snapshot-detected end, only when explicitly requested.
+
+The same logic runs unattended at month end (``calculate_month_missing_costs``)
+for the previous month, finding the sessions server-side.
 """
 
 from __future__ import annotations
@@ -22,6 +25,7 @@ from leapconnect.domain.charging.location import (
     resolve_charge_location,
 )
 from leapconnect.domain.charging.models import ChargingSessionCost
+from leapconnect.domain.charging.sessions import detect_charge_sessions
 
 if TYPE_CHECKING:
     from leapconnect.application.ports.repositories import AppRepository
@@ -34,6 +38,13 @@ SKIP_ONGOING = "ongoing"
 SKIP_NO_TIER = "no_tier"
 SKIP_NO_ENERGY = "no_energy"
 SKIP_NOT_FOUND = "not_found"
+
+SKIP_REASON_LABELS = {
+    SKIP_NO_TIER: "tier not inferable",
+    SKIP_NO_ENERGY: "energy not measurable",
+    SKIP_ONGOING: "still open",
+    SKIP_NOT_FOUND: "session no longer exists",
+}
 
 
 @dataclass
@@ -160,3 +171,82 @@ async def calculate_missing_costs(
         result.calculated += 1
 
     return result
+
+
+def month_bounds(year: int, month: int) -> tuple[datetime, datetime]:
+    """``[first instant, first instant of next month)`` as naive UTC."""
+    start = datetime(year, month, 1)
+    end = datetime(year + month // 12, month % 12 + 1, 1)
+    return start, end
+
+
+async def find_month_missing_costs(
+    repo: AppRepository, vin: str, year: int, month: int
+) -> list[MissingCostSession]:
+    """Server-side equivalent of the Charging tab's "missing costs" selection.
+
+    Returns every session started in the month (UTC) without a cost: stored
+    records, snapshot-only sessions, and open records whose end is visible in
+    the history (carrying that end so they can be closed).
+    """
+    start, end = month_bounds(year, month)
+    # One extra day so a charge running across midnight still gets its end.
+    history = await repo.get_history(
+        vin,
+        from_date=start.date().isoformat(),
+        to_date=end.date().isoformat(),
+        max_points=None,
+    )
+    detected = [
+        s
+        for s in detect_charge_sessions(history)
+        if start <= _naive_utc(s.start_ts) < end
+    ]
+    stored = [
+        c
+        for c in await repo.get_session_costs(vin)
+        if c.start_ts and start <= _naive_utc(c.start_ts) < end
+    ]
+
+    missing: list[MissingCostSession] = []
+    matched_ids: set[int] = set()
+    for ds in detected:
+        ds_start = _naive_utc(ds.start_ts)
+        match = next(
+            (
+                c
+                for c in stored
+                if abs(_naive_utc(c.start_ts) - ds_start) < SAME_SESSION_TOLERANCE
+            ),
+            None,
+        )
+        if match is None:
+            missing.append(MissingCostSession(start_ts=ds_start, end_ts=ds.end_ts))
+            continue
+        matched_ids.add(match.id)
+        if match.cost is None:
+            missing.append(
+                MissingCostSession(
+                    start_ts=_naive_utc(match.start_ts),
+                    end_ts=match.end_ts or ds.end_ts,
+                    cost_id=match.id,
+                )
+            )
+    for c in stored:
+        if c.cost is None and c.id not in matched_ids:
+            missing.append(
+                MissingCostSession(
+                    start_ts=_naive_utc(c.start_ts), end_ts=c.end_ts, cost_id=c.id
+                )
+            )
+    return missing
+
+
+async def calculate_month_missing_costs(
+    repo: AppRepository, vin: str, year: int, month: int
+) -> MissingCostsResult:
+    """Unattended month-end run: infer tiers, skip unknown ones, close orphans."""
+    sessions = await find_month_missing_costs(repo, vin, year, month)
+    if not sessions:
+        return MissingCostsResult()
+    return await calculate_missing_costs(repo, vin, sessions, close_orphans=True)

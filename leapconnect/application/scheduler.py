@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
 from leapmotor_api.exceptions import LeapmotorApiError
@@ -35,6 +35,13 @@ MIN_MQTT_INTERVAL_SECONDS = 10
 MAX_MQTT_INTERVAL_SECONDS = 86400  # 24 h
 MIN_TRANSITION_POLL_SECONDS = 5
 MAX_TRANSITION_POLL_SECONDS = 300
+
+# Month-end charging costs: the previous month is processed from this day of
+# the new month, so a charge running across midnight has time to finish.
+MONTH_END_COSTS_FROM_DAY = 2
+MONTH_END_COSTS_SETTING = "charging_costs_last_auto_month"
+# Skipped sessions listed in the notification before truncating.
+MONTH_END_COSTS_MAX_LISTED = 10
 
 
 class VehicleDataScheduler:
@@ -239,6 +246,10 @@ class VehicleDataScheduler:
         try:
             while self._settings.enabled:
                 await self._poll_history()
+                try:
+                    await self._maybe_run_month_end_costs()
+                except Exception:
+                    _LOGGER.exception("Scheduler: month-end charging costs failed")
                 try:
                     await asyncio.wait_for(
                         self._history_stop.wait(),
@@ -555,6 +566,88 @@ class VehicleDataScheduler:
                 _LOGGER.exception(
                     "Scheduler: transition poll failed for %s", vehicle.vin
                 )
+
+    async def _maybe_run_month_end_costs(self, now: datetime | None = None) -> None:
+        """Cost the previous month's cost-less charging sessions, once a month.
+
+        Runs from ``MONTH_END_COSTS_FROM_DAY`` of the new month (catching up on
+        the first poll after downtime). Sessions whose tier can't be inferred
+        are skipped and reported via the ``charging_costs_incomplete`` event;
+        orphan sessions (charge stop missed) are closed from the history. The
+        month is only marked done when every vehicle succeeded.
+        """
+        from leapconnect.application.charging_costs import (
+            calculate_month_missing_costs,
+        )
+        from leapconnect.application.settings_store import load_preferences
+
+        if not self._vehicles:
+            return
+        now = now or datetime.now(UTC).replace(tzinfo=None)
+        if now.day < MONTH_END_COSTS_FROM_DAY:
+            return
+        prev = now.replace(day=1) - timedelta(days=1)
+        target = f"{prev.year:04d}-{prev.month:02d}"
+        last = await self._repo.get_setting(MONTH_END_COSTS_SETTING)
+        if last and last >= target:
+            return
+        if not (await load_preferences(self._repo)).auto_calculate_monthly_costs:
+            return
+
+        all_ok = True
+        for vehicle in self._vehicles:
+            try:
+                result = await calculate_month_missing_costs(
+                    self._repo, vehicle.vin, prev.year, prev.month
+                )
+            except Exception:
+                all_ok = False
+                _LOGGER.exception(
+                    "Month-end charging costs failed for %s (%s)", vehicle.vin, target
+                )
+                continue
+            _LOGGER.info(
+                "Month-end charging costs for %s (%s): %d costed, %d skipped",
+                vehicle.vin,
+                target,
+                result.calculated,
+                len(result.skipped),
+            )
+            if result.skipped and self._notification_dispatcher:
+                await self._notify_month_end_costs(vehicle, prev, result)
+        if all_ok:
+            await self._repo.save_setting(MONTH_END_COSTS_SETTING, target)
+
+    async def _notify_month_end_costs(self, vehicle, month: datetime, result) -> None:
+        """Send the ``charging_costs_incomplete`` summary for one vehicle."""
+        from leapconnect.application.charging_costs import SKIP_REASON_LABELS
+
+        lines = [
+            # Stored timestamps are UTC; show them in the server's local time.
+            f"• {sk.start_ts.replace(tzinfo=UTC).astimezone():%d %b %H:%M}"
+            f" — {SKIP_REASON_LABELS.get(sk.reason, sk.reason)}"
+            for sk in result.skipped[:MONTH_END_COSTS_MAX_LISTED]
+        ]
+        extra = len(result.skipped) - MONTH_END_COSTS_MAX_LISTED
+        if extra > 0:
+            lines.append(f"• … and {extra} more")
+        month_label = f"{month:%B %Y}"
+        try:
+            await self._notification_dispatcher.dispatch_custom(
+                "charging_costs_incomplete",
+                vehicle.vin,
+                vehicle.vehicle_nickname or vehicle.car_type or vehicle.vin,
+                {
+                    "month": month_label,
+                    "calculated": result.calculated,
+                    "skipped": len(result.skipped),
+                    "sessions_list": "\n".join(lines),
+                },
+                history_value=f"{month_label}: {len(result.skipped)} to review",
+                cooldown_key=f"charging_costs_incomplete:{month:%Y-%m}",
+            )
+        except Exception as exc:
+            _LOGGER.warning("Month-end charging costs notification failed: %s", exc)
 
     async def _handle_charging_cost_event(self, event, status) -> None:
         """Auto-create/finalize session cost on charge_start/charge_stop."""

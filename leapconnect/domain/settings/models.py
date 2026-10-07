@@ -18,6 +18,8 @@ class UserPreferences:
     has_solar_panels: bool = False
     home_pricing_mode: str = "flat"  # "flat" or "time_of_use"
     auto_theme_from_vehicle: bool = False  # auto-pick accent colour from the vehicle
+    # Cost the previous month's cost-less charging sessions at month end
+    auto_calculate_monthly_costs: bool = True
 
 
 @dataclass

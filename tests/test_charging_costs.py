@@ -1,6 +1,7 @@
 """Bulk "calculate missing costs" and the shared charge-location resolver."""
 
 from datetime import datetime, timedelta
+from types import SimpleNamespace
 
 from leapconnect.application.charging_costs import (
     SKIP_NO_ENERGY,
@@ -8,12 +9,18 @@ from leapconnect.application.charging_costs import (
     SKIP_ONGOING,
     MissingCostSession,
     calculate_missing_costs,
+    find_month_missing_costs,
+)
+from leapconnect.application.scheduler import (
+    MONTH_END_COSTS_SETTING,
+    VehicleDataScheduler,
 )
 from leapconnect.domain.charging.location import resolve_charge_location
 from leapconnect.domain.charging.models import (
     ChargingPriceTier,
     ChargingSessionCost,
 )
+from leapconnect.domain.charging.sessions import detect_charge_sessions
 from leapconnect.domain.telemetry.models import VehicleSnapshot
 from leapconnect.domain.zones import Zone
 
@@ -34,7 +41,7 @@ def _zone(tier="home_solar"):
     )
 
 
-def _snaps(pos, *, charge_state=1, kwh=(40.0, 50.0), start=T0):
+def _snaps(pos, *, charge_state=1, kwh=(40.0, 50.0), start=T0, charging=True):
     """Two snapshots one hour apart, energy rising from kwh[0] to kwh[1]."""
     return [
         VehicleSnapshot(
@@ -42,6 +49,7 @@ def _snaps(pos, *, charge_state=1, kwh=(40.0, 50.0), start=T0):
             timestamp=start + timedelta(hours=i),
             battery_dump_energy=e * 1000,
             battery_charge_state=charge_state,
+            battery_is_charging=charging,
             vehicle_latitude=pos[0] if pos else None,
             vehicle_longitude=pos[1] if pos else None,
         )
@@ -52,10 +60,11 @@ def _snaps(pos, *, charge_state=1, kwh=(40.0, 50.0), start=T0):
 class _Repo:
     """In-memory stand-in for the parts of AppRepository the use case touches."""
 
-    def __init__(self, *, zones=(), snaps=(), costs=()):
+    def __init__(self, *, zones=(), snaps=(), costs=(), settings=None):
         self.zones = list(zones)
         self.snaps = list(snaps)
         self.costs = list(costs)
+        self.settings = dict(settings or {})
         self._next_id = 100
 
     async def get_zones(self, vin=None):
@@ -81,7 +90,10 @@ class _Repo:
         ]
 
     async def get_setting(self, key):
-        return None
+        return self.settings.get(key)
+
+    async def save_setting(self, key, value):
+        self.settings[key] = value
 
 
 # -- resolver ---------------------------------------------------------------
@@ -224,3 +236,132 @@ def test_endpoint_reports_skipped_sessions(auth_client):
         "calculated": 0,
         "skipped": [{"start_ts": "2026-09-10T20:00:00", "reason": "ongoing"}],
     }
+
+
+# -- session detection ------------------------------------------------------
+
+
+def _idle(ts):
+    return VehicleSnapshot(vin="V1", timestamp=ts, battery_is_charging=False)
+
+
+def test_detect_charge_sessions_splits_runs_and_keeps_open_tail():
+    snaps = [
+        _idle(T0 - timedelta(hours=1)),
+        *_snaps(HOME),
+        _idle(T0 + timedelta(hours=2)),
+        *_snaps(HOME, start=T0 + timedelta(hours=5)),
+    ]
+    sessions = detect_charge_sessions(snaps)
+    assert [(s.start_ts, s.end_ts) for s in sessions] == [
+        (T0, T0 + timedelta(hours=1)),
+        (T0 + timedelta(hours=5), None),
+    ]
+
+
+# -- month selection --------------------------------------------------------
+
+
+async def test_find_month_missing_costs_selects_only_costless_in_month():
+    end = T0 + timedelta(hours=1)
+    costed = ChargingSessionCost(
+        id=1, vin="V1", start_ts=T0, end_ts=end, tier_id="home_grid", cost=1.0
+    )
+    orphan = ChargingSessionCost(
+        id=2, vin="V1", start_ts=T0 + timedelta(days=1), tier_id="home_grid"
+    )
+    other_month = ChargingSessionCost(
+        id=3, vin="V1", start_ts=datetime(2026, 8, 30, 10), tier_id="home_grid"
+    )
+    snaps = [
+        *_snaps(HOME),  # matches the costed record → excluded
+        _idle(end + timedelta(minutes=5)),
+        *_snaps(HOME, start=T0 + timedelta(days=1)),  # the orphan, now ended
+        _idle(T0 + timedelta(days=1, hours=2)),
+        *_snaps(HOME, start=T0 + timedelta(days=2)),  # snapshot-only
+        _idle(T0 + timedelta(days=2, hours=2)),
+    ]
+    repo = _Repo(snaps=snaps, costs=[costed, orphan, other_month])
+    missing = await find_month_missing_costs(repo, "V1", 2026, 9)
+    assert [(m.cost_id, m.start_ts, m.end_ts) for m in missing] == [
+        (2, T0 + timedelta(days=1), T0 + timedelta(days=1, hours=1)),
+        (None, T0 + timedelta(days=2), T0 + timedelta(days=2, hours=1)),
+    ]
+
+
+# -- scheduler month-end trigger --------------------------------------------
+
+
+class _Dispatcher:
+    def __init__(self):
+        self.sent = []
+
+    async def dispatch_custom(self, event_type, vin, vehicle_name, ctx, **kwargs):
+        self.sent.append((event_type, vin, ctx))
+
+
+def _scheduler(repo):
+    dispatcher = _Dispatcher()
+    sched = VehicleDataScheduler(repo=repo, notification_dispatcher=dispatcher)
+    sched._vehicles = [SimpleNamespace(vin="V1", vehicle_nickname="Car", car_type=None)]
+    return sched, dispatcher
+
+
+def _month_snaps():
+    """One September session in a tier zone, one outside every zone."""
+    return [
+        *_snaps(HOME),
+        _idle(T0 + timedelta(hours=2)),
+        *_snaps(AWAY, start=T0 + timedelta(days=1)),
+        _idle(T0 + timedelta(days=1, hours=2)),
+    ]
+
+
+async def test_month_end_waits_for_grace_day():
+    repo = _Repo(zones=[_zone()], snaps=_month_snaps())
+    sched, _ = _scheduler(repo)
+    await sched._maybe_run_month_end_costs(now=datetime(2026, 10, 1, 12))
+    assert repo.costs == [] and MONTH_END_COSTS_SETTING not in repo.settings
+
+
+async def test_month_end_costs_previous_month_and_notifies_skipped():
+    repo = _Repo(zones=[_zone()], snaps=_month_snaps())
+    sched, dispatcher = _scheduler(repo)
+    await sched._maybe_run_month_end_costs(now=datetime(2026, 10, 2, 8))
+
+    assert [(c.tier_id, c.cost) for c in repo.costs] == [("home_solar", 2.5)]
+    assert repo.settings[MONTH_END_COSTS_SETTING] == "2026-09"
+    [(event_type, vin, ctx)] = dispatcher.sent
+    assert (event_type, vin) == ("charging_costs_incomplete", "V1")
+    assert ctx["calculated"] == 1 and ctx["skipped"] == 1
+    assert "tier not inferable" in ctx["sessions_list"]
+
+    # Already done for September → second run is a no-op.
+    await sched._maybe_run_month_end_costs(now=datetime(2026, 10, 3, 8))
+    assert len(dispatcher.sent) == 1 and len(repo.costs) == 1
+
+
+async def test_month_end_respects_disabled_preference():
+    repo = _Repo(
+        zones=[_zone()],
+        snaps=_month_snaps(),
+        settings={"auto_calculate_monthly_costs": "false"},
+    )
+    sched, dispatcher = _scheduler(repo)
+    await sched._maybe_run_month_end_costs(now=datetime(2026, 10, 2, 8))
+    assert repo.costs == [] and not dispatcher.sent
+    assert MONTH_END_COSTS_SETTING not in repo.settings
+
+
+def test_preferences_expose_auto_monthly_costs(auth_client):
+    assert (
+        auth_client.get("/api/preferences").json()["auto_calculate_monthly_costs"]
+        is True
+    )
+    resp = auth_client.put(
+        "/api/preferences", json={"auto_calculate_monthly_costs": False}
+    )
+    assert resp.status_code == 200
+    assert resp.json()["auto_calculate_monthly_costs"] is False
+    bad = auth_client.put("/api/preferences", json={"auto_calculate_monthly_costs": 1})
+    assert bad.status_code == 422

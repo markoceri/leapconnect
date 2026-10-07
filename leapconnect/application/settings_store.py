@@ -31,6 +31,7 @@ async def load_preferences(repo: AppRepository) -> UserPreferences:
     solar_raw = await repo.get_setting("has_solar_panels")
     pricing_mode_raw = await repo.get_setting("home_pricing_mode")
     auto_theme_raw = await repo.get_setting("auto_theme_from_vehicle")
+    auto_costs_raw = await repo.get_setting("auto_calculate_monthly_costs")
     return UserPreferences(
         electricity_price_kwh=float(raw) if raw else 0.25,
         theme=theme_raw if theme_raw in ("dark", "light", "vehicle") else "dark",
@@ -41,6 +42,9 @@ async def load_preferences(repo: AppRepository) -> UserPreferences:
         if pricing_mode_raw in ("flat", "time_of_use")
         else "flat",
         auto_theme_from_vehicle=auto_theme_raw == "true" if auto_theme_raw else False,
+        auto_calculate_monthly_costs=auto_costs_raw != "false"
+        if auto_costs_raw
+        else True,
     )
 
 

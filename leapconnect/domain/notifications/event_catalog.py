@@ -94,6 +94,17 @@ EVENT_CATALOG: list[dict] = [
         "has_image": True,
         "configurable": False,
     },
+    {
+        "event_type": "charging_costs_incomplete",
+        "label": "Monthly charging costs incomplete",
+        "description": (
+            "Notify when the automatic month-end cost calculation leaves sessions "
+            "without a cost (tier not inferable or energy not measurable)"
+        ),
+        "category": "charging",
+        "has_image": False,
+        "configurable": False,
+    },
     # Driving
     {
         "event_type": "driving_start",
@@ -368,6 +379,14 @@ MESSAGE_TEMPLATES: dict[str, dict[str, str]] = {
     "unplugged": {
         "title": "🔌 Unplugged",
         "body": "SOC: {soc}% — Range: {range} km",
+    },
+    "charging_costs_incomplete": {
+        "title": "🧾 Charging costs to review",
+        "body": (
+            "{month}: {calculated} session(s) costed automatically, "
+            "{skipped} need a manual cost.\n{sessions_list}\n"
+            "Open the Charging tab to assign them."
+        ),
     },
     "driving_start": {
         "title": "🚗 Driving",

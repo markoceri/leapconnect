@@ -438,6 +438,55 @@ class NotificationDispatcher:
                             vin, interval_seconds=int(tracking_interval)
                         )
 
+    async def dispatch_custom(
+        self,
+        event_type: str,
+        vin: str,
+        vehicle_name: str,
+        extra_context: dict,
+        *,
+        history_value: str | None = None,
+        cooldown_key: str | None = None,
+    ) -> None:
+        """Record and send an event raised outside a vehicle status transition.
+
+        Used for scheduled events (e.g. the month-end charging cost run). The
+        event is always written to history; channels get it only when enabled
+        and not muted.
+        """
+        try:
+            await self._repo.save_event(
+                VehicleEvent(
+                    vin=vin,
+                    timestamp=datetime.now(UTC),
+                    event_type=event_type,
+                    field_name=event_type,
+                    old_value=None,
+                    new_value=history_value,
+                )
+            )
+        except Exception as exc:
+            _LOGGER.debug("Failed to persist custom event %s: %s", event_type, exc)
+
+        if not self._notifiers or self.is_muted:
+            return
+        key = cooldown_key or event_type
+        context = {"vehicle_name": vehicle_name, **extra_context}
+        for channel_id, notifier in self._notifiers.items():
+            if not self._is_event_enabled(channel_id, event_type):
+                continue
+            if not self._check_cooldown(vin, key):
+                continue
+            notification = await self._build_notification(
+                event_type, vin, vehicle_name, context
+            )
+            if notification:
+                spawn(
+                    self._send_notification(
+                        notifier, notification, event_type, vin, key
+                    )
+                )
+
     async def _send_notification(
         self,
         notifier: BaseNotifier,
@@ -493,6 +542,11 @@ class NotificationDispatcher:
             "threshold": 80,
             "soc_target": 80,
             "threshold_km": 50,
+            "month": "September 2026",
+            "calculated": 12,
+            "skipped": 2,
+            "sessions_list": "• 14 Sep 18:30 — tier not inferable\n"
+            "• 22 Sep 09:10 — energy not measurable",
         }
 
         # Use real VIN for image composition, fallback to "TEST"
