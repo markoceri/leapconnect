@@ -5,7 +5,7 @@ from __future__ import annotations
 from leapmotor_api.models import (
     Message,
 )
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class SchedulerStatusResponse(BaseModel):
@@ -28,6 +28,27 @@ class DatabaseSizeResponse(BaseModel):
 
     size_bytes: int
     size_human: str
+
+
+class DiskFilesystemSchema(BaseModel):
+    path: str
+    total_gb: float
+    free_gb: float
+    free_percent: float
+    low: bool  # under the current thresholds
+
+
+class DiskSpaceResponse(BaseModel):
+    """Low-disk thresholds (``0`` disables one) and current usage."""
+
+    min_free_gb: float
+    min_free_percent: float
+    filesystems: list[DiskFilesystemSchema]
+
+
+class DiskAlertSettingsUpdate(BaseModel):
+    min_free_gb: float = Field(ge=0)
+    min_free_percent: float = Field(ge=0, le=100)
 
 
 class MessageSchema(BaseModel):

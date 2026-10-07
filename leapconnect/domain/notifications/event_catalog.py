@@ -320,6 +320,19 @@ EVENT_CATALOG: list[dict] = [
         "configurable": True,
         "config_schema": {},
     },
+    # System (host health — not about a vehicle)
+    {
+        "event_type": "disk_space_low",
+        "label": "Low disk space",
+        "description": (
+            "Notify when free space on the disk holding the database and app data "
+            "drops below the thresholds set in Settings → General → System; "
+            "repeated daily while it stays low"
+        ),
+        "category": "system",
+        "has_image": False,
+        "configurable": False,
+    },
 ]
 
 # Lookup map
@@ -455,6 +468,14 @@ MESSAGE_TEMPLATES: dict[str, dict[str, str]] = {
             "({remaining_km} km remaining).\n"
             "Due: {due_date}\n"
             "Vehicle: {vehicle_name}"
+        ),
+    },
+    "disk_space_low": {
+        "title": "💾 Low disk space",
+        "body": (
+            "{free_gb} GB free ({free_percent}%) of {total_gb} GB on {disk_path}\n"
+            "Alert threshold: {disk_limits}\n"
+            "Free up space to keep the database and history working."
         ),
     },
     "maintenance_overdue": {

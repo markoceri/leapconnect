@@ -453,6 +453,7 @@ class TelegramBotHandler:
         rows.append(
             [{"text": "🔧 Maintenance", "callback_data": "notif:cat:maintenance"}]
         )
+        rows.append([{"text": "🖥️ System", "callback_data": "notif:cat:system"}])
 
         return {"inline_keyboard": rows}
 
@@ -465,6 +466,7 @@ class TelegramBotHandler:
             "driving": "🚗 Driving",
             "security": "🔐 Security",
             "maintenance": "🔧 Maintenance",
+            "system": "🖥️ System",
         }
 
         events = [e for e in EVENT_CATALOG if e.get("category") == category]

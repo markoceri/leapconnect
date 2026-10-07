@@ -188,6 +188,51 @@
         >{{ databaseSize.loading ? 'Refreshing…' : 'Refresh' }}</button>
       </SectionCard>
 
+      <SectionCard title="System" :icon="Server">
+        <InfoRow
+          v-for="fs in diskSpace.filesystems"
+          :key="fs.path"
+          :label="diskSpace.filesystems.length > 1 ? `Free space · ${fs.path}` : 'Free space'"
+          :value="`${fs.free_gb.toFixed(1)} GB of ${fs.total_gb.toFixed(1)} GB (${fs.free_percent.toFixed(1)}%)`"
+          :color="fs.low ? '#ff5252' : '#e2e6f0'"
+        />
+        <InfoRow
+          v-if="diskSpace.filesystems.length === 1"
+          label="Location"
+          :value="diskSpace.filesystems[0].path"
+          color="#e2e6f0"
+        />
+
+        <div class="divider" />
+        <p class="rate-limit-hint" style="margin-bottom:8px">
+          <strong>Low disk space alert</strong> — raises the <em>Low disk space</em> event when free space on the disk
+          holding the database and app data drops below either threshold (0 disables it), then every 24 h while it stays
+          low. Choose which channels receive it in <em>Notifications → System</em>.
+        </p>
+        <div class="pref-row">
+          <div class="pref-info"><span class="pref-label">Minimum free space</span></div>
+          <div class="pref-input-group">
+            <input v-model.number="diskSpace.min_free_gb" type="number" step="any" min="0" class="pref-input" />
+            <span class="pref-unit">GB</span>
+          </div>
+        </div>
+        <div class="pref-row">
+          <div class="pref-info"><span class="pref-label">Minimum free percentage</span></div>
+          <div class="pref-input-group">
+            <input v-model.number="diskSpace.min_free_percent" type="number" step="any" min="0" max="100" class="pref-input" />
+            <span class="pref-unit">%</span>
+          </div>
+        </div>
+        <button
+          class="interval-set-btn"
+          style="margin-top:8px"
+          :disabled="diskSpace.saving"
+          @click="saveDiskSpace"
+        >{{ diskSpace.saving ? '…' : 'Save thresholds' }}</button>
+        <div v-if="diskSpace.success" class="field-success">{{ diskSpace.success }}</div>
+        <div v-if="diskSpace.error" class="field-error">{{ diskSpace.error }}</div>
+      </SectionCard>
+
       <SectionCard title="Energy & Charging Costs" :icon="Zap">
         <!-- Solar panels toggle -->
         <div class="pref-row">
@@ -911,6 +956,7 @@
                       class="pref-input"
                       :min="schema.min"
                       :max="schema.max"
+                      :step="schema.step ?? 'any'"
                       :value="getEventConfigValue(evt, paramKey, schema.default)"
                       @change="setEventConfigValue(evt, paramKey, $event.target.value)"
                       style="width:60px"
@@ -1259,7 +1305,7 @@ import ToggleSwitch from '../components/ToggleSwitch.vue'
 import LogViewer from '../components/LogViewer.vue'
 import { api } from '../composables/useApi'
 import { useAppStore } from '../stores/appStore'
-import { User, Car, Bell, SlidersHorizontal, BarChart3, Code, KeyRound, ShieldCheck, Wifi, Wrench, Settings, Github, Info, Star, AlertTriangle, ExternalLink, Moon, Sun, RefreshCw, Terminal, Navigation, Activity, Eye, EyeOff, Send, ChevronDown, ChevronRight, Search, Locate, Zap, CarFront, Lock, X, Trash2, Link2, Copy, Check, Home, Plug, Clock, Plus, Database, Palette, Sparkles, Calculator } from 'lucide-vue-next'
+import { User, Car, Bell, SlidersHorizontal, BarChart3, Code, KeyRound, ShieldCheck, Wifi, Wrench, Settings, Github, Info, Star, AlertTriangle, ExternalLink, Moon, Sun, RefreshCw, Terminal, Navigation, Activity, Eye, EyeOff, Send, ChevronDown, ChevronRight, Search, Locate, Zap, CarFront, Lock, X, Trash2, Link2, Copy, Check, Home, Plug, Clock, Plus, Database, Palette, Sparkles, Calculator, Server } from 'lucide-vue-next'
 
 const store = useAppStore()
 
@@ -1405,6 +1451,48 @@ async function loadDatabaseSize() {
     databaseSize.size_human = 'unknown'
   } finally {
     databaseSize.loading = false
+  }
+}
+
+// -- System: disk space & low-disk alert thresholds ---------------------------
+const diskSpace = reactive({
+  filesystems: [],
+  min_free_gb: 1,
+  min_free_percent: 10,
+  saving: false,
+  success: '',
+  error: '',
+})
+
+function applyDiskSpace(data) {
+  diskSpace.filesystems = data.filesystems || []
+  diskSpace.min_free_gb = data.min_free_gb
+  diskSpace.min_free_percent = data.min_free_percent
+}
+
+async function loadDiskSpace() {
+  try {
+    applyDiskSpace(await api('GET', '/api/system/disk-space'))
+  } catch (e) {
+    diskSpace.error = e.message || 'Failed to load disk space'
+  }
+}
+
+async function saveDiskSpace() {
+  diskSpace.saving = true
+  diskSpace.success = ''
+  diskSpace.error = ''
+  try {
+    applyDiskSpace(await api('PUT', '/api/system/disk-space', {
+      min_free_gb: Number(diskSpace.min_free_gb) || 0,
+      min_free_percent: Number(diskSpace.min_free_percent) || 0,
+    }))
+    diskSpace.success = 'Thresholds saved'
+    setTimeout(() => { diskSpace.success = '' }, 3000)
+  } catch (e) {
+    diskSpace.error = e.message || 'Failed to save thresholds'
+  } finally {
+    diskSpace.saving = false
   }
 }
 
@@ -2144,13 +2232,14 @@ const telegramBotActive = computed(() => {
   return telegramChannel.value?.config?.bot_enabled !== false
 })
 
-const categoryIcons = { charging: Zap, driving: CarFront, security: Lock, maintenance: Wrench }
+const categoryIcons = { charging: Zap, driving: CarFront, security: Lock, maintenance: Wrench, system: Server }
 
 const eventCategories = [
   { key: 'charging', label: 'Charging' },
   { key: 'driving', label: 'Driving' },
   { key: 'security', label: 'Security' },
   { key: 'maintenance', label: 'Maintenance' },
+  { key: 'system', label: 'System' },
 ]
 
 const defaultDynamicImageEvents = new Set([
@@ -2513,6 +2602,7 @@ onMounted(() => {
   loadChargingTiers()
   loadDownsamplingSettings()
   loadDatabaseSize()
+  loadDiskSpace()
   loadMqtt()
   loadAbrp()
   loadVehiclePin()

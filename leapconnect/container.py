@@ -32,6 +32,7 @@ from leapconnect.application.commands import (
 )
 from leapconnect.application.notifications import NotificationDispatcher
 from leapconnect.application.scheduler import VehicleDataScheduler
+from leapconnect.application.system_health import DiskSpaceMonitor
 from leapconnect.application.vehicle_cache import VehicleStatusCache
 from leapconnect.domain.identity.sessions import SessionStore
 from leapconnect.domain.identity.throttle import LoginThrottle
@@ -41,6 +42,7 @@ from leapconnect.infrastructure.mqtt.home_assistant import HomeAssistantMqttServ
 from leapconnect.infrastructure.persistence.sqlite_adapter import (
     SqlAlchemyRepository,
 )
+from leapconnect.infrastructure.system import read_disk_usage
 
 if TYPE_CHECKING:
     from fastapi import WebSocket
@@ -65,6 +67,7 @@ class AppContainer:
         self.abrp_service: AbrpService | None = None
         self.vehicle_cache: VehicleStatusCache | None = None
         self.notification_dispatcher: NotificationDispatcher | None = None
+        self.disk_monitor: DiskSpaceMonitor | None = None
 
         # Caches
         self.picture_cache: dict[str, dict[str, str]] = {}  # vin -> {name: data-URI}
@@ -544,6 +547,16 @@ class AppContainer:
         )
         await self.notification_dispatcher.reload_config()
 
+        # Low disk space alerts for the filesystem(s) holding DB and data dir
+        disk_paths = [Path(db_path), config.DATA_DIR]
+        repo = self.repo
+        self.disk_monitor = DiskSpaceMonitor(
+            self.notification_dispatcher,
+            lambda: read_disk_usage(disk_paths),
+            lambda: settings_store.load_disk_alert_settings(repo),
+        )
+        self.disk_monitor.start()
+
         self.scheduler = VehicleDataScheduler(
             self.repo,
             cache=self.vehicle_cache,
@@ -618,6 +631,8 @@ class AppContainer:
 
     async def shutdown(self) -> None:
         self.stop_live_refresh()
+        if self.disk_monitor:
+            await self.disk_monitor.stop()
         if self.abrp_service:
             await self.abrp_service.stop()
         if self.mqtt_service:

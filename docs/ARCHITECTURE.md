@@ -45,6 +45,7 @@ One subpackage per **bounded context**:
 | `zones`         | `Zone` model, zone geometry (`geometry.py`), pure enter/exit transition detection (`detection.py`) — a reusable location concept consumed by notifications (alerts) and charging (tier-by-zone) |
 | `identity`      | local dashboard session policy (`sessions.py`, hash-keyed store persisted via the repository), login throttling (`throttle.py`) |
 | `settings`      | typed user/scheduler/MQTT/ABRP settings models |
+| `system`        | health of the host running LeapConnect: `DiskUsage`, low-disk threshold and daily-reminder rules (`disk.py`) |
 
 **Rule:** domain modules import only the stdlib and other domain modules.
 Enforced by `tests/test_architecture.py`.
@@ -70,6 +71,10 @@ Enforced by `tests/test_architecture.py`.
   `POST /api/vehicles/{vin}/commands/{command}`, the Telegram bot and the
   MQTT bridge; rights checks included (REST is pass-through for now).
 - `settings_store.py` — typed settings ↔ key/value settings table.
+- `system_health.py` — `DiskSpaceMonitor`, a background task raising the
+  `disk_space_low` event from the global thresholds (Settings → General →
+  System), delivered via `NotificationDispatcher.dispatch_system` to the
+  channels that enabled it; the disk probe is `infrastructure/system.py`.
 - `maintenance.py` — plan auto-generation use case.
 
 ### `leapconnect.infrastructure` — driven adapters

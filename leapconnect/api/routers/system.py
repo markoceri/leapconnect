@@ -14,6 +14,9 @@ from leapconnect.api.deps import ClientDep, ContainerDep, RepoDep
 from leapconnect.api.schemas import (
     AbrpStatusResponse,
     DatabaseSizeResponse,
+    DiskAlertSettingsUpdate,
+    DiskFilesystemSchema,
+    DiskSpaceResponse,
     MessageListResponse,
     MessageSchema,
     MqttStatusResponse,
@@ -23,12 +26,15 @@ from leapconnect.api.schemas import (
     UnreadCountResponse,
 )
 from leapconnect.application.settings_store import (
+    load_disk_alert_settings,
     load_preferences,
     save_abrp_settings,
+    save_disk_alert_settings,
     save_mqtt_settings,
 )
 from leapconnect.container import AppContainer
 from leapconnect.domain.charging.models import ChargingPriceTier
+from leapconnect.domain.system import DiskAlertSettings, is_low_disk
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -266,6 +272,49 @@ async def get_database_size() -> DatabaseSizeResponse:
         size_human = f"{size_bytes / (1024 * 1024 * 1024):.1f} GB"
 
     return DatabaseSizeResponse(size_bytes=size_bytes, size_human=size_human)
+
+
+async def _disk_space_response(
+    container: AppContainer, limits: DiskAlertSettings
+) -> DiskSpaceResponse:
+    usages = (
+        await container.disk_monitor.current_usage() if container.disk_monitor else []
+    )
+    return DiskSpaceResponse(
+        min_free_gb=limits.min_free_gb,
+        min_free_percent=limits.min_free_percent,
+        filesystems=[
+            DiskFilesystemSchema(
+                path=u.path,
+                total_gb=round(u.total_gb, 2),
+                free_gb=round(u.free_gb, 2),
+                free_percent=round(u.free_percent, 1),
+                low=is_low_disk(u, limits),
+            )
+            for u in usages
+        ],
+    )
+
+
+@router.get("/api/system/disk-space", response_model=DiskSpaceResponse)
+async def get_disk_space(container: ContainerDep, repo: RepoDep) -> DiskSpaceResponse:
+    """Low-disk alert thresholds and free space of the DB/data filesystems."""
+    return await _disk_space_response(container, await load_disk_alert_settings(repo))
+
+
+@router.put("/api/system/disk-space", response_model=DiskSpaceResponse)
+async def update_disk_space(
+    body: DiskAlertSettingsUpdate, container: ContainerDep, repo: RepoDep
+) -> DiskSpaceResponse:
+    """Set the low-disk thresholds that raise the ``disk_space_low`` event."""
+    limits = DiskAlertSettings(
+        min_free_gb=body.min_free_gb, min_free_percent=body.min_free_percent
+    )
+    await save_disk_alert_settings(repo, limits)
+    if container.disk_monitor:
+        # Apply right away instead of waiting for the next periodic check.
+        await container.disk_monitor.check()
+    return await _disk_space_response(container, limits)
 
 
 # ---------------------------------------------------------------------------

@@ -10,6 +10,7 @@ messages in ``telegram_admin.py``.
 from __future__ import annotations
 
 import contextlib
+import html
 import logging
 import time
 from datetime import UTC, datetime
@@ -487,6 +488,29 @@ class NotificationDispatcher:
                     )
                 )
 
+    async def dispatch_system(
+        self, event_type: str, sender_name: str, context: dict
+    ) -> int:
+        """Send an event about the app/host itself (not a vehicle).
+
+        Goes to every channel with the event enabled, unless muted. The caller
+        owns the repeat policy, so no cooldown applies. ``sender_name`` takes
+        the vehicle name's place in the title. Returns the channels targeted.
+        """
+        if not self._notifiers or self.is_muted:
+            return 0
+        targeted = 0
+        for channel_id, notifier in self._notifiers.items():
+            if not self._is_event_enabled(channel_id, event_type):
+                continue
+            notification = await self._build_notification(
+                event_type, "", sender_name, {"vehicle_name": sender_name, **context}
+            )
+            if notification:
+                spawn(self._send_notification(notifier, notification, event_type, ""))
+                targeted += 1
+        return targeted
+
     async def _send_notification(
         self,
         notifier: BaseNotifier,
@@ -545,6 +569,11 @@ class NotificationDispatcher:
             "month": "September 2026",
             "calculated": 12,
             "skipped": 2,
+            "free_gb": "0.8",
+            "free_percent": "4.2",
+            "total_gb": "29.1",
+            "disk_path": "/data",
+            "disk_limits": "below 1 GB or 10%",
             "sessions_list": "• 14 Sep 18:30 — tier not inferable\n"
             "• 22 Sep 09:10 — energy not measurable",
         }
@@ -632,7 +661,13 @@ class NotificationDispatcher:
             _LOGGER.warning("No message template for event: %s", event_type)
             return None
 
-        title = f"{template['title']} — {vehicle_name}"
+        # Templates are trusted HTML (Telegram parse_mode=HTML); the values
+        # filled into them are data and must not be parsed as markup.
+        context = {
+            k: html.escape(v, quote=False) if isinstance(v, str) else v
+            for k, v in context.items()
+        }
+        title = f"{template['title']} — {html.escape(vehicle_name, quote=False)}"
         try:
             body = template["body"].format(**context) if template["body"] else ""
         except KeyError as e:

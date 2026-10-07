@@ -16,6 +16,7 @@ from leapconnect.domain.settings.models import (
     MqttSettings,
     UserPreferences,
 )
+from leapconnect.domain.system import DiskAlertSettings
 
 if TYPE_CHECKING:
     from leapconnect.application.ports.repositories import AppRepository
@@ -220,3 +221,29 @@ async def save_vehicle_color(
         colors.pop(vin, None)
     await repo.save_setting(_VEHICLE_COLORS_KEY, json.dumps(colors))
     return colors
+
+
+async def load_disk_alert_settings(repo: AppRepository) -> DiskAlertSettings:
+    """Load the global low-disk thresholds, falling back to defaults."""
+    defaults = DiskAlertSettings()
+
+    async def _read(key: str, default: float) -> float:
+        raw = await repo.get_setting(key)
+        try:
+            return max(0.0, float(raw)) if raw is not None else default
+        except ValueError:
+            return default
+
+    return DiskAlertSettings(
+        min_free_gb=await _read("disk_alert_min_free_gb", defaults.min_free_gb),
+        min_free_percent=await _read(
+            "disk_alert_min_free_percent", defaults.min_free_percent
+        ),
+    )
+
+
+async def save_disk_alert_settings(
+    repo: AppRepository, limits: DiskAlertSettings
+) -> None:
+    await repo.save_setting("disk_alert_min_free_gb", str(limits.min_free_gb))
+    await repo.save_setting("disk_alert_min_free_percent", str(limits.min_free_percent))
