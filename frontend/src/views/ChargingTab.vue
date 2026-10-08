@@ -255,7 +255,18 @@
           </div>
           <div class="form-group">
             <label>Energy (kWh)</label>
-            <input v-model.number="editForm.energy_kwh" type="number" step="0.1" min="0" />
+            <div class="input-with-action">
+              <input v-model.number="editForm.energy_kwh" type="number" step="0.1" min="0" />
+              <button
+                v-if="editingSession.id"
+                class="btn-recalc"
+                :disabled="recalculatingId === editingSession.id"
+                @click="recalcSession(editingSession)"
+                title="Recalculate energy &amp; cost from current data"
+              >
+                <RotateCw :size="14" :class="{ spinning: recalculatingId === editingSession.id }" />
+              </button>
+            </div>
           </div>
           <div class="form-group">
             <label>Cost override (€) — leave empty for auto</label>
@@ -266,16 +277,6 @@
             <input v-model="editForm.note" type="text" placeholder="Optional note" />
           </div>
           <div class="modal-actions">
-            <button
-              v-if="editingSession.id"
-              class="btn-recalc"
-              :disabled="recalculatingId === editingSession.id"
-              @click="recalcSession(editingSession)"
-              title="Recalculate energy &amp; cost from current data"
-            >
-              <RotateCw :size="14" :class="{ spinning: recalculatingId === editingSession.id }" />
-              {{ recalculatingId === editingSession.id ? 'Recalculating…' : 'Recalculate' }}
-            </button>
             <button
               v-if="editingSession.id"
               class="btn-delete"
@@ -1337,7 +1338,9 @@ watch(selectedMonth, loadData)
 .form-group input, .form-group select { width: 100%; background: var(--input); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; color: var(--text); font-size: 13px; }
 .modal-actions { display: flex; gap: 8px; align-items: center; margin-top: 16px; }
 .modal-actions-spacer { flex: 1; }
-.btn-recalc { display: inline-flex; align-items: center; gap: 6px; background: var(--btn-bg); border: 1px solid var(--btn-border); border-radius: 8px; padding: 8px 14px; color: var(--text); cursor: pointer; font-size: 13px; }
+.input-with-action { display: flex; gap: 8px; }
+.input-with-action input { flex: 1; min-width: 0; }
+.btn-recalc { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; background: var(--btn-bg); border: 1px solid var(--btn-border); border-radius: 8px; padding: 0 10px; color: var(--text); cursor: pointer; }
 .btn-recalc:hover:not(:disabled) { border-color: var(--text); }
 .btn-recalc:disabled { opacity: 0.6; cursor: default; }
 .btn-delete { display: inline-flex; align-items: center; gap: 6px; background: var(--btn-bg); border: 1px solid var(--btn-border); border-radius: 8px; padding: 8px 14px; color: var(--red); cursor: pointer; font-size: 13px; }
