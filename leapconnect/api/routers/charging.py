@@ -50,6 +50,7 @@ from leapconnect.domain.charging.models import ChargingSessionCost, ChargingTime
 from leapconnect.domain.charging.sessions import (
     MERGE_MAX_GAP_LIMITS,
     MERGE_REASON_LABELS,
+    MERGE_SESSION_PROBLEM_LABELS,
     day_range_bounds,
     month_bounds,
     naive_utc,
@@ -456,8 +457,11 @@ async def preview_charging_sessions_merge(
                 energy_kwh=r.energy_kwh,
                 parts=len(r.parts),
                 selected=r.start_ts in selected,
+                tier_id=r.record.tier_id if r.record else None,
+                problem=problem,
+                problem_message=MERGE_SESSION_PROBLEM_LABELS.get(problem),
             )
-            for r in plan.rows
+            for r, problem in zip(plan.rows, plan.problems, strict=True)
         ],
         runs=[
             MergePreviewRun(

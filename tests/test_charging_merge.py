@@ -289,3 +289,14 @@ async def test_runless_record_inside_another_session_is_a_duplicate():
     # Never costed by the month-end calculation
     missing = await find_month_missing_costs(repo, "V1", 2026, 9)
     assert [m.cost_id for m in missing] == [1]
+
+
+async def test_preview_points_at_the_session_with_a_problem():
+    """Issue #31 duplicate selected for a merge: the preview names it and still
+    proposes the tier the sessions share."""
+    real = _record(1, R1, R1 + timedelta(hours=1))
+    dup = _record(2, R1 + timedelta(minutes=40), R1 + timedelta(minutes=58))
+    repo = _Repo(zones=[_zone("home_grid")], snaps=_run(R1), costs=[real, dup])
+    plan = await plan_merge(repo, "V1", [R1, dup.start_ts])
+    assert plan.problems == [None, "duplicate"]
+    assert (plan.reason, plan.tier_id) == ("duplicate", "home_grid")

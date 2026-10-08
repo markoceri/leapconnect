@@ -203,6 +203,10 @@ class MergePreviewSession(BaseModel):
     energy_kwh: float | None = None
     parts: int = 0
     selected: bool  # False = included because it lies between the selected ones
+    tier_id: str | None = None
+    # Why this session can't be merged (ongoing | not_in_history | duplicate)
+    problem: str | None = None
+    problem_message: str | None = None
 
 
 class MergePreviewRun(BaseModel):

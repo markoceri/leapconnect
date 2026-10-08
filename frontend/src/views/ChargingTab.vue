@@ -305,14 +305,31 @@
           </p>
 
           <div v-if="mergePreview" class="merge-sessions">
-            <div v-for="ps in mergePreview.sessions" :key="ps.start_ts" class="merge-session" :class="{ 'is-included': !ps.selected }">
-              <span class="merge-chip" :class="ps.selected ? 'merge-chip-endpoint' : 'merge-chip-included'">
-                {{ ps.selected ? 'Selected' : 'Included' }}
-              </span>
-              <span class="merge-session-time">{{ formatDate(ps.start_ts) }} {{ formatTimeRange(ps.start_ts, ps.end_ts) }}</span>
-              <span v-if="ps.parts > 1" class="merged-badge"><Layers :size="11" />×{{ ps.parts }}</span>
-              <span class="chart-header-spacer" />
-              <span class="merge-session-energy">{{ ps.energy_kwh != null ? ps.energy_kwh.toFixed(1) + ' kWh' : '—' }}</span>
+            <div
+              v-for="ps in mergePreview.sessions"
+              :key="ps.start_ts"
+              class="merge-session"
+              :class="{ 'is-included': !ps.selected, 'has-problem': ps.problem }"
+            >
+              <div class="merge-session-line">
+                <span class="merge-chip" :class="ps.selected ? 'merge-chip-endpoint' : 'merge-chip-included'">
+                  {{ ps.selected ? 'Selected' : 'Included' }}
+                </span>
+                <span class="merge-session-time">{{ formatDate(ps.start_ts) }} {{ formatTimeRange(ps.start_ts, ps.end_ts) }}</span>
+                <span v-if="ps.parts > 1" class="merged-badge"><Layers :size="11" />×{{ ps.parts }}</span>
+                <span class="chart-header-spacer" />
+                <span class="merge-session-energy">{{ ps.energy_kwh != null ? ps.energy_kwh.toFixed(1) + ' kWh' : '—' }}</span>
+              </div>
+              <div v-if="ps.problem" class="merge-session-problem">
+                <AlertTriangle :size="12" />
+                <span>{{ ps.problem_message }}</span>
+                <button
+                  v-if="ps.problem === 'duplicate' && ps.id"
+                  class="btn-link-danger"
+                  :disabled="mergeSaving"
+                  @click="deleteDuplicateFromMerge(ps)"
+                >Delete it</button>
+              </div>
             </div>
             <p v-if="mergePreview.sessions.some(ps => !ps.selected)" class="form-hint">
               <strong>Included</strong> sessions weren't clicked but lie between the selected ones, so they are part of
@@ -466,7 +483,7 @@ import { ref, computed, onMounted, watch, nextTick, onUnmounted } from 'vue'
 import { Chart, registerables } from 'chart.js'
 import { api } from '../composables/useApi'
 import { parseUTC } from '../utils/maintenance'
-import { Zap, TrendingUp, PieChart, Clock, CalendarDays, ChevronLeft, ChevronRight, List, Pencil, MapPin, RotateCw, Calculator, Trash2, Combine, Layers, CopyX } from 'lucide-vue-next'
+import { Zap, TrendingUp, PieChart, Clock, CalendarDays, ChevronLeft, ChevronRight, List, Pencil, MapPin, RotateCw, Calculator, Trash2, Combine, Layers, CopyX, AlertTriangle } from 'lucide-vue-next'
 
 Chart.register(...registerables)
 
@@ -810,6 +827,32 @@ async function runMerge() {
     await loadData()
   } catch (e) {
     mergeError.value = e.message || 'Merge failed'
+  } finally {
+    mergeSaving.value = false
+  }
+}
+
+// Delete a duplicate spotted in the merge review; the rest of the selection
+// is re-checked (or the dialog closes when nothing is left to merge)
+async function deleteDuplicateFromMerge(ps) {
+  if (!confirm('Delete this duplicate record? The session it duplicates already counts its charge.')) return
+  mergeSaving.value = true
+  mergeError.value = ''
+  try {
+    await api('DELETE', `/api/vehicles/${props.vin}/charging-costs/${ps.id}`)
+    if (mergeLast.value?.start_ts === ps.start_ts) mergeLast.value = null
+    if (mergeFirst.value?.start_ts === ps.start_ts) {
+      mergeFirst.value = mergeLast.value
+      mergeLast.value = null
+    }
+    await loadData()
+    if (mergeFirst.value && mergeLast.value) {
+      await loadMergePreview()
+    } else {
+      mergeOpen.value = false
+    }
+  } catch (e) {
+    mergeError.value = e.message || 'Delete failed'
   } finally {
     mergeSaving.value = false
   }
@@ -1231,7 +1274,13 @@ watch(selectedMonth, loadData)
 .merge-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 10px; padding: 10px 12px; border: 1px solid var(--accent); border-radius: 10px; font-size: 12px; color: var(--text); }
 .modal-dialog.modal-wide { max-width: 560px; max-height: 90vh; overflow-y: auto; }
 .merge-sessions { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
-.merge-session { display: flex; align-items: center; gap: 8px; font-size: 12px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; }
+.merge-session { display: flex; flex-direction: column; gap: 4px; font-size: 12px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; }
+.merge-session-line { display: flex; align-items: center; gap: 8px; }
+.merge-session.has-problem { border: 1px solid var(--red); background: color-mix(in srgb, var(--red) 8%, transparent); }
+.merge-session-problem { display: flex; align-items: center; gap: 6px; color: var(--red); font-size: 11px; line-height: 1.4; }
+.merge-session-problem svg { flex-shrink: 0; }
+.btn-link-danger { margin-left: auto; background: none; border: 1px solid var(--red); color: var(--red); border-radius: 6px; padding: 2px 8px; font-size: 11px; cursor: pointer; white-space: nowrap; }
+.btn-link-danger:disabled { opacity: 0.6; cursor: default; }
 .merge-session.is-included { border-style: dashed; border-color: var(--accent); }
 .merge-session-time { color: var(--text); }
 .merge-session-energy { font-weight: 600; color: var(--green); }

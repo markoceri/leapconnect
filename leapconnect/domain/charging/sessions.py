@@ -42,15 +42,28 @@ MERGE_DIFFERENT_PLACE = "different_place"
 MERGE_NOT_IN_HISTORY = "not_in_history"
 MERGE_TOO_FEW = "too_few"
 MERGE_TIER_CONFLICT = "tier_conflict"
+MERGE_DUPLICATE = "duplicate"
 
 MERGE_REASON_LABELS = {
     MERGE_ONGOING: "a session is still in progress",
     MERGE_TOO_FAR_APART: "a pause between sessions exceeds the maximum",
     MERGE_VEHICLE_MOVED: "the vehicle moved between sessions",
     MERGE_DIFFERENT_PLACE: "sessions are in different places",
-    MERGE_NOT_IN_HISTORY: "a session is not in the vehicle history",
+    MERGE_NOT_IN_HISTORY: "a session has no charging data in the vehicle history",
+    MERGE_DUPLICATE: "a session is a possible duplicate: delete it instead",
     MERGE_TOO_FEW: "select at least two sessions",
     MERGE_TIER_CONFLICT: "sessions have different tiers: choose one",
+}
+
+
+# The same problems, worded for the single session they concern
+MERGE_SESSION_PROBLEM_LABELS = {
+    MERGE_ONGOING: "Still in progress",
+    MERGE_NOT_IN_HISTORY: "No charging data in the vehicle history",
+    MERGE_DUPLICATE: (
+        "Possible duplicate of another session, which already counts this charge:"
+        " delete it instead of merging"
+    ),
 }
 
 

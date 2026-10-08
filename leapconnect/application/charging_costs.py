@@ -31,6 +31,7 @@ from leapconnect.domain.charging.location import (
 from leapconnect.domain.charging.models import ChargingSessionCost
 from leapconnect.domain.charging.sessions import (
     HISTORY_MARGIN,
+    MERGE_DUPLICATE,
     MERGE_MAX_GAP,
     MERGE_NOT_IN_HISTORY,
     MERGE_ONGOING,
@@ -281,10 +282,22 @@ class MergePlan:
     energy_kwh: float | None = None
     cost: float | None = None  # estimated, run by run
     reason: str | None = None  # why it can't be merged (MERGE_*)
+    problems: list[str | None] = field(default_factory=list)  # one per row
 
     @property
     def zone_name(self) -> str | None:
         return next((p for p in self.places if p), None)
+
+
+def _row_problem(row: ChargeSessionRow) -> str | None:
+    """Why a single session can't take part in a merge, if it can't."""
+    if row.duplicate_of is not None:
+        return MERGE_DUPLICATE
+    if row.end_ts is None or any(p.end_ts is None for p in row.parts):
+        return MERGE_ONGOING
+    if not row.parts:
+        return MERGE_NOT_IN_HISTORY
+    return None
 
 
 async def plan_merge(
@@ -298,7 +311,8 @@ async def plan_merge(
     """Check a merge of the sessions starting at ``starts`` without saving.
 
     Every session between the first and the last selected one is included.
-    The rules are in ``merge_violation``; ``reason`` is set when they fail.
+    Problems of a single session are in ``problems`` (one per row), those
+    between sessions in ``gaps``; ``reason`` is the first one found.
     """
     starts = sorted(naive_utc(s) for s in starts)
     if len(starts) < 2:
@@ -310,20 +324,13 @@ async def plan_merge(
             )
         )
     )
-    plan = MergePlan(rows=rows)
-    if len(rows) < 2:
-        plan.reason = MERGE_TOO_FEW
-        return plan
-    if any(r.record is not None and r.record.end_ts is None for r in rows):
-        plan.reason = MERGE_ONGOING
-        return plan
-    if any(not r.parts for r in rows):
-        plan.reason = MERGE_NOT_IN_HISTORY
-        return plan
+    plan = MergePlan(rows=rows, problems=[_row_problem(r) for r in rows])
 
     zones = await repo.get_zones(vin)
     tiers: list[str] = []
     for row in rows:
+        if row.record is not None:
+            tiers.append(row.record.tier_id)
         for run in row.parts:
             location = resolve_charge_location(
                 zones, run.latitude, run.longitude, is_dc=run.is_dc
@@ -338,27 +345,32 @@ async def plan_merge(
             plan.places.append(place)
             if row.record is None and location.tier_id:
                 tiers.append(location.tier_id)
-        if row.record is not None:
-            tiers.append(row.record.tier_id)
     plan.tiers = list(dict.fromkeys(tiers))
+    if tier_id is not None:
+        plan.tier_id = tier_id
+    elif len(plan.tiers) <= 1:
+        plan.tier_id = next(iter(plan.tiers), "home_grid")
     energies = [r.energy_kwh for r in plan.runs if r.energy_kwh is not None]
     plan.energy_kwh = round(sum(energies), 2) if energies else None
-    plan.reason = merge_violation(plan.runs, plan.places, max_gap)
-    if plan.reason == MERGE_ONGOING:
-        return plan
-    plan.gaps = merge_gaps(plan.runs, plan.places, max_gap)
+    if not any(r.end_ts is None for r in plan.runs):
+        plan.gaps = merge_gaps(plan.runs, plan.places, max_gap)
 
-    if tier_id is None and len(plan.tiers) > 1:
-        plan.reason = plan.reason or MERGE_TIER_CONFLICT
-        return plan
-    plan.tier_id = tier_id or next(iter(plan.tiers), "home_grid")
-    plan.cost = 0.0
-    for run in plan.runs:
-        if run.energy_kwh:
-            plan.cost += await calculate_session_cost(
-                repo, plan.tier_id, run.energy_kwh, run.start_ts, run.end_ts
-            )
-    plan.cost = round(plan.cost, 4)
+    if len(rows) < 2:
+        plan.reason = MERGE_TOO_FEW
+    else:
+        plan.reason = (
+            next((p for p in plan.problems if p), None)
+            or merge_violation(plan.runs, plan.places, max_gap)
+            or (MERGE_TIER_CONFLICT if plan.tier_id is None else None)
+        )
+    if plan.reason is None:
+        cost = 0.0
+        for run in plan.runs:
+            if run.energy_kwh:
+                cost += await calculate_session_cost(
+                    repo, plan.tier_id, run.energy_kwh, run.start_ts, run.end_ts
+                )
+        plan.cost = round(cost, 4)
     return plan
 
 
