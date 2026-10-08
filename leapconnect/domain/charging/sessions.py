@@ -14,7 +14,7 @@ month-end cost calculation.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime, time, timedelta, tzinfo
 
 from leapconnect.domain.charging.location import DC_CHARGE_STATE
@@ -93,6 +93,9 @@ class ChargeSessionRow:
     start_soc: int | None = None
     end_soc: int | None = None
     parts: tuple[DetectedChargeSession, ...] = field(default=())
+    # Record (with charging runs) whose window this run-less record lies in:
+    # most likely a duplicate of it
+    duplicate_of: ChargingSessionCost | None = None
 
 
 def naive_utc(ts: datetime | None) -> datetime | None:
@@ -263,10 +266,43 @@ def pair_sessions(
         elif owner is None and in_period(ds.start_ts):
             rows.append(_row([ds]))
     for c in stored:
-        if in_period(c.start_ts):
-            rows.append(_row(by_record.get(c.id, []), c))
+        if not in_period(c.start_ts):
+            continue
+        parts = by_record.get(c.id, [])
+        row = _row(parts, c)
+        if not parts:
+            container = _container(c, stored, by_record)
+            if container is not None:
+                row = replace(row, duplicate_of=container)
+        rows.append(row)
     rows.sort(key=lambda r: r.start_ts, reverse=True)
     return rows
+
+
+def _container(
+    record: ChargingSessionCost,
+    stored: Sequence[ChargingSessionCost],
+    by_record: dict[int, list[DetectedChargeSession]],
+) -> ChargingSessionCost | None:
+    """The closed record with charging runs whose window ``record`` starts in.
+
+    A record without runs of its own lying inside such a window describes a
+    charge the other record already counts — e.g. the ones created at a UTC
+    month start for a charge running across it (issue #31).
+    """
+    start = naive_utc(record.start_ts)
+    return next(
+        (
+            c
+            for c in stored
+            if c.id != record.id
+            and by_record.get(c.id)
+            and c.start_ts
+            and c.end_ts
+            and naive_utc(c.start_ts) <= start <= naive_utc(c.end_ts)
+        ),
+        None,
+    )
 
 
 # -- merging ------------------------------------------------------------------

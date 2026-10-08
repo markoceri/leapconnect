@@ -230,6 +230,8 @@ async def find_month_missing_costs(
     """
     missing: list[MissingCostSession] = []
     for row in reversed(await list_month_sessions(repo, vin, year, month, tz)):
+        if row.duplicate_of is not None:
+            continue  # its charge is already counted by the other record
         rec = row.record
         if rec is None:
             missing.append(MissingCostSession(start_ts=row.start_ts, end_ts=row.end_ts))

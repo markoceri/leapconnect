@@ -150,6 +150,13 @@
               <span v-if="s.parts > 1" class="merged-badge" :title="`Merged session: ${s.parts} charging runs`">
                 <Layers :size="11" />×{{ s.parts }}
               </span>
+              <span
+                v-if="s.duplicate_of_id"
+                class="duplicate-badge"
+                :title="`No charging data of its own and it lies within the session of ${formatDate(s.duplicate_of_start_ts)} ${formatTimeRange(s.duplicate_of_start_ts, s.duplicate_of_end_ts)}, which already counts this charge`"
+              >
+                <CopyX :size="11" /> Possible duplicate
+              </span>
             </span>
           </span>
           <span class="cell cell-time" data-label="Time">{{ formatTimeRange(s.start_ts, s.end_ts) }}</span>
@@ -218,6 +225,16 @@
         <div class="modal-dialog">
           <h3>Edit session cost</h3>
           <p class="edit-date">{{ formatDate(editingSession.start_ts) }} {{ formatTimeRange(editingSession.start_ts, editingSession.end_ts) }}</p>
+          <div v-if="editingSession.duplicate_of_id" class="duplicate-note">
+            <CopyX :size="14" />
+            <span>
+              This record has no charging data of its own and lies within the session of
+              <strong>{{ formatDate(editingSession.duplicate_of_start_ts) }}
+              {{ formatTimeRange(editingSession.duplicate_of_start_ts, editingSession.duplicate_of_end_ts) }}</strong>,
+              which already counts this charge: it's most likely a duplicate, counted twice in the totals.
+              Delete it to fix them.
+            </span>
+          </div>
           <p v-if="editingSession.parts > 1" class="merged-note">
             <Layers :size="13" /> Merged from {{ editingSession.parts }} charging runs. Delete it to split it back into
             separate sessions.
@@ -449,7 +466,7 @@ import { ref, computed, onMounted, watch, nextTick, onUnmounted } from 'vue'
 import { Chart, registerables } from 'chart.js'
 import { api } from '../composables/useApi'
 import { parseUTC } from '../utils/maintenance'
-import { Zap, TrendingUp, PieChart, Clock, CalendarDays, ChevronLeft, ChevronRight, List, Pencil, MapPin, RotateCw, Calculator, Trash2, Combine, Layers } from 'lucide-vue-next'
+import { Zap, TrendingUp, PieChart, Clock, CalendarDays, ChevronLeft, ChevronRight, List, Pencil, MapPin, RotateCw, Calculator, Trash2, Combine, Layers, CopyX } from 'lucide-vue-next'
 
 Chart.register(...registerables)
 
@@ -862,7 +879,7 @@ const missingCosts = computed(() => {
   const detected = []  // snapshot-only session, finished — tier to infer
   const orphans = []   // open record, but the history shows the charge ended
   for (const s of filteredSessions.value) {
-    if (s.cost != null) continue
+    if (s.cost != null || s.duplicate_of_id) continue
     if (s.id && s.end_ts) stored.push(s)
     else if (!s.id && s.end_ts) detected.push(s)
     else if (s.id && !s.end_ts && s.detected_end_ts) orphans.push(s)
@@ -1197,6 +1214,9 @@ watch(selectedMonth, loadData)
 .date-line { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .merged-badge { display: inline-flex; align-items: center; gap: 2px; font-size: 10px; font-weight: 600; color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); border-radius: 4px; padding: 1px 5px; }
 .merged-note { display: flex; gap: 6px; align-items: flex-start; font-size: 12px; color: var(--muted); background: var(--btn-bg); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; margin: -6px 0 14px; line-height: 1.4; }
+.duplicate-badge { display: inline-flex; align-items: center; gap: 3px; font-size: 10px; font-weight: 600; color: var(--red); background: color-mix(in srgb, var(--red) 12%, transparent); border-radius: 4px; padding: 1px 5px; white-space: nowrap; }
+.duplicate-note { display: flex; gap: 8px; align-items: flex-start; font-size: 12px; color: var(--text); background: color-mix(in srgb, var(--red) 10%, transparent); border: 1px solid color-mix(in srgb, var(--red) 40%, transparent); border-radius: 8px; padding: 8px 10px; margin: -6px 0 14px; line-height: 1.45; }
+.duplicate-note svg { color: var(--red); flex-shrink: 0; margin-top: 2px; }
 .btn-bulk.active { border-color: var(--accent); color: var(--accent); }
 .merge-hint { font-size: 12px; color: var(--muted); margin: -2px 0 10px; line-height: 1.45; }
 .session-row.merge-pickable { cursor: pointer; }

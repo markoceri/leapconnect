@@ -154,6 +154,11 @@ class ChargingSessionRowSchema(BaseModel):
     end_soc: int | None = None
     # Charging runs in the session: more than one for a merged session
     parts: int = 0
+    # Set on a record without charging runs lying inside another session's
+    # window: most likely a duplicate of that session
+    duplicate_of_id: int | None = None
+    duplicate_of_start_ts: str | None = None
+    duplicate_of_end_ts: str | None = None
 
 
 class ChargingSessionsResponse(BaseModel):

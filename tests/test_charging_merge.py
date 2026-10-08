@@ -6,6 +6,7 @@ import pytest
 
 from leapconnect.application.charging_costs import (
     MergeError,
+    find_month_missing_costs,
     list_month_sessions,
     merge_charge_sessions,
     plan_merge,
@@ -275,3 +276,16 @@ async def test_stale_first_gps_fix_does_not_change_the_place():
     repo = _Repo(zones=[_zone("home_grid")], snaps=[*first, *_run(R2)])
     plan = await plan_merge(repo, "V1", [R1, R2])
     assert plan.reason is None and plan.zone_name == "Home"
+
+
+async def test_runless_record_inside_another_session_is_a_duplicate():
+    """Issue #31: a record created at the UTC month start for a charge that
+    another record already covers."""
+    real = _record(1, R1, R1 + timedelta(hours=1))
+    dup = _record(2, R1 + timedelta(minutes=40), R1 + timedelta(minutes=58))
+    repo = _Repo(snaps=_run(R1), costs=[real, dup])
+    rows = {r.record.id: r for r in await list_month_sessions(repo, "V1", 2026, 9)}
+    assert rows[2].duplicate_of is real and rows[1].duplicate_of is None
+    # Never costed by the month-end calculation
+    missing = await find_month_missing_costs(repo, "V1", 2026, 9)
+    assert [m.cost_id for m in missing] == [1]

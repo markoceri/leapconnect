@@ -291,6 +291,20 @@ async def get_charging_costs(
     return [_cost_response(c, tiers, bands) for c in costs]
 
 
+def _iso(ts: datetime | None) -> str | None:
+    return ts.isoformat() if ts else None
+
+
+def _duplicate_fields(container: ChargingSessionCost | None) -> dict:
+    if container is None:
+        return {}
+    return {
+        "duplicate_of_id": container.id,
+        "duplicate_of_start_ts": _iso(container.start_ts),
+        "duplicate_of_end_ts": _iso(container.end_ts),
+    }
+
+
 @router.get(
     "/api/vehicles/{vin}/charging-sessions",
     response_model=ChargingSessionsResponse,
@@ -350,6 +364,7 @@ async def get_charging_sessions(
                     "start_soc": row.start_soc,
                     "end_soc": row.end_soc,
                     "parts": len(row.parts),
+                    **_duplicate_fields(row.duplicate_of),
                 }
             )
         )
@@ -413,10 +428,6 @@ async def _merge_params(
             f" and {high // timedelta(minutes=1)}",
         )
     return [datetime.fromisoformat(ts) for ts in body.start_ts], max_gap, tiers
-
-
-def _iso(ts: datetime | None) -> str | None:
-    return ts.isoformat() if ts else None
 
 
 @router.post(
