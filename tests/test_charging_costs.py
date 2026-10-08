@@ -24,7 +24,7 @@ from leapconnect.domain.charging.models import (
 )
 from leapconnect.domain.charging.sessions import (
     detect_charge_sessions,
-    merge_month_sessions,
+    merge_sessions,
     month_bounds,
 )
 from leapconnect.domain.telemetry.models import VehicleSnapshot
@@ -276,6 +276,29 @@ def test_month_sessions_endpoint(auth_client):
     assert july.json()["sessions"] == []
 
 
+def test_sessions_endpoint_takes_a_local_day_range(auth_client):
+    auth_client.put("/api/preferences", json={"timezone": "Europe/Rome"})
+    auth_client.post(
+        "/api/vehicles/V1/charging-costs",
+        json={"start_ts": "2026-07-31T22:46:00", "tier_id": "home_grid"},
+    )
+    day = "/api/vehicles/V1/charging-sessions?from_date={0}&to_date={0}"
+    aug1 = auth_client.get(day.format("2026-08-01")).json()
+    assert (aug1["start"], aug1["end"]) == (
+        "2026-07-31T22:00:00",
+        "2026-08-01T22:00:00",
+    )
+    assert [s["start_ts"] for s in aug1["sessions"]] == ["2026-07-31T22:46:00"]
+    assert auth_client.get(day.format("2026-07-31")).json()["sessions"] == []
+
+
+def test_sessions_endpoint_requires_a_period(auth_client):
+    base = "/api/vehicles/V1/charging-sessions"
+    assert auth_client.get(base).status_code == 422
+    reversed_range = f"{base}?from_date=2026-08-02&to_date=2026-08-01"
+    assert auth_client.get(reversed_range).status_code == 422
+
+
 def test_month_sessions_endpoint_rejects_bad_month(auth_client):
     resp = auth_client.get("/api/vehicles/V1/charging-sessions?year=2026&month=13")
     assert resp.status_code == 422
@@ -423,7 +446,7 @@ def test_merge_keeps_unmatched_records_and_fills_detected_values():
         id=2, vin="V1", start_ts=T0 + timedelta(days=3), tier_id="public_ac"
     )
     start, end = month_bounds(2026, 9)
-    rows = merge_month_sessions(detected, [matched, manual], start, end)
+    rows = merge_sessions(detected, [matched, manual], start, end)
     assert [r.record.id for r in rows] == [2, 1]
     assert (rows[1].energy_kwh, rows[1].detected_end_ts) == (
         10.0,

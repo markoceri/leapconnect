@@ -133,8 +133,8 @@ class ChargingSessionCostResponse(BaseModel):
     zone_name: str | None = None
 
 
-class ChargingMonthSessionSchema(BaseModel):
-    """One row of a month's session list (detected and/or stored)."""
+class ChargingSessionRowSchema(BaseModel):
+    """One row of a period's session list (detected and/or stored)."""
 
     id: int | None = None  # stored cost record; None = detected only
     start_ts: str
@@ -150,13 +150,15 @@ class ChargingMonthSessionSchema(BaseModel):
     zone_name: str | None = None
     # End seen in the history, for an open record whose charge stop was missed
     detected_end_ts: str | None = None
+    start_soc: int | None = None
+    end_soc: int | None = None
 
 
-class ChargingMonthSessionsResponse(BaseModel):
-    year: int
-    month: int
-    timezone: str  # IANA zone the month is computed in
-    sessions: list[ChargingMonthSessionSchema]  # newest first
+class ChargingSessionsResponse(BaseModel):
+    timezone: str  # IANA zone the period is computed in
+    start: str  # period bounds, naive UTC ``[start, end)``
+    end: str
+    sessions: list[ChargingSessionRowSchema]  # newest first
 
 
 class ChargingSessionCostCreate(BaseModel):

@@ -8,7 +8,7 @@ these. The interfaces are segregated per bounded context; the combined
 from __future__ import annotations
 
 import abc
-from datetime import datetime  # noqa: F401  (used in signatures)
+from datetime import UTC, datetime, tzinfo  # noqa: F401  (used in signatures)
 from typing import Any
 
 from leapconnect.domain.charging.models import (
@@ -54,12 +54,16 @@ class TelemetryRepository(abc.ABC):
         from_date: str | None = None,
         to_date: str | None = None,
         max_points: int | None = None,
-    ) -> list[VehicleSnapshot]: ...
+        tz: tzinfo = UTC,
+    ) -> list[VehicleSnapshot]:
+        """Snapshots of the last ``days``, or of the days ``from_date`` to
+        ``to_date`` (inclusive) in ``tz``; ``days=1`` means today in ``tz``."""
 
     @abc.abstractmethod
     async def get_daily_summary(
-        self, vin: str, *, days: int = 30
-    ) -> list[dict[str, Any]]: ...
+        self, vin: str, *, days: int = 30, tz: tzinfo = UTC
+    ) -> list[dict[str, Any]]:
+        """Per-day aggregates, days being calendar days in ``tz``."""
 
 
 class SettingsRepository(abc.ABC):

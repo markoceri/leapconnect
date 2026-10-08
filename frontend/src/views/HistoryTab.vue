@@ -635,8 +635,22 @@ const todaySnapshots = ref([])
 const electricityPriceKwh = ref(0.25)
 const downsamplingEnabled = ref(true)
 const downsamplingMaxPoints = ref(2000)
-const sessionCosts = ref([])
 const chargingTiers = ref({})
+// Charging sessions of the displayed days, from the backend (same list as the
+// Charging tab: detected from the full history, paired with the cost records)
+const rangeSessions = ref([])
+let sessionsReqSeq = 0
+
+async function fetchRangeSessions(fromStr, toStr) {
+  if (!props.vin) return
+  const seq = ++sessionsReqSeq
+  try {
+    const res = await api('GET', `/api/vehicles/${props.vin}/charging-sessions?from_date=${fromStr}&to_date=${toStr}`)
+    if (seq === sessionsReqSeq) rangeSessions.value = res.sessions || []
+  } catch {
+    if (seq === sessionsReqSeq) rangeSessions.value = []
+  }
+}
 
 function applyData(daily, snaps, allSnaps) {
   allSnapshots.value = allSnaps
@@ -686,6 +700,8 @@ async function fetchHistory() {
     loadingCharts.value = false
   }
 
+  const today = toDateStr(new Date())
+  fetchRangeSessions(today, today)
   try {
     // Only fetch daily summaries + today's snapshots on initial load (lightweight)
     const [dailyRes, snapshotRes] = await Promise.all([
@@ -726,6 +742,7 @@ async function fetchRangeSnapshots(from, to) {
   try {
     const fromStr = toDateStr(from)
     const toStr = toDateStr(to)
+    fetchRangeSessions(fromStr, toStr)
     let url = `/api/vehicles/${props.vin}/history?from_date=${fromStr}&to_date=${toStr}`
     if (downsamplingEnabled.value) {
       url += `&max_points=${downsamplingMaxPoints.value}`
@@ -764,9 +781,9 @@ function formatDate(isoDate) {
   return `${d}/${m}`
 }
 
-// Local calendar date as YYYY-MM-DD. Must NOT use toISOString(), which
-// converts to UTC and rolls the date back a day for positive-UTC timezones
-// (e.g. Italy in summer), making the fetched day lag the displayed label.
+// Local calendar date as YYYY-MM-DD; the backend reads it as a day in the
+// user's time zone preference (seeded from this browser). Must NOT use
+// toISOString(), which converts to UTC and can roll the date back a day.
 function toDateStr(d) {
   const y = d.getFullYear()
   const m = String(d.getMonth() + 1).padStart(2, '0')
@@ -796,11 +813,6 @@ onMounted(async () => {
     for (const t of (tiersData.tiers || [])) { tierMap[t.id] = t }
     chargingTiers.value = tierMap
   } catch { /* ignore */ }
-  if (props.vin) {
-    try {
-      sessionCosts.value = await api('GET', `/api/vehicles/${props.vin}/charging-costs`)
-    } catch { /* ignore */ }
-  }
 })
 
 // ---------------------------------------------------------------------------
@@ -895,15 +907,11 @@ const kpiCards = computed(() => {
 
   const consumption = totalKm > 0 ? (energyUsed / totalKm) * 100 : 0
 
-  let chargeSessions = 0
-  for (let i = 1; i < snaps.length; i++) {
-    if (snaps[i - 1].battery_is_charging && !snaps[i].battery_is_charging) chargeSessions++
-  }
-  if (snaps.length > 0 && snaps[snaps.length - 1].battery_is_charging) chargeSessions++
+  const chargeSessions = rangeSessions.value.length
 
   const costPerKwh = electricityPriceKwh.value
-  // Use per-session costs if available, otherwise flat rate
-  const sessionCostTotal = sessionCosts.value.reduce((sum, sc) => sum + (sc.cost || 0), 0)
+  // Use the displayed sessions' costs if available, otherwise flat rate
+  const sessionCostTotal = rangeSessions.value.reduce((sum, sc) => sum + (sc.cost || 0), 0)
   const cost = sessionCostTotal > 0 ? sessionCostTotal : energyCharged * costPerKwh
 
   const co2Saved = totalKm * 0.12
@@ -964,51 +972,17 @@ function heatmapColor(val) {
 // Charge sessions data
 // ---------------------------------------------------------------------------
 const chargeSessionsData = computed(() => {
-  const snaps = filteredSnapshots.value
-  const sessions = []
-  let inSession = false
-  let sessionStart = 0
-  for (let i = 0; i < snaps.length; i++) {
-    if (snaps[i].battery_is_charging && !inSession) {
-      inSession = true
-      sessionStart = i
-    } else if (!snaps[i].battery_is_charging && inSession) {
-      inSession = false
-      const startEnergy = (snaps[sessionStart].battery_dump_energy ?? 0) / 1000
-      const endEnergy = (snaps[i].battery_dump_energy ?? 0) / 1000
-      const energyAdded = endEnergy - startEnergy
-      if (energyAdded > 0) {
-        const startTs = snaps[sessionStart].timestamp
-        const matchedCost = sessionCosts.value.find(sc => sc.start_ts && Math.abs(new Date(sc.start_ts) - new Date(startTs)) < 120000)
-        sessions.push({
-          label: formatTimestamp(startTs),
-          energy: Math.round(energyAdded * 10) / 10,
-          startSoc: snaps[sessionStart].battery_soc ?? 0,
-          endSoc: snaps[i].battery_soc ?? 0,
-          tierLabel: matchedCost?.tier_label || null,
-          cost: matchedCost?.cost || null,
-        })
-      }
-    }
-  }
-  if (inSession && snaps.length > 0) {
-    const startEnergy = (snaps[sessionStart].battery_dump_energy ?? 0) / 1000
-    const endEnergy = (snaps[snaps.length - 1].battery_dump_energy ?? 0) / 1000
-    const energyAdded = endEnergy - startEnergy
-    if (energyAdded > 0) {
-      const startTs = snaps[sessionStart].timestamp
-      const matchedCost = sessionCosts.value.find(sc => sc.start_ts && Math.abs(new Date(sc.start_ts) - new Date(startTs)) < 120000)
-      sessions.push({
-        label: formatTimestamp(startTs) + ' (ongoing)',
-        energy: Math.round(energyAdded * 10) / 10,
-        startSoc: snaps[sessionStart].battery_soc ?? 0,
-        endSoc: snaps[snaps.length - 1].battery_soc ?? 0,
-        tierLabel: matchedCost?.tier_label || null,
-        cost: matchedCost?.cost || null,
-      })
-    }
-  }
-  return sessions
+  // Backend list is newest first; the chart reads left to right
+  return [...rangeSessions.value].reverse()
+    .filter(s => (s.energy_kwh ?? 0) > 0)
+    .map(s => ({
+      label: formatTimestamp(s.start_ts) + (s.end_ts ? '' : ' (ongoing)'),
+      energy: Math.round(s.energy_kwh * 10) / 10,
+      startSoc: s.start_soc,
+      endSoc: s.end_soc,
+      tierLabel: s.tier_label || null,
+      cost: s.cost ?? null,
+    }))
 })
 
 // ---------------------------------------------------------------------------
@@ -1389,7 +1363,7 @@ function buildCharts() {
             ...chartDefaults.value.plugins,
             tooltip: {
               ...chartDefaults.value.plugins.tooltip,
-              callbacks: { afterLabel: (ctx) => { const s = sessions[ctx.dataIndex]; return `SOC: ${s.startSoc}% \u2192 ${s.endSoc}%` } },
+              callbacks: { afterLabel: (ctx) => { const s = sessions[ctx.dataIndex]; return s.startSoc != null && s.endSoc != null ? `SOC: ${s.startSoc}% \u2192 ${s.endSoc}%` : '' } },
             },
           },
           scales: { ...chartDefaults.value.scales, y: { ...chartDefaults.value.scales.y, ticks: { ...chartDefaults.value.scales.y.ticks, callback: v => `${v} kWh` } } },
@@ -1537,6 +1511,7 @@ function buildCharts() {
 
 watch(data, () => { if (viewMode.value === 'chart' && chartsReady.value) nextTick(buildCharts) })
 watch(filteredSnapshots, () => { if (viewMode.value === 'chart' && chartsReady.value) nextTick(buildCharts) })
+watch(rangeSessions, () => { if (viewMode.value === 'chart' && chartsReady.value) nextTick(buildCharts) })
 watch(viewMode, (v) => { if (v === 'chart' && chartsReady.value) nextTick(buildCharts) })
 watch(chartsReady, (v) => { if (v && viewMode.value === 'chart') nextTick(buildCharts) })
 onMounted(() => { if (chartsReady.value) nextTick(buildCharts) })

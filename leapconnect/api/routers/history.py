@@ -13,6 +13,7 @@ from leapconnect.api.schemas import (
     VehicleSnapshotSchema,
 )
 from leapconnect.application.ports.repositories import AppRepository
+from leapconnect.application.settings_store import load_user_timezone
 
 router = APIRouter(tags=["history"])
 
@@ -28,9 +29,18 @@ async def get_vehicle_history(
     to_date: str | None = None,
     max_points: int | None = None,
 ) -> VehicleHistoryResponse:
-    """Get historical vehicle snapshots for a given time period."""
+    """Get historical vehicle snapshots for a given time period.
+
+    ``from_date``/``to_date`` (inclusive) and "today" (``days=1``) are calendar
+    days in the ``timezone`` preference.
+    """
     snapshots = await repo.get_history(
-        vin, days=days, from_date=from_date, to_date=to_date, max_points=max_points
+        vin,
+        days=days,
+        from_date=from_date,
+        to_date=to_date,
+        max_points=max_points,
+        tz=await load_user_timezone(repo),
     )
     return VehicleHistoryResponse(
         vin=vin,
@@ -76,8 +86,10 @@ async def get_vehicle_history(
 async def get_vehicle_daily_summary(
     vin: str, repo: HistoryRepo, days: int = 30
 ) -> DailySummaryResponse:
-    """Get aggregated daily summaries for charts and statistics."""
-    summaries = await repo.get_daily_summary(vin, days=days)
+    """Get aggregated daily summaries (days in the ``timezone`` preference)."""
+    summaries = await repo.get_daily_summary(
+        vin, days=days, tz=await load_user_timezone(repo)
+    )
     return DailySummaryResponse(
         vin=vin,
         days=days,

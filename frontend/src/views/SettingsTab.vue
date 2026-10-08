@@ -348,8 +348,8 @@
             <Globe :size="15" class="pref-icon" />
             <span class="pref-label">Time zone</span>
             <span class="pref-hint">
-              Calendar months of the Charging tab and of the month-end calculation, and the hours of the
-              time-of-use bands, follow this time zone. Set automatically from your browser
+              Days and months of the History and Charging tabs, the month-end calculation and the hours of the
+              time-of-use bands follow this time zone. Set automatically from your browser
             </span>
           </div>
           <select v-model="timeZone" class="log-level-select" @change="saveTimeZone">

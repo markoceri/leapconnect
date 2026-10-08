@@ -1,16 +1,17 @@
-"""Charge sessions of a month: detection from telemetry + merge with records.
+"""Charge sessions of a period: detection from telemetry + merge with records.
 
 A session is a run of consecutive snapshots with ``battery_is_charging`` set.
-The month is a calendar month in the user's time zone; a session belongs to the
-month its (real) start falls in. This is the single source of the Charging tab's
-session list and of the month-end cost calculation.
+Periods (a calendar month, a range of days) are in the user's time zone; a
+session belongs to the period its (real) start falls in. This is the single
+source of the session lists of the Charging and History tabs and of the
+month-end cost calculation.
 """
 
 from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta, tzinfo
+from datetime import UTC, date, datetime, time, timedelta, tzinfo
 
 from leapconnect.domain.charging.models import ChargingSessionCost
 from leapconnect.domain.telemetry.models import VehicleSnapshot
@@ -18,10 +19,10 @@ from leapconnect.domain.telemetry.models import VehicleSnapshot
 # A stored record within this distance of a detected start is the same session.
 SAME_SESSION_TOLERANCE = timedelta(minutes=2)
 
-# History fetched around the month: a charge running across either month
-# boundary must be seen whole, or one already running when the month starts
-# looks like a new session beginning at the month's first snapshot.
-MONTH_HISTORY_MARGIN = timedelta(days=1)
+# History fetched around the period: a charge running across either boundary
+# must be seen whole, or one already running when the period starts looks like
+# a new session beginning at the period's first snapshot.
+HISTORY_MARGIN = timedelta(days=1)
 
 
 @dataclass(frozen=True)
@@ -30,11 +31,13 @@ class DetectedChargeSession:
     end_ts: datetime | None  # None while the last run is still charging
     energy_kwh: float | None = None
     peak_power_kw: float | None = None
+    start_soc: int | None = None
+    end_soc: int | None = None
 
 
 @dataclass(frozen=True)
-class MonthChargeSession:
-    """One row of a month's session list.
+class ChargeSessionRow:
+    """One row of a period's session list.
 
     ``record`` is the stored cost record, if any; ``detected_end_ts`` is the
     end seen in the history (lets an open record whose stop was missed be
@@ -47,6 +50,8 @@ class MonthChargeSession:
     energy_kwh: float | None = None
     peak_power_kw: float | None = None
     detected_end_ts: datetime | None = None
+    start_soc: int | None = None
+    end_soc: int | None = None
 
 
 def naive_utc(ts: datetime | None) -> datetime | None:
@@ -64,6 +69,15 @@ def month_bounds(year: int, month: int, tz: tzinfo = UTC) -> tuple[datetime, dat
     return naive_utc(start), naive_utc(end)
 
 
+def day_range_bounds(
+    first: date, last: date, tz: tzinfo = UTC
+) -> tuple[datetime, datetime]:
+    """``[first day 00:00, day after last 00:00)`` in ``tz``, as naive UTC."""
+    start = datetime.combine(first, time(), tzinfo=tz)
+    end = datetime.combine(last + timedelta(days=1), time(), tzinfo=tz)
+    return naive_utc(start), naive_utc(end)
+
+
 def _session(
     start: VehicleSnapshot, last: VehicleSnapshot, peak: float, *, open_ended: bool
 ) -> DetectedChargeSession:
@@ -76,6 +90,8 @@ def _session(
         end_ts=None if open_ended else last.timestamp,
         energy_kwh=energy,
         peak_power_kw=round(peak, 1) if peak > 0 else None,
+        start_soc=start.battery_soc,
+        end_soc=last.battery_soc,
     )
 
 
@@ -103,12 +119,12 @@ def detect_charge_sessions(
     return sessions
 
 
-def merge_month_sessions(
+def merge_sessions(
     detected: Sequence[DetectedChargeSession],
     stored: Sequence[ChargingSessionCost],
     start: datetime,
     end: datetime,
-) -> list[MonthChargeSession]:
+) -> list[ChargeSessionRow]:
     """Sessions of ``[start, end)`` (naive UTC), newest first.
 
     Detected sessions are paired with the stored record starting within
@@ -116,14 +132,14 @@ def merge_month_sessions(
     created by hand, or older than the retained history) are listed as-is.
     """
 
-    def in_month(ts: datetime | None) -> bool:
+    def in_period(ts: datetime | None) -> bool:
         return ts is not None and start <= naive_utc(ts) < end
 
-    rows: list[MonthChargeSession] = []
+    rows: list[ChargeSessionRow] = []
     merged_ids: set[int] = set()
     for ds in detected:
         ds_start = naive_utc(ds.start_ts)
-        if not in_month(ds_start):
+        if not in_period(ds_start):
             continue
         match = next(
             (
@@ -136,18 +152,20 @@ def merge_month_sessions(
         )
         if match is None:
             rows.append(
-                MonthChargeSession(
+                ChargeSessionRow(
                     start_ts=ds_start,
                     end_ts=naive_utc(ds.end_ts),
                     energy_kwh=ds.energy_kwh,
                     peak_power_kw=ds.peak_power_kw,
+                    start_soc=ds.start_soc,
+                    end_soc=ds.end_soc,
                 )
             )
             continue
         if match.id is not None:
             merged_ids.add(match.id)
         rows.append(
-            MonthChargeSession(
+            ChargeSessionRow(
                 start_ts=naive_utc(match.start_ts),
                 end_ts=naive_utc(match.end_ts),
                 record=match,
@@ -158,13 +176,15 @@ def merge_month_sessions(
                 if match.peak_power_kw is not None
                 else ds.peak_power_kw,
                 detected_end_ts=naive_utc(ds.end_ts),
+                start_soc=ds.start_soc,
+                end_soc=ds.end_soc,
             )
         )
     for c in stored:
-        if c.id in merged_ids or not in_month(c.start_ts):
+        if c.id in merged_ids or not in_period(c.start_ts):
             continue
         rows.append(
-            MonthChargeSession(
+            ChargeSessionRow(
                 start_ts=naive_utc(c.start_ts),
                 end_ts=naive_utc(c.end_ts),
                 record=c,

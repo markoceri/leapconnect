@@ -29,11 +29,11 @@ from leapconnect.domain.charging.location import (
 )
 from leapconnect.domain.charging.models import ChargingSessionCost
 from leapconnect.domain.charging.sessions import (
-    MONTH_HISTORY_MARGIN,
+    HISTORY_MARGIN,
     SAME_SESSION_TOLERANCE,
-    MonthChargeSession,
+    ChargeSessionRow,
     detect_charge_sessions,
-    merge_month_sessions,
+    merge_sessions,
     month_bounds,
     naive_utc,
 )
@@ -173,31 +173,40 @@ async def calculate_missing_costs(
     return result
 
 
-async def list_month_sessions(
-    repo: AppRepository, vin: str, year: int, month: int, tz: tzinfo | None = None
-) -> list[MonthChargeSession]:
-    """The month's charging sessions, newest first — the Charging tab's list.
+async def list_sessions(
+    repo: AppRepository, vin: str, start: datetime, end: datetime
+) -> list[ChargeSessionRow]:
+    """Charging sessions starting in ``[start, end)`` (naive UTC), newest first.
 
-    The month is a calendar month in the user's time zone (``tz``, from the
-    preferences when omitted). Sessions are detected from the snapshots and
-    paired with the stored cost records.
+    Sessions are detected from the full (not downsampled) snapshots and paired
+    with the stored cost records.
     """
-    if tz is None:
-        tz = await load_user_timezone(repo)
-    start, end = month_bounds(year, month, tz)
-    # The history API takes UTC dates (whole days, end inclusive).
+    # Repository dates are UTC days (whole days, end inclusive).
     history = await repo.get_history(
         vin,
-        from_date=(start - MONTH_HISTORY_MARGIN).date().isoformat(),
-        to_date=(end + MONTH_HISTORY_MARGIN).date().isoformat(),
+        from_date=(start - HISTORY_MARGIN).date().isoformat(),
+        to_date=(end + HISTORY_MARGIN).date().isoformat(),
         max_points=None,
     )
-    return merge_month_sessions(
+    return merge_sessions(
         detect_charge_sessions(history),
         await repo.get_session_costs(vin),
         start,
         end,
     )
+
+
+async def list_month_sessions(
+    repo: AppRepository, vin: str, year: int, month: int, tz: tzinfo | None = None
+) -> list[ChargeSessionRow]:
+    """The month's charging sessions, newest first — the Charging tab's list.
+
+    The month is a calendar month in the user's time zone (``tz``, from the
+    preferences when omitted).
+    """
+    if tz is None:
+        tz = await load_user_timezone(repo)
+    return await list_sessions(repo, vin, *month_bounds(year, month, tz))
 
 
 async def find_month_missing_costs(

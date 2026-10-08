@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta, tzinfo
 from typing import Any
 
 from sqlalchemy import case, func, select
@@ -112,24 +112,31 @@ class SqlTelemetryRepository(SqlRepositoryBase, TelemetryRepository):
         from_date: str | None = None,
         to_date: str | None = None,
         max_points: int | None = None,
+        tz: tzinfo = UTC,
     ) -> list[VehicleSnapshot]:
         if from_date and to_date:
-            # Use explicit date range (YYYY-MM-DD)
-            since = datetime.fromisoformat(f"{from_date}T00:00:00+00:00")
-            until = datetime.fromisoformat(f"{to_date}T23:59:59+00:00")
+            # Explicit range of days (YYYY-MM-DD, inclusive) in ``tz``
+            since = datetime.fromisoformat(from_date).replace(tzinfo=tz).astimezone(UTC)
+            until = (
+                (datetime.fromisoformat(to_date) + timedelta(days=1))
+                .replace(tzinfo=tz)
+                .astimezone(UTC)
+            )
             stmt = (
                 select(VehicleSnapshotRow)
                 .where(
                     VehicleSnapshotRow.vin == vin,
                     VehicleSnapshotRow.timestamp >= since,
-                    VehicleSnapshotRow.timestamp <= until,
+                    VehicleSnapshotRow.timestamp < until,
                 )
                 .order_by(VehicleSnapshotRow.timestamp.asc())
             )
         elif days == 1:
-            # "Today": from midnight of the current day
-            now = datetime.now(UTC)
-            since = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            # "Today": from midnight of the current day in ``tz``
+            now = datetime.now(tz)
+            since = now.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(
+                UTC
+            )
             stmt = (
                 select(VehicleSnapshotRow)
                 .where(
@@ -237,11 +244,18 @@ class SqlTelemetryRepository(SqlRepositoryBase, TelemetryRepository):
         vin: str,
         *,
         days: int = 30,
+        tz: tzinfo = UTC,
     ) -> list[dict[str, Any]]:
+        """Per-day aggregates, days being calendar days in ``tz``.
+
+        SQLite can't apply an IANA zone, so rows are aggregated per UTC hour in
+        SQL and the hours are folded into local days here (exact for whole-hour
+        offsets, which covers every DST rule).
+        """
         since = datetime.now(UTC) - timedelta(days=days)
-        date_label = func.strftime("%Y-%m-%d", VehicleSnapshotRow.timestamp).label(
-            "date"
-        )
+        hour_label = func.strftime(
+            "%Y-%m-%d %H:00:00", VehicleSnapshotRow.timestamp
+        ).label("hour")
 
         # Partial status payloads report the odometer as 0: ignore them so a
         # glitch doesn't turn the whole odometer into "km driven".
@@ -251,51 +265,95 @@ class SqlTelemetryRepository(SqlRepositoryBase, TelemetryRepository):
 
         stmt = (
             select(
-                date_label,
+                hour_label,
                 func.min(VehicleSnapshotRow.battery_soc).label("min_soc"),
                 func.max(VehicleSnapshotRow.battery_soc).label("max_soc"),
-                func.round(func.avg(VehicleSnapshotRow.battery_soc)).label("avg_soc"),
+                func.sum(VehicleSnapshotRow.battery_soc).label("sum_soc"),
+                func.count(VehicleSnapshotRow.battery_soc).label("n_soc"),
                 func.min(VehicleSnapshotRow.expected_mileage).label("min_range"),
                 func.max(VehicleSnapshotRow.expected_mileage).label("max_range"),
                 func.min(valid_mileage).label("min_mileage"),
                 func.max(valid_mileage).label("max_mileage"),
-                func.round(func.avg(VehicleSnapshotRow.outdoor_temp)).label("avg_temp"),
+                func.sum(VehicleSnapshotRow.outdoor_temp).label("sum_temp"),
+                func.count(VehicleSnapshotRow.outdoor_temp).label("n_temp"),
                 func.sum(
                     func.iif(VehicleSnapshotRow.is_charging == True, 1, 0)  # noqa: E712
                 ).label("charge_sessions"),
                 func.count().label("sample_count"),
             )
             .where(VehicleSnapshotRow.vin == vin, VehicleSnapshotRow.timestamp >= since)
-            .group_by(date_label)
-            .order_by(date_label.asc())
+            .group_by(hour_label)
+            .order_by(hour_label.asc())
         )
 
         async with self._session_factory() as session:
             result = await session.execute(stmt)
             rows = result.all()
 
-        summaries: list[dict[str, Any]] = []
+        def _merge(a, b, fn):
+            if a is None:
+                return b
+            return a if b is None else fn(a, b)
+
+        by_day: dict[str, dict[str, Any]] = {}
         for r in rows:
+            local_day = (
+                datetime.fromisoformat(r.hour)
+                .replace(tzinfo=UTC)
+                .astimezone(tz)
+                .date()
+                .isoformat()
+            )
+            d = by_day.setdefault(
+                local_day,
+                dict.fromkeys(
+                    (
+                        "min_soc",
+                        "max_soc",
+                        "min_range",
+                        "max_range",
+                        "min_mileage",
+                        "max_mileage",
+                    )
+                )
+                | {"sum_soc": 0, "n_soc": 0, "sum_temp": 0.0, "n_temp": 0}
+                | {"charge_sessions": 0, "sample_count": 0},
+            )
+            for key in ("min_soc", "min_range", "min_mileage"):
+                d[key] = _merge(d[key], getattr(r, key), min)
+            for key in ("max_soc", "max_range", "max_mileage"):
+                d[key] = _merge(d[key], getattr(r, key), max)
+            d["sum_soc"] += r.sum_soc or 0
+            d["n_soc"] += r.n_soc or 0
+            d["sum_temp"] += r.sum_temp or 0
+            d["n_temp"] += r.n_temp or 0
+            d["charge_sessions"] += r.charge_sessions or 0
+            d["sample_count"] += r.sample_count or 0
+
+        summaries: list[dict[str, Any]] = []
+        for day, d in sorted(by_day.items()):
             km_driven = 0
-            if r.max_mileage is not None and r.min_mileage is not None:
-                km_driven = max(0, r.max_mileage - r.min_mileage)
+            if d["max_mileage"] is not None and d["min_mileage"] is not None:
+                km_driven = max(0, d["max_mileage"] - d["min_mileage"])
 
             # Rough energy estimate: ~0.15 kWh/km
             energy_delta = round(km_driven * 0.15, 1) if km_driven else 0
 
             summaries.append(
                 {
-                    "date": r.date,
-                    "min_soc": r.min_soc,
-                    "max_soc": r.max_soc,
-                    "avg_soc": int(r.avg_soc) if r.avg_soc is not None else None,
-                    "min_range": r.min_range,
-                    "max_range": r.max_range,
+                    "date": day,
+                    "min_soc": d["min_soc"],
+                    "max_soc": d["max_soc"],
+                    "avg_soc": round(d["sum_soc"] / d["n_soc"]) if d["n_soc"] else None,
+                    "min_range": d["min_range"],
+                    "max_range": d["max_range"],
                     "km_driven": km_driven,
                     "energy_delta": energy_delta,
-                    "avg_temp": int(r.avg_temp) if r.avg_temp is not None else None,
-                    "charge_sessions": r.charge_sessions or 0,
-                    "sample_count": r.sample_count,
+                    "avg_temp": round(d["sum_temp"] / d["n_temp"])
+                    if d["n_temp"]
+                    else None,
+                    "charge_sessions": d["charge_sessions"],
+                    "sample_count": d["sample_count"],
                 }
             )
 

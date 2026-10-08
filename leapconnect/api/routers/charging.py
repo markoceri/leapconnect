@@ -11,13 +11,13 @@ from leapconnect.api.schemas import (
     CalculateMissingCostsRequest,
     CalculateMissingCostsResponse,
     ChargingHistoryResponse,
-    ChargingMonthSessionSchema,
-    ChargingMonthSessionsResponse,
     ChargingPriceTierResponse,
     ChargingPriceTierUpdate,
     ChargingSessionCostCreate,
     ChargingSessionCostResponse,
     ChargingSessionCostUpdate,
+    ChargingSessionRowSchema,
+    ChargingSessionsResponse,
     ChargingTiersFullResponse,
     ChargingTimeBandCreate,
     ChargingTimeBandResponse,
@@ -29,7 +29,7 @@ from leapconnect.api.schemas import (
 from leapconnect.application.charging_costs import (
     MissingCostSession,
     calculate_missing_costs,
-    list_month_sessions,
+    list_sessions,
 )
 from leapconnect.application.settings_store import (
     calculate_session_cost,
@@ -38,6 +38,7 @@ from leapconnect.application.settings_store import (
     resolve_timezone,
 )
 from leapconnect.domain.charging.models import ChargingSessionCost, ChargingTimeBand
+from leapconnect.domain.charging.sessions import day_range_bounds, month_bounds
 
 router = APIRouter(tags=["charging"])
 
@@ -277,21 +278,41 @@ async def get_charging_costs(
 
 @router.get(
     "/api/vehicles/{vin}/charging-sessions",
-    response_model=ChargingMonthSessionsResponse,
+    response_model=ChargingSessionsResponse,
 )
-async def get_month_charging_sessions(
-    vin: str, year: int, month: int, repo: RepoDep
-) -> ChargingMonthSessionsResponse:
-    """A month's charging sessions, newest first.
+async def get_charging_sessions(
+    vin: str,
+    repo: RepoDep,
+    year: int | None = None,
+    month: int | None = None,
+    from_date: date | None = None,
+    to_date: date | None = None,
+) -> ChargingSessionsResponse:
+    """Charging sessions of a month (``year`` + ``month``) or of a range of
+    days (``from_date`` + ``to_date``, inclusive), newest first.
 
     Sessions are detected from the vehicle history and paired with the stored
-    cost records; the month is a calendar month in the ``timezone``
-    preference. Same selection as the month-end cost calculation.
+    cost records; months and days are in the ``timezone`` preference. Same
+    selection as the month-end cost calculation.
     """
-    if not 1 <= month <= 12:
-        raise HTTPException(status_code=422, detail="'month' must be 1-12")
     tz_name = (await load_preferences(repo)).timezone
-    rows = await list_month_sessions(repo, vin, year, month, resolve_timezone(tz_name))
+    tz = resolve_timezone(tz_name)
+    if year is not None and month is not None:
+        if not 1 <= month <= 12:
+            raise HTTPException(status_code=422, detail="'month' must be 1-12")
+        start, end = month_bounds(year, month, tz)
+    elif from_date is not None and to_date is not None:
+        if to_date < from_date:
+            raise HTTPException(
+                status_code=422, detail="'to_date' must not precede 'from_date'"
+            )
+        start, end = day_range_bounds(from_date, to_date, tz)
+    else:
+        raise HTTPException(
+            status_code=422,
+            detail="Pass either 'year' and 'month' or 'from_date' and 'to_date'",
+        )
+    rows = await list_sessions(repo, vin, start, end)
     tiers = {t.id: t for t in await repo.get_price_tiers()}
     bands = {b.id: b for b in await repo.get_time_bands("home_grid")}
     sessions = []
@@ -301,7 +322,7 @@ async def get_month_charging_sessions(
         )
         base.pop("vin", None)
         sessions.append(
-            ChargingMonthSessionSchema(
+            ChargingSessionRowSchema(
                 **{
                     **base,
                     "start_ts": row.start_ts.isoformat(),
@@ -311,11 +332,16 @@ async def get_month_charging_sessions(
                     "detected_end_ts": row.detected_end_ts.isoformat()
                     if row.detected_end_ts
                     else None,
+                    "start_soc": row.start_soc,
+                    "end_soc": row.end_soc,
                 }
             )
         )
-    return ChargingMonthSessionsResponse(
-        year=year, month=month, timezone=tz_name or "UTC", sessions=sessions
+    return ChargingSessionsResponse(
+        timezone=tz_name or "UTC",
+        start=start.isoformat(),
+        end=end.isoformat(),
+        sessions=sessions,
     )
 
 
