@@ -34,6 +34,17 @@
         :icon="battIcon" :pulse="!!s.is_charging"
       />
       <StatCard
+        label="Battery Health"
+        :value="health?.soh_pct != null ? health.soh_pct.toFixed(1) : '—'"
+        :unit="health?.soh_pct != null ? '%' : ''"
+        :color="healthColor"
+        :sub="healthSub"
+        :icon="HeartPulse"
+        class="stat-clickable"
+        title="Estimated from the energy reported at 100% charge"
+        @click="openBatteryHealth"
+      />
+      <StatCard
         label="Range" :value="s.battery?.expected_mileage ?? '—'" unit="km" color="var(--cyan)"
         :sub="s.battery?.dump_energy_kwh != null ? `${s.battery.dump_energy_kwh} kWh available` : ''"
       />
@@ -369,7 +380,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, toValue } from 'vue'
+import { ref, computed, watch, toValue, nextTick } from 'vue'
 import { useAppStore } from '../stores/appStore'
 import { useToast } from '../composables/useToast'
 import { api } from '../composables/useApi'
@@ -396,7 +407,7 @@ import {
   ShieldCheck, ShieldOff, Power, PowerOff, Wifi, Car,
   CircleParking, Key, Eye, EyeOff, PlugZap,
   Heater, AirVent, Armchair, Navigation,
-  Gauge, Music, Download, CalendarClock, MapPin, Home, Clock
+  Gauge, Music, Download, CalendarClock, MapPin, Home, Clock, HeartPulse
 } from 'lucide-vue-next'
 
 const props = defineProps({
@@ -416,6 +427,39 @@ const availableTiers = ref([])
 const tierIconMap = { home_grid: Home, home_solar: Sun, public_ac: Plug, public_dc: Zap }
 
 const s = computed(() => props.status || {})
+
+// --- Estimated battery health (SOH) ---
+const health = ref(null)
+
+async function loadBatteryHealth() {
+  try {
+    health.value = await api('GET', `/api/vehicles/${props.vehicle.vin}/battery/health`)
+  } catch {
+    health.value = null
+  }
+}
+
+// A charge to 100% just ended may add a new full-charge reading.
+watch(() => props.vehicle.vin, () => { health.value = null; loadBatteryHealth() }, { immediate: true })
+watch(() => s.value.is_charging, (now, before) => { if (before && !now) loadBatteryHealth() })
+
+const healthColor = computed(() => {
+  const v = health.value?.soh_pct
+  if (v == null) return 'var(--muted3)'
+  return v >= 90 ? 'var(--green)' : v >= 80 ? 'var(--amber)' : 'var(--red)'
+})
+
+const healthSub = computed(() => {
+  const h = health.value
+  if (!h) return ''
+  if (h.soh_pct != null) return `${h.capacity_kwh} kWh at 100%`
+  return `${h.samples}/${h.min_samples} full charges`
+})
+
+function openBatteryHealth() {
+  store.activeTab = 'details'
+  nextTick(() => document.getElementById('battery-health')?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
+}
 
 // --- Reverse geocoding for hero location ---
 const vehicleAddress = ref('')
@@ -948,6 +992,8 @@ async function doSetChargeLimit() {
 
 /* Stats row */
 .stats-row { /* responsive via Tailwind classes */ }
+.stat-clickable { cursor: pointer; }
+.stat-clickable:hover { border-color: var(--accent); }
 
 /* Battery bar */
 .battery-bar-container {

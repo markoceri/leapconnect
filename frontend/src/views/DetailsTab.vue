@@ -78,7 +78,7 @@
     </SectionCard>
 
     <!-- Battery Health -->
-    <BatteryHealthCard v-if="props.vehicle?.vin" :vin="props.vehicle.vin" />
+    <BatteryHealthCard v-if="props.vehicle?.vin" id="battery-health" :vin="props.vehicle.vin" />
 
     <!-- Charge Plan -->
     <SectionCard title="Charge Plan" :icon="BatteryCharging">
