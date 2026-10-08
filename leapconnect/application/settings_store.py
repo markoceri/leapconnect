@@ -98,7 +98,12 @@ async def calculate_session_cost(
         bands = await repo.get_time_bands("home_grid")
         if bands:
             return calculate_tou_cost(
-                energy_kwh, start_ts, end_ts, bands, tier.price_kwh
+                energy_kwh,
+                start_ts,
+                end_ts,
+                bands,
+                tier.price_kwh,
+                resolve_timezone(prefs.timezone),
             )
 
     return flat_cost(energy_kwh, tier.price_kwh)

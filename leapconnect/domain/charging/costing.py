@@ -1,12 +1,13 @@
 """Charging cost calculation (pure domain service).
 
 Supports a flat per-tier price and time-of-use (TOU) pricing where the session
-energy is split proportionally across configured time bands.
+energy is split proportionally across configured time bands. Band schedules
+are local wall-clock times; session timestamps are naive UTC.
 """
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta, tzinfo
 
 from leapconnect.domain.charging.models import ChargingTimeBand
 
@@ -21,7 +22,7 @@ def flat_cost(energy_kwh: float, price_kwh: float) -> float:
 def match_time_band(
     timestamp: datetime, bands: list[ChargingTimeBand]
 ) -> ChargingTimeBand | None:
-    """Find which time band a timestamp falls into."""
+    """Find which time band a (local wall-clock) timestamp falls into."""
     weekday = timestamp.weekday()  # 0=Mon, 6=Sun
     time_minutes = timestamp.hour * 60 + timestamp.minute
 
@@ -41,16 +42,27 @@ def match_time_band(
     return None
 
 
+def _wall_clock(ts: datetime, tz: tzinfo) -> datetime:
+    """Local wall-clock time of a UTC timestamp (naive = UTC)."""
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=UTC)
+    return ts.astimezone(tz).replace(tzinfo=None)
+
+
 def calculate_tou_cost(
     energy_kwh: float,
     start_ts: datetime,
     end_ts: datetime,
     bands: list[ChargingTimeBand],
     flat_price: float,
+    tz: tzinfo = UTC,
 ) -> float:
     """Split energy proportionally across time bands based on session duration.
 
-    Hours not covered by any band fall back to *flat_price*.
+    ``start_ts``/``end_ts`` are UTC (naive = UTC); each slot is matched against
+    the bands in ``tz``, the time zone the band schedules are written in, so
+    DST changes are followed. Hours not covered by any band fall back to
+    *flat_price*.
     """
     total_seconds = (end_ts - start_ts).total_seconds()
     if total_seconds <= 0:
@@ -63,7 +75,7 @@ def calculate_tou_cost(
     while current < end_ts:
         slot_end = min(current + TOU_SLOT, end_ts)
         slot_duration = (slot_end - current).total_seconds()
-        matched_band = match_time_band(current, bands)
+        matched_band = match_time_band(_wall_clock(current, tz), bands)
         if matched_band:
             band_seconds[matched_band.id] = (
                 band_seconds.get(matched_band.id, 0) + slot_duration
