@@ -16,6 +16,7 @@ from leapconnect.domain.settings.models import (
     MqttSettings,
     UserPreferences,
 )
+from leapconnect.domain.styling import MapTileSettings, sanitize_map_tile_settings
 from leapconnect.domain.system import DiskAlertSettings
 
 if TYPE_CHECKING:
@@ -221,6 +222,45 @@ async def save_vehicle_color(
         colors.pop(vin, None)
     await repo.save_setting(_VEHICLE_COLORS_KEY, json.dumps(colors))
     return colors
+
+
+_MAP_TILES_KEY = "map_tiles"
+
+
+async def load_map_tile_settings(repo: AppRepository) -> MapTileSettings:
+    """Load the map tile provider selection, falling back to OpenStreetMap."""
+    raw = await repo.get_setting(_MAP_TILES_KEY)
+    try:
+        data = json.loads(raw) if raw else {}
+    except (ValueError, TypeError):
+        data = {}
+    if not isinstance(data, dict):
+        data = {}
+    api_keys = data.get("api_keys")
+    return sanitize_map_tile_settings(
+        MapTileSettings(
+            provider=str(data.get("provider") or ""),
+            api_keys=api_keys if isinstance(api_keys, dict) else {},
+            custom_url=str(data.get("custom_url") or ""),
+            custom_dark_url=str(data.get("custom_dark_url") or ""),
+        )
+    )
+
+
+async def save_map_tile_settings(
+    repo: AppRepository, settings: MapTileSettings
+) -> None:
+    await repo.save_setting(
+        _MAP_TILES_KEY,
+        json.dumps(
+            {
+                "provider": settings.provider,
+                "api_keys": settings.api_keys,
+                "custom_url": settings.custom_url,
+                "custom_dark_url": settings.custom_dark_url,
+            }
+        ),
+    )
 
 
 async def load_disk_alert_settings(repo: AppRepository) -> DiskAlertSettings:

@@ -175,3 +175,19 @@ input[type=range]::-webkit-slider-thumb {
 input[type=range]::-webkit-slider-thumb:hover { transform: scale(1.2); }
 
 button { font-family: inherit; }
+
+/* ── Maps (utils/mapTiles.js) ─────────────────────────────────────────── */
+/* Dark style for tile providers that only have a light one (e.g. OSM). */
+.leaflet-layer.map-tiles-dark-filter {
+  filter: invert(100%) hue-rotate(180deg) brightness(95%) contrast(90%);
+}
+.leaflet-container .leaflet-control-attribution {
+  font-size: 9px;
+  line-height: 1.4;
+  background: rgba(17, 20, 32, 0.7);
+  color: var(--sub);
+}
+.leaflet-container .leaflet-control-attribution a { color: var(--sub); }
+[data-theme="light"] .leaflet-container .leaflet-control-attribution {
+  background: rgba(255, 255, 255, 0.75);
+}

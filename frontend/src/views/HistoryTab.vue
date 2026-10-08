@@ -321,6 +321,7 @@ import HistorySkeleton from '../components/HistorySkeleton.vue'
 import CloudStatsView from '../components/CloudStatsView.vue'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
+import { addBaseLayer } from '../utils/mapTiles'
 
 Chart.register(...registerables)
 
@@ -1065,13 +1066,6 @@ const tireDiffCanvas = ref(null)
 const charts = []
 let tripMap = null
 
-function getMapTileUrl() {
-  const isDark = document.documentElement.getAttribute('data-theme') !== 'light'
-  return isDark
-    ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
-    : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'
-}
-
 function toggleMapExpand() {
   mapExpanded.value = !mapExpanded.value
   nextTick(() => {
@@ -1088,7 +1082,7 @@ function renderTripMap(points) {
   if (!container || points.length === 0) return
 
   tripMap = L.map(container, { zoomControl: true, attributionControl: false })
-  L.tileLayer(getMapTileUrl(), { maxZoom: 18 }).addTo(tripMap)
+  addBaseLayer(tripMap)
 
   const coords = points.map(s => [s.vehicle_latitude, s.vehicle_longitude])
 

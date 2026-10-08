@@ -1,4 +1,4 @@
-"""Vehicle appearance routes: accent-colour palettes, selection, auto-detect."""
+"""Appearance routes: vehicle accent-colour palettes, auto-detect, map tiles."""
 
 from __future__ import annotations
 
@@ -6,24 +6,29 @@ import io
 import logging
 import zipfile
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 
 from leapconnect.api.deps import ClientDep, ContainerDep, RepoDep, VehicleDep
 from leapconnect.api.schemas import (
     ColorDetectResponse,
+    MapTileSettingsSchema,
     PaletteColorSchema,
     VehicleColorUpdate,
     VehiclePaletteResponse,
 )
 from leapconnect.application.settings_store import (
+    load_map_tile_settings,
     load_vehicle_colors,
+    save_map_tile_settings,
     save_vehicle_color,
 )
 from leapconnect.application.theme_detection import dominant_color
 from leapconnect.domain.styling import (
+    map_tile_settings_error,
     match_color_name,
     nearest_color,
     palette_for_car_type,
+    sanitize_map_tile_settings,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -135,3 +140,22 @@ async def detect_vehicle_color(
             detected=PaletteColorSchema.from_model(matched), source=source
         )
     return ColorDetectResponse(detected=None, source="none")
+
+
+@router.get("/api/map-tiles", response_model=MapTileSettingsSchema)
+async def get_map_tiles(repo: RepoDep) -> MapTileSettingsSchema:
+    """Map tile provider used by every dashboard map (OpenStreetMap by default)."""
+    return MapTileSettingsSchema.from_model(await load_map_tile_settings(repo))
+
+
+@router.put("/api/map-tiles", response_model=MapTileSettingsSchema)
+async def update_map_tiles(
+    body: MapTileSettingsSchema, repo: RepoDep
+) -> MapTileSettingsSchema:
+    """Select the map tile provider and store its API key / custom URLs."""
+    error = map_tile_settings_error(body.to_model())
+    if error:
+        raise HTTPException(status_code=400, detail=error)
+    settings = sanitize_map_tile_settings(body.to_model())
+    await save_map_tile_settings(repo, settings)
+    return MapTileSettingsSchema.from_model(settings)

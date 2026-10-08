@@ -94,6 +94,7 @@ import { useAppStore } from '../stores/appStore'
 import { useToast } from '../composables/useToast'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
+import { addBaseLayer } from '../utils/mapTiles'
 import { MapPin, Maximize2, Minimize2, X, Car, Smartphone, Navigation, Loader, EyeOff } from 'lucide-vue-next'
 
 const SEND_DEST_RIGHT = 180
@@ -111,7 +112,6 @@ const mapEl = ref(null)
 const mapWrapper = ref(null)
 const fullscreen = ref(false)
 let map = null
-let tileLayer = null
 let vehicleMarker = null
 let deviceMarker = null
 let destMarker = null
@@ -189,15 +189,8 @@ function initMap() {
     attributionControl: false,
   })
 
-  // Tile layer (adapts to theme)
-  const isLight = document.documentElement.getAttribute('data-theme') === 'light'
-  const tileUrl = isLight
-    ? 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png'
-    : 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
-  tileLayer = L.tileLayer(tileUrl, {
-    maxZoom: 19,
-    subdomains: 'abcd',
-  }).addTo(map)
+  // Base layer (configured provider, follows the theme)
+  addBaseLayer(map)
 
   // Zoom control in top-right
   L.control.zoom({ position: 'topright' }).addTo(map)
@@ -363,17 +356,6 @@ async function doSendDestination() {
 }
 
 onMounted(() => { nextTick(initMap) })
-
-// Swap tile layer when theme changes
-watch(() => store.theme, () => {
-  if (!map || !tileLayer) return
-  map.removeLayer(tileLayer)
-  const isLight = document.documentElement.getAttribute('data-theme') === 'light'
-  const tileUrl = isLight
-    ? 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png'
-    : 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
-  tileLayer = L.tileLayer(tileUrl, { maxZoom: 19, subdomains: 'abcd' }).addTo(map)
-})
 
 onBeforeUnmount(() => {
   if (map) {

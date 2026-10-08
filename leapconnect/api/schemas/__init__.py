@@ -77,6 +77,7 @@ from leapconnect.api.schemas.notifications import (  # noqa: F401
 )
 from leapconnect.api.schemas.styling import (  # noqa: F401
     ColorDetectResponse,
+    MapTileSettingsSchema,
     PaletteColorSchema,
     VehicleColorUpdate,
     VehiclePaletteResponse,
@@ -189,6 +190,7 @@ __all__ = [
     "MaintenanceRepoCreate",
     "MaintenanceRepoResponse",
     "MaintenanceServiceItem",
+    "MapTileSettingsSchema",
     "MessageListResponse",
     "MessageSchema",
     "MqttStatusResponse",

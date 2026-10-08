@@ -370,6 +370,7 @@ import { Clock, Navigation, Zap, ChevronRight, ChevronLeft, Map, Gauge, Search, 
 import { Chart, registerables } from 'chart.js'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
+import { addBaseLayer } from '../utils/mapTiles'
 import { useAppStore } from '../stores/appStore'
 
 Chart.register(...registerables)
@@ -399,20 +400,12 @@ const speedCanvas = ref(null)
 const mapKey = ref(0)
 const viewMode = ref('simple')
 let mapInstance = null
-let tileLayerInstance = null
 let speedChartInstance = null
 const compareMode = ref(false)
 const selectedCompareTrips = ref([])
 const compareDialog = ref(null)
 const modalView = ref('detail') // 'detail' | 'similar' | 'compare'
 const activeCompare = ref(null)
-
-function getMapTileUrl() {
-  const isLight = document.documentElement.getAttribute('data-theme') === 'light'
-  return isLight
-    ? 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png'
-    : 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
-}
 
 // Month navigation
 const monthLabel = computed(() => {
@@ -676,13 +669,9 @@ function renderSimpleMap() {
   if (mapInstance) {
     mapInstance.remove()
     mapInstance = null
-    tileLayerInstance = null
   }
   mapInstance = L.map(mapContainer.value, { zoomControl: true, attributionControl: false })
-  tileLayerInstance = L.tileLayer(getMapTileUrl(), {
-    maxZoom: 18,
-    subdomains: 'abcd',
-  }).addTo(mapInstance)
+  addBaseLayer(mapInstance)
 
   const points = gpsPoints.value.filter(p => (p.lat || p.latitude) && (p.lng || p.longitude))
   if (!points.length) return
@@ -709,13 +698,9 @@ function renderSpeedMap() {
   if (mapInstance) {
     mapInstance.remove()
     mapInstance = null
-    tileLayerInstance = null
   }
   mapInstance = L.map(mapContainer.value, { zoomControl: true, attributionControl: false })
-  tileLayerInstance = L.tileLayer(getMapTileUrl(), {
-    maxZoom: 18,
-    subdomains: 'abcd',
-  }).addTo(mapInstance)
+  addBaseLayer(mapInstance)
 
   const points = gpsPoints.value.filter(p => (p.lat || p.latitude) && (p.lng || p.longitude))
   if (!points.length) return
@@ -1057,7 +1042,6 @@ watch(modalView, async (newView) => {
   if (newView === 'detail' && gpsPoints.value.length) {
     mapInstance?.remove()
     mapInstance = null
-    tileLayerInstance = null
     await nextTick()
     if (viewMode.value === 'speedmap') {
       renderSpeedMap()
@@ -1069,22 +1053,11 @@ watch(modalView, async (newView) => {
   }
 })
 
-// Swap tile layer when theme changes (if map is currently open)
-watch(() => store.theme, () => {
-  if (!mapInstance || !tileLayerInstance) return
-  mapInstance.removeLayer(tileLayerInstance)
-  tileLayerInstance = L.tileLayer(getMapTileUrl(), {
-    maxZoom: 18,
-    subdomains: 'abcd',
-  }).addTo(mapInstance)
-})
-
 onBeforeUnmount(() => {
   destroySpeedChart()
   if (mapInstance) {
     mapInstance.remove()
     mapInstance = null
-    tileLayerInstance = null
   }
 })
 </script>

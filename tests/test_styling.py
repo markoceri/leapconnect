@@ -2,10 +2,13 @@
 
 from leapconnect.application.theme_detection import dominant_color
 from leapconnect.domain.styling import (
+    MapTileSettings,
     hex_to_rgb,
+    map_tile_settings_error,
     match_color_name,
     nearest_color,
     palette_for_car_type,
+    sanitize_map_tile_settings,
 )
 from leapconnect.domain.styling.palettes import (
     DEFAULT_PALETTE,
@@ -124,3 +127,44 @@ def _solid_image_with_transparent_border(color):
     buf = io.BytesIO()
     img.save(buf, format="PNG")
     return buf.getvalue()
+
+
+def test_map_tiles_default_is_openstreetmap():
+    settings = MapTileSettings()
+    assert settings.provider == "osm"
+    assert map_tile_settings_error(settings) is None
+
+
+def test_map_tiles_keyed_provider_needs_key():
+    assert map_tile_settings_error(MapTileSettings(provider="carto")) is not None
+    assert map_tile_settings_error(MapTileSettings(provider="maptiler")) is not None
+    # Stadia also authenticates by domain, so the key is optional.
+    assert map_tile_settings_error(MapTileSettings(provider="stadia")) is None
+    with_key = MapTileSettings(provider="carto", api_keys={"carto": "abc"})
+    assert map_tile_settings_error(with_key) is None
+
+
+def test_map_tiles_custom_url_validation():
+    ok = MapTileSettings(
+        provider="custom", custom_url="https://tiles.example/{z}/{x}/{y}.png"
+    )
+    assert map_tile_settings_error(ok) is None
+    missing_xyz = MapTileSettings(provider="custom", custom_url="https://x/{z}.png")
+    assert map_tile_settings_error(missing_xyz) is not None
+    bad_scheme = MapTileSettings(provider="custom", custom_url="javascript:{z}/{x}/{y}")
+    assert map_tile_settings_error(bad_scheme) is not None
+    assert map_tile_settings_error(MapTileSettings(provider="nope")) is not None
+
+
+def test_map_tiles_sanitize_falls_back_to_osm():
+    # A stored row whose key was later cleared must not leave the maps blank.
+    stale = sanitize_map_tile_settings(
+        MapTileSettings(
+            provider="carto",
+            api_keys={"carto": "  ", "unknown": "x", "maptiler": " k "},
+            custom_dark_url="not a url",
+        )
+    )
+    assert stale.provider == "osm"
+    assert stale.api_keys == {"maptiler": "k"}
+    assert stale.custom_dark_url == ""

@@ -183,6 +183,7 @@ import { ref, reactive, computed, onMounted, onBeforeUnmount, watch, nextTick } 
 import { accentHex } from '../utils/theme'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
+import { addBaseLayer } from '../utils/mapTiles'
 import '@geoman-io/leaflet-geoman-free'
 import '@geoman-io/leaflet-geoman-free/dist/leaflet-geoman.css'
 import { api } from '../composables/useApi'
@@ -270,7 +271,6 @@ const editingZoneName = computed(
 
 // Non-reactive Leaflet handles
 let map = null
-let baseLayer = null
 let deviceMarker = null
 const vehicleMarkers = new Map() // vin -> leaflet marker
 const zoneLayers = new Map() // zone id -> leaflet layer
@@ -453,12 +453,6 @@ async function load() {
 }
 
 // ── Map setup ────────────────────────────────────────────────────────────
-function tileUrl() {
-  const theme = document.documentElement.getAttribute('data-theme')
-  const style = theme === 'light' ? 'light_all' : 'dark_all'
-  return `https://{s}.basemaps.cartocdn.com/${style}/{z}/{x}/{y}{r}.png`
-}
-
 function initMap() {
   if (map || !mapEl.value) return
   const center = zones.value.length
@@ -468,7 +462,7 @@ function initMap() {
     center, zoom: 13, zoomControl: false, attributionControl: false,
   })
   L.control.zoom({ position: 'bottomright' }).addTo(map)
-  baseLayer = L.tileLayer(tileUrl(), { maxZoom: 19, subdomains: 'abcd' }).addTo(map)
+  addBaseLayer(map)
   currentZoom.value = map.getZoom()
 
   // No persistent toolbar — geoman controls only appear while drawing (driven
@@ -755,11 +749,6 @@ function poiIcon(def) {
   _iconCache[def.key] = icon
   return icon
 }
-
-// Swap base tiles when the app theme changes.
-watch(() => store.theme, () => {
-  if (baseLayer) baseLayer.setUrl(tileUrl())
-})
 
 // Keep the currently-selected vehicle's marker live from the websocket feed.
 watch(() => props.status?.location, (loc) => {

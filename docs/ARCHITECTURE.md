@@ -45,6 +45,7 @@ One subpackage per **bounded context**:
 | `zones`         | `Zone` model, zone geometry (`geometry.py`), pure enter/exit transition detection (`detection.py`) — a reusable location concept consumed by notifications (alerts) and charging (tier-by-zone) |
 | `identity`      | local dashboard session policy (`sessions.py`, hash-keyed store persisted via the repository), login throttling (`throttle.py`) |
 | `settings`      | typed user/scheduler/MQTT/ABRP settings models |
+| `styling`       | vehicle accent-colour palettes (`palettes.py`), map tile provider selection and validation (`map_tiles.py`; the URL catalog lives in `frontend/src/utils/mapTiles.js`) |
 | `system`        | health of the host running LeapConnect: `DiskUsage`, low-disk threshold and daily-reminder rules (`disk.py`) |
 
 **Rule:** domain modules import only the stdlib and other domain modules.

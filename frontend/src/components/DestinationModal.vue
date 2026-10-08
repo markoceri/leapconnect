@@ -60,6 +60,7 @@ import { useAppStore } from '../stores/appStore'
 import { useToast } from '../composables/useToast'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
+import { addBaseLayer } from '../utils/mapTiles'
 import { Navigation, Loader, Crosshair } from 'lucide-vue-next'
 
 const props = defineProps({
@@ -76,7 +77,6 @@ const { toast } = useToast()
 const mapEl = ref(null)
 const mapWrapper = ref(null)
 let map = null
-let tileLayer = null
 let vehicleMarker = null
 let deviceMarker = null
 let destMarker = null
@@ -130,11 +130,7 @@ function initMap() {
     attributionControl: false,
   })
 
-  const isLight = document.documentElement.getAttribute('data-theme') === 'light'
-  const tileUrl = isLight
-    ? 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png'
-    : 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
-  tileLayer = L.tileLayer(tileUrl, { maxZoom: 19, subdomains: 'abcd' }).addTo(map)
+  addBaseLayer(map)
 
   L.control.zoom({ position: 'topright' }).addTo(map)
 
@@ -151,7 +147,6 @@ function destroyMap() {
   if (map) {
     map.remove()
     map = null
-    tileLayer = null
     vehicleMarker = null
     deviceMarker = null
     destMarker = null
@@ -281,17 +276,6 @@ watch(() => props.visible, async (v) => {
   } else {
     destroyMap()
   }
-})
-
-// Theme change
-watch(() => store.theme, () => {
-  if (!map || !tileLayer) return
-  map.removeLayer(tileLayer)
-  const isLight = document.documentElement.getAttribute('data-theme') === 'light'
-  const tileUrl = isLight
-    ? 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png'
-    : 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
-  tileLayer = L.tileLayer(tileUrl, { maxZoom: 19, subdomains: 'abcd' }).addTo(map)
 })
 
 onBeforeUnmount(() => { destroyMap() })

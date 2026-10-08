@@ -177,6 +177,70 @@
         <div v-if="detectMessage" class="pref-hint" style="margin-top:8px">{{ detectMessage }}</div>
       </SectionCard>
 
+      <SectionCard title="Map" :icon="MapIcon">
+        <p class="rate-limit-hint" style="margin-bottom:10px">
+          Tile provider used by every map (location, zones, trips, history). OpenStreetMap needs no key; if you have a key
+          for another provider, pick it here.
+        </p>
+        <div class="map-provider-list">
+          <label
+            v-for="p in MAP_PROVIDERS"
+            :key="p.id"
+            class="map-provider"
+            :class="{ active: mapForm.provider === p.id }"
+          >
+            <input v-model="mapForm.provider" type="radio" name="map-provider" :value="p.id" />
+            <span class="map-provider-text">
+              <span class="pref-label">
+                {{ p.label }}
+                <span v-if="p.key === 'required'" class="map-provider-badge">API key</span>
+                <span v-if="mapTileSettings.provider === p.id" class="map-provider-badge in-use">In use</span>
+              </span>
+              <span class="pref-hint">{{ p.description }}</span>
+            </span>
+          </label>
+        </div>
+
+        <template v-if="mapFormProvider.key">
+          <div class="form-divider">{{ mapFormProvider.label }} API key</div>
+          <div class="pin-input-wrap">
+            <input
+              v-model="mapForm.api_keys[mapFormProvider.id]"
+              :type="showMapKey ? 'text' : 'password'"
+              class="pin-input"
+              style="width:100%;letter-spacing:0"
+              :placeholder="mapFormProvider.key === 'required' ? 'Paste your API key' : 'Optional'"
+              autocomplete="off"
+            />
+            <button class="pin-eye-btn" tabindex="-1" :title="showMapKey ? 'Hide' : 'Show'" @click="showMapKey = !showMapKey">
+              <EyeOff v-if="showMapKey" :size="14" /><Eye v-else :size="14" />
+            </button>
+          </div>
+          <a :href="mapFormProvider.keyUrl" target="_blank" rel="noopener" class="map-key-link">
+            Get a {{ mapFormProvider.label }} key <ExternalLink :size="11" />
+          </a>
+        </template>
+
+        <template v-if="mapForm.provider === 'custom'">
+          <div class="form-divider">Tile URL templates</div>
+          <p class="section-desc">Leaflet XYZ format, e.g. <code>https://tiles.example.com/{z}/{x}/{y}.png</code></p>
+          <input v-model="mapForm.custom_url" class="pin-input map-url-input" placeholder="Light (or only) style URL" />
+          <input
+            v-model="mapForm.custom_dark_url"
+            class="pin-input map-url-input"
+            placeholder="Dark style URL (optional, otherwise the light one is inverted)"
+          />
+        </template>
+
+        <button class="save-btn" style="margin-top:12px" :disabled="mapSaving" @click="saveMapTiles">
+          {{ mapSaving ? 'Saving…' : 'Save map provider' }}
+        </button>
+        <div v-if="mapSuccess" class="field-success">{{ mapSuccess }}</div>
+        <div v-if="mapError" class="field-error">{{ mapError }}</div>
+
+        <div ref="mapPreviewEl" class="map-preview" />
+      </SectionCard>
+
       <SectionCard title="Database" :icon="Database">
         <InfoRow label="Size" :value="databaseSize.size_human" color="#e2e6f0" />
         <div v-if="databaseSize.error" class="field-error">{{ databaseSize.error }}</div>
@@ -1305,7 +1369,10 @@ import ToggleSwitch from '../components/ToggleSwitch.vue'
 import LogViewer from '../components/LogViewer.vue'
 import { api } from '../composables/useApi'
 import { useAppStore } from '../stores/appStore'
-import { User, Car, Bell, SlidersHorizontal, BarChart3, Code, KeyRound, ShieldCheck, Wifi, Wrench, Settings, Github, Info, Star, AlertTriangle, ExternalLink, Moon, Sun, RefreshCw, Terminal, Navigation, Activity, Eye, EyeOff, Send, ChevronDown, ChevronRight, Search, Locate, Zap, CarFront, Lock, X, Trash2, Link2, Copy, Check, Home, Plug, Clock, Plus, Database, Palette, Sparkles, Calculator, Server } from 'lucide-vue-next'
+import { User, Car, Bell, SlidersHorizontal, BarChart3, Code, KeyRound, ShieldCheck, Wifi, Wrench, Settings, Github, Info, Star, AlertTriangle, ExternalLink, Moon, Sun, RefreshCw, Terminal, Navigation, Activity, Eye, EyeOff, Send, ChevronDown, ChevronRight, Search, Locate, Zap, CarFront, Lock, X, Trash2, Link2, Copy, Check, Home, Plug, Clock, Plus, Database, Palette, Sparkles, Calculator, Server, Map as MapIcon } from 'lucide-vue-next'
+import L from 'leaflet'
+import 'leaflet/dist/leaflet.css'
+import { MAP_PROVIDERS, mapTileSettings, getMapProvider, loadMapTileSettings, saveMapTileSettings, addBaseLayer } from '../utils/mapTiles'
 
 const store = useAppStore()
 
@@ -1453,6 +1520,52 @@ async function loadDatabaseSize() {
     databaseSize.loading = false
   }
 }
+
+// -- Map tile provider --------------------------------------------------------
+const mapForm = reactive({ provider: 'osm', api_keys: {}, custom_url: '', custom_dark_url: '' })
+const mapFormProvider = computed(() => getMapProvider(mapForm.provider))
+const showMapKey = ref(false)
+const mapSaving = ref(false)
+const mapSuccess = ref('')
+const mapError = ref('')
+const mapPreviewEl = ref(null)
+let mapPreview = null
+
+function resetMapForm() {
+  mapForm.provider = mapTileSettings.provider
+  mapForm.api_keys = { ...mapTileSettings.api_keys }
+  mapForm.custom_url = mapTileSettings.custom_url
+  mapForm.custom_dark_url = mapTileSettings.custom_dark_url
+}
+
+async function loadMapTiles() {
+  await loadMapTileSettings({ force: true })
+  resetMapForm()
+}
+
+async function saveMapTiles() {
+  mapSaving.value = true
+  mapSuccess.value = ''
+  mapError.value = ''
+  try {
+    await saveMapTileSettings({ ...mapForm, api_keys: { ...mapForm.api_keys } })
+    resetMapForm()
+    mapSuccess.value = 'Map provider saved'
+    setTimeout(() => { mapSuccess.value = '' }, 3000)
+  } catch (e) {
+    mapError.value = e.message || 'Failed to save map provider'
+  } finally {
+    mapSaving.value = false
+  }
+}
+
+// Live preview of the saved provider (the General section mounts/unmounts it).
+watch(mapPreviewEl, (el) => {
+  if (mapPreview) { mapPreview.remove(); mapPreview = null }
+  if (!el) return
+  mapPreview = L.map(el, { center: [45.4642, 9.19], zoom: 13, zoomControl: false, attributionControl: false })
+  addBaseLayer(mapPreview)
+})
 
 // -- System: disk space & low-disk alert thresholds ---------------------------
 const diskSpace = reactive({
@@ -2603,6 +2716,7 @@ onMounted(() => {
   loadDownsamplingSettings()
   loadDatabaseSize()
   loadDiskSpace()
+  loadMapTiles()
   loadMqtt()
   loadAbrp()
   loadVehiclePin()
@@ -2611,6 +2725,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  if (mapPreview) { mapPreview.remove(); mapPreview = null }
   stopTrackingPoll()
   stopTelegramUsersPolling()
 })
@@ -3224,6 +3339,35 @@ function stopTelegramUsersPolling() {
 .theme-btn:hover { border-color: var(--muted); color: var(--text); }
 .theme-btn.active {
   background: #7c6aff22; border-color: #7c6aff66; color: #7c6aff;
+}
+
+/* Map tile provider */
+.map-provider-list { display: flex; flex-direction: column; gap: 6px; }
+.map-provider {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 8px 10px; border-radius: 8px;
+  background: var(--input); border: 1px solid var(--border);
+  cursor: pointer; transition: border-color 0.2s;
+}
+.map-provider:hover { border-color: var(--muted); }
+.map-provider.active { border-color: rgba(var(--accent-rgb), 0.4); }
+.map-provider input { margin-top: 3px; accent-color: var(--accent); }
+.map-provider-text { display: flex; flex-direction: column; gap: 2px; }
+.map-provider-badge {
+  margin-left: 6px; padding: 1px 6px; border-radius: 6px;
+  font-size: 10px; font-weight: 600;
+  background: var(--elevated); color: var(--muted);
+}
+.map-provider-badge.in-use { background: rgba(var(--accent-rgb), 0.15); color: var(--accent); }
+.map-key-link {
+  display: inline-flex; align-items: center; gap: 4px;
+  margin-top: 6px; font-size: 11px; color: var(--accent);
+}
+.map-url-input { width: 100%; letter-spacing: 0; padding-right: 8px; margin-bottom: 6px; }
+.map-preview {
+  height: 160px; margin-top: 12px;
+  border-radius: 8px; border: 1px solid var(--border);
+  overflow: hidden;
 }
 
 /* Accent colour swatches */

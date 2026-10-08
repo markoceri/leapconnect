@@ -269,3 +269,26 @@ def test_local_session_delete_logs_out(auth_client):
 
     resp = auth_client.get("/api/cloud/status")
     assert resp.status_code == 401
+
+
+def test_map_tiles_round_trip(auth_client):
+    """OpenStreetMap by default; keyed providers need their key."""
+    resp = auth_client.get("/api/map-tiles")
+    assert resp.status_code == 200
+    assert resp.json()["provider"] == "osm"
+
+    resp = auth_client.put("/api/map-tiles", json={"provider": "carto"})
+    assert resp.status_code == 400
+
+    body = {"provider": "carto", "api_keys": {"carto": " key123 ", "maptiler": ""}}
+    resp = auth_client.put("/api/map-tiles", json=body)
+    assert resp.status_code == 200
+    assert resp.json()["api_keys"] == {"carto": "key123"}
+
+    resp = auth_client.get("/api/map-tiles")
+    assert resp.json()["provider"] == "carto"
+    assert resp.json()["api_keys"] == {"carto": "key123"}
+
+
+def test_map_tiles_requires_session(client):
+    assert client.get("/api/map-tiles").status_code == 401
