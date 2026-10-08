@@ -28,6 +28,7 @@ from leapconnect.api.schemas import (
     VehicleStatusResponse,
     VehicleStatusSchema,
 )
+from leapconnect.application.status_sanitizer import fetch_vehicle_status
 from leapconnect.asyncutils import spawn
 from leapconnect.config import IMAGE_MEDIA_TYPES, VEHICLE_IMAGE_DIR
 from leapconnect.container import AppContainer
@@ -147,7 +148,7 @@ async def get_vehicle_status(
     if container.vehicle_cache:
         status = await container.vehicle_cache.get(vehicle)
     else:
-        status = await client.get_vehicle_status(vehicle)
+        status = await fetch_vehicle_status(client, vehicle)
 
     # Persist snapshot for historical tracking
     if container.repo and isinstance(status, VehicleStatus):
@@ -334,7 +335,7 @@ async def get_dynamic_picture(
     else:
         pkg, status_raw = await asyncio.gather(
             container.get_image_package(vin),
-            client.get_vehicle_status(vehicle),
+            fetch_vehicle_status(client, vehicle),
         )
 
     status = status_raw if isinstance(status_raw, VehicleStatus) else None
@@ -358,7 +359,7 @@ async def get_full_vehicle_data(
     status_task = (
         container.vehicle_cache.get(vehicle)
         if container.vehicle_cache
-        else client.get_vehicle_status(vehicle)
+        else fetch_vehicle_status(client, vehicle)
     )
     mileage_task = client.get_mileage_energy_detail(vehicle)
     picture_task = client.get_car_picture(vehicle)

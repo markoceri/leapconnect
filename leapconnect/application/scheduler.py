@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING
 
 from leapmotor_api.exceptions import LeapmotorApiError
 
+from leapconnect.application.status_sanitizer import fetch_vehicle_status
 from leapconnect.domain.settings.models import SchedulerSettings
 from leapconnect.domain.telemetry.models import VehicleSnapshot
 from leapconnect.domain.telemetry.transitions import TransitionDetector
@@ -302,7 +303,7 @@ class VehicleDataScheduler:
                 if self._cache:
                     status = await self._cache.get(vehicle)
                 else:
-                    status = await self._client.get_vehicle_status(vehicle)
+                    status = await fetch_vehicle_status(self._client, vehicle)
 
                 def _enum_val(v):
                     if v is None:
@@ -400,7 +401,7 @@ class VehicleDataScheduler:
                 if self._cache:
                     status = await self._cache.get(vehicle)
                 else:
-                    status = await self._client.get_vehicle_status(vehicle)
+                    status = await fetch_vehicle_status(self._client, vehicle)
                 await self._on_status_callback(vehicle, status)
             except Exception as exc:
                 _LOGGER.warning(
@@ -442,7 +443,7 @@ class VehicleDataScheduler:
                 if self._cache:
                     status = await self._cache.get(vehicle)
                 else:
-                    status = await self._client.get_vehicle_status(vehicle)
+                    status = await fetch_vehicle_status(self._client, vehicle)
 
                 events = self._detector.detect(vehicle.vin, status)
                 if not events:

@@ -38,6 +38,7 @@ from leapconnect.api.schemas import (
 )
 from leapconnect.application.maintenance import ensure_plan_generated
 from leapconnect.application.ports.repositories import AppRepository
+from leapconnect.application.status_sanitizer import fetch_vehicle_status
 from leapconnect.container import AppContainer
 from leapconnect.domain.maintenance.engine import (
     compute_alerts,
@@ -468,7 +469,7 @@ async def get_maintenance_overview(
 async def get_current_mileage(vin: str, client: ClientDep, vehicle: VehicleDep) -> dict:
     """Return the vehicle's current odometer reading (km), fetched fresh."""
 
-    status = await client.get_vehicle_status(vehicle)
+    status = await fetch_vehicle_status(client, vehicle)
     mileage = status.driving.total_mileage if (status and status.driving) else None
 
     return {"vin": vin, "mileage_km": mileage}

@@ -15,6 +15,8 @@ from typing import TYPE_CHECKING
 
 from leapmotor_api.exceptions import LeapmotorApiError
 
+from leapconnect.application.status_sanitizer import fetch_vehicle_status
+
 if TYPE_CHECKING:
     from leapmotor_api.async_client import AsyncLeapmotorApiClient
     from leapmotor_api.models import Vehicle, VehicleStatus
@@ -129,7 +131,7 @@ class VehicleStatusCache:
         """
         assert self._client is not None  # caller must ensure client is set
         try:
-            return await self._client.get_vehicle_status(vehicle)
+            return await fetch_vehicle_status(self._client, vehicle)
         except LeapmotorApiError as exc:
             msg = str(exc).lower()
             if "try again" in msg or "verification failed" in msg:
@@ -146,7 +148,7 @@ class VehicleStatusCache:
                         "Re-login failed for %s: %s", vehicle.vin, login_exc
                     )
                     raise exc from login_exc
-                return await self._client.get_vehicle_status(vehicle)
+                return await fetch_vehicle_status(self._client, vehicle)
             raise
 
     def get_cached(self, vin: str) -> VehicleStatus | None:

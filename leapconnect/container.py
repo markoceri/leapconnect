@@ -32,6 +32,7 @@ from leapconnect.application.commands import (
 )
 from leapconnect.application.notifications import NotificationDispatcher
 from leapconnect.application.scheduler import VehicleDataScheduler
+from leapconnect.application.status_sanitizer import fetch_vehicle_status
 from leapconnect.application.system_health import DiskSpaceMonitor
 from leapconnect.application.vehicle_cache import VehicleStatusCache
 from leapconnect.domain.identity.sessions import SessionStore
@@ -344,7 +345,7 @@ class AppContainer:
             if self.vehicle_cache:
                 status = await self.vehicle_cache.get(vehicle)
             else:
-                status = await self.get_client().get_vehicle_status(vehicle)
+                status = await fetch_vehicle_status(self.get_client(), vehicle)
             return await asyncio.to_thread(
                 pkg.compose, status, charge_frame=0, format="PNG"
             )
