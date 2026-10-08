@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta, tzinfo
+from datetime import UTC, date, datetime, timedelta, tzinfo
 from typing import Any
 
 from sqlalchemy import case, func, select
@@ -10,6 +10,7 @@ from sqlalchemy import case, func, select
 from leapconnect.application.ports.repositories import (
     TelemetryRepository,
 )
+from leapconnect.domain.telemetry.battery_health import FullChargeSample
 from leapconnect.domain.telemetry.models import VehicleEvent, VehicleSnapshot
 from leapconnect.infrastructure.persistence.base import SqlRepositoryBase
 from leapconnect.infrastructure.persistence.tables import (
@@ -238,6 +239,27 @@ class SqlTelemetryRepository(SqlRepositoryBase, TelemetryRepository):
                 pos += step
 
         return [rows[i] for i in sorted(keep)]
+
+    async def get_full_charge_samples(self, vin: str) -> list[FullChargeSample]:
+        """Highest energy reported at SOC 100% per (UTC) day, oldest first."""
+        day = func.date(VehicleSnapshotRow.timestamp).label("day")
+        stmt = (
+            select(day, func.max(VehicleSnapshotRow.energy_kwh).label("wh"))
+            .where(
+                VehicleSnapshotRow.vin == vin,
+                VehicleSnapshotRow.battery_soc == 100,
+                VehicleSnapshotRow.energy_kwh > 0,
+            )
+            .group_by(day)
+            .order_by(day.asc())
+        )
+        async with self._session_factory() as session:
+            rows = (await session.execute(stmt)).all()
+        # The column holds Wh despite its name (the cloud reports Wh).
+        return [
+            FullChargeSample(day=date.fromisoformat(r.day), energy_kwh=r.wh / 1000)
+            for r in rows
+        ]
 
     async def get_daily_summary(
         self,

@@ -37,7 +37,7 @@ One subpackage per **bounded context**:
 
 | Context         | Contents |
 |-----------------|----------|
-| `telemetry`     | `VehicleSnapshot`, `VehicleEvent`, `TransitionDetector` (state-change rules) |
+| `telemetry`     | `VehicleSnapshot`, `VehicleEvent`, `TransitionDetector` (state-change rules), battery SOH estimate from full-charge readings (`battery_health.py`) |
 | `trips`         | trip segmentation/merging, similarity scoring, charge-session detection (`analysis.py`) — trips are derived on the fly, there is no persistent Trip aggregate |
 | `charging`      | price tiers, time-of-use bands, session costs, TOU cost calculation (`costing.py`) |
 | `maintenance`   | plan items/records/alerts, the due/overdue engine (`engine.py`), pack normalization (`packs.py`), model resolver (`resolver.py`) |
@@ -77,6 +77,9 @@ Enforced by `tests/test_architecture.py`.
   System), delivered via `NotificationDispatcher.dispatch_system` to the
   channels that enabled it; the disk probe is `infrastructure/system.py`.
 - `maintenance.py` — plan auto-generation use case.
+- `battery_health.py` — estimated battery SOH for a vehicle (full-charge
+  samples from the repository + the per-vehicle reference capacity stored
+  in the settings table).
 
 ### `leapconnect.infrastructure` — driven adapters
 

@@ -77,6 +77,9 @@
       </div>
     </SectionCard>
 
+    <!-- Battery Health -->
+    <BatteryHealthCard v-if="props.vehicle?.vin" :vin="props.vehicle.vin" />
+
     <!-- Charge Plan -->
     <SectionCard title="Charge Plan" :icon="BatteryCharging">
       <InfoRow label="Charge Limit" :value="chargePlan.soc_setting != null ? `${chargePlan.soc_setting}%` : '—'" color="var(--text)" />
@@ -154,6 +157,7 @@ import { gearLabel, formatTime, climateMode } from '../utils/formatters'
 import SectionCard from '../components/SectionCard.vue'
 import InfoRow from '../components/InfoRow.vue'
 import LocationCard from '../components/LocationCard.vue'
+import BatteryHealthCard from '../components/BatteryHealthCard.vue'
 import {
   DoorOpen, Thermometer, Circle, Battery, BatteryCharging,
   Wifi, Info, Zap, Armchair, ShieldCheck

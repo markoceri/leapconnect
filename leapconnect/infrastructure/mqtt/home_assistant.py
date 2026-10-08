@@ -839,6 +839,20 @@ class HomeAssistantMqttService:
                 "unit": "kWh",
                 "icon": "mdi:flash",
             },
+            # Battery health (estimated from full-charge readings)
+            {
+                "key": "battery_health",
+                "name": "Battery Health (estimated)",
+                "unit": "%",
+                "icon": "mdi:battery-heart-variant",
+            },
+            {
+                "key": "battery_capacity_kwh",
+                "name": "Battery Capacity (estimated)",
+                "dc": "energy_storage",
+                "unit": "kWh",
+                "icon": "mdi:battery-high",
+            },
             {
                 "key": "current_zone",
                 "name": "Current Zone",
@@ -1279,6 +1293,18 @@ class HomeAssistantMqttService:
         for key, value in cloud_stats.items():
             if value is not None:
                 await self._publish(f"{prefix}/cloud_{key}", _str(value), retain=True)
+
+    async def publish_battery_health(
+        self, vin: str, soh_pct: float, capacity_kwh: float
+    ) -> None:
+        """Publish the estimated battery SOH and full-charge capacity."""
+        if not self._connected or not self._settings.enabled:
+            return
+        prefix = f"{self._settings.topic_prefix}/{vin}"
+        await self._publish(f"{prefix}/battery_health", str(soh_pct), retain=True)
+        await self._publish(
+            f"{prefix}/battery_capacity_kwh", str(capacity_kwh), retain=True
+        )
 
     async def _publish(
         self, topic: str, payload: str | bytes, *, retain: bool = False

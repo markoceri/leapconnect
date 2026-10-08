@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from leapconnect.api.schemas.vehicle import VehicleSchema, VehicleStatusSchema
 
@@ -75,6 +75,35 @@ class DailySummaryResponse(BaseModel):
     days: int
     count: int
     daily: list[dict]
+
+
+class BatteryCapacityPointSchema(BaseModel):
+    day: str
+    energy_kwh: float
+    capacity_kwh: float
+    soh_pct: float
+
+
+class BatteryHealthResponse(BaseModel):
+    """Estimated SOH; the fields are None until enough full charges exist."""
+
+    vin: str
+    soh_pct: float | None = None
+    capacity_kwh: float | None = None
+    reference_kwh: float | None = None
+    reference_source: str | None = None
+    #: The user-entered reference, even when there is no estimate yet.
+    user_reference_kwh: float | None = None
+    last_full_charge: str | None = None
+    samples: int = 0
+    min_samples: int
+    series: list[BatteryCapacityPointSchema] = []
+
+
+class BatteryReferenceUpdate(BaseModel):
+    """Reference capacity in kWh; null reverts to the observed one."""
+
+    reference_kwh: float | None = Field(default=None, ge=10, le=200)
 
 
 class LiveRefreshStatusResponse(BaseModel):

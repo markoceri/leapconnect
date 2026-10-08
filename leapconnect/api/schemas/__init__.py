@@ -104,6 +104,9 @@ from leapconnect.api.schemas.system import (  # noqa: F401
     UnreadCountResponse,
 )
 from leapconnect.api.schemas.telemetry import (  # noqa: F401
+    BatteryCapacityPointSchema,
+    BatteryHealthResponse,
+    BatteryReferenceUpdate,
     DailySummaryResponse,
     FullVehicleDataResponse,
     LiveRefreshStatusResponse,
@@ -140,6 +143,9 @@ __all__ = [
     "AccountSetupResponse",
     "AccountTestResponse",
     "AuthLoginResponse",
+    "BatteryCapacityPointSchema",
+    "BatteryHealthResponse",
+    "BatteryReferenceUpdate",
     "BatterySchema",
     "CalculateMissingCostsRequest",
     "CalculateMissingCostsResponse",

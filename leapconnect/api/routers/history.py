@@ -8,12 +8,21 @@ from fastapi import APIRouter
 
 from leapconnect.api.deps import repo_required
 from leapconnect.api.schemas import (
+    BatteryCapacityPointSchema,
+    BatteryHealthResponse,
+    BatteryReferenceUpdate,
     DailySummaryResponse,
     VehicleHistoryResponse,
     VehicleSnapshotSchema,
 )
+from leapconnect.application.battery_health import (
+    get_battery_health,
+    load_reference_kwh,
+    save_reference_kwh,
+)
 from leapconnect.application.ports.repositories import AppRepository
 from leapconnect.application.settings_store import load_user_timezone
+from leapconnect.domain.telemetry.battery_health import MIN_SAMPLES
 
 router = APIRouter(tags=["history"])
 
@@ -119,3 +128,52 @@ async def get_vehicle_events(
             for e in events
         ],
     }
+
+
+@router.get("/api/vehicles/{vin}/battery/health", response_model=BatteryHealthResponse)
+async def get_vehicle_battery_health(
+    vin: str, repo: HistoryRepo
+) -> BatteryHealthResponse:
+    """Estimated battery SOH from the energy reported at full charge."""
+    health = await get_battery_health(repo, vin)
+    user_reference = await load_reference_kwh(repo, vin)
+    if health is None:
+        samples = len(await repo.get_full_charge_samples(vin))
+        return BatteryHealthResponse(
+            vin=vin,
+            user_reference_kwh=user_reference,
+            samples=samples,
+            min_samples=MIN_SAMPLES,
+        )
+    return BatteryHealthResponse(
+        vin=vin,
+        soh_pct=health.soh_pct,
+        capacity_kwh=health.capacity_kwh,
+        reference_kwh=health.reference_kwh,
+        reference_source=health.reference_source,
+        user_reference_kwh=user_reference,
+        last_full_charge=health.last_full_charge.isoformat(),
+        samples=health.samples,
+        min_samples=MIN_SAMPLES,
+        series=[
+            BatteryCapacityPointSchema(
+                day=p.day.isoformat(),
+                energy_kwh=p.energy_kwh,
+                capacity_kwh=p.capacity_kwh,
+                soh_pct=p.soh_pct,
+            )
+            for p in health.series
+        ],
+    )
+
+
+@router.put(
+    "/api/vehicles/{vin}/battery/health/reference",
+    response_model=BatteryHealthResponse,
+)
+async def set_vehicle_battery_reference(
+    vin: str, body: BatteryReferenceUpdate, repo: HistoryRepo
+) -> BatteryHealthResponse:
+    """Set the reference capacity the SOH is relative to (null = observed)."""
+    await save_reference_kwh(repo, vin, body.reference_kwh)
+    return await get_vehicle_battery_health(vin, repo)

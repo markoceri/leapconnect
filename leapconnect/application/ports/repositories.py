@@ -22,6 +22,7 @@ from leapconnect.domain.notifications.models import (
     TelegramUser,
 )
 from leapconnect.domain.settings.models import SchedulerSettings
+from leapconnect.domain.telemetry.battery_health import FullChargeSample
 from leapconnect.domain.telemetry.models import (
     VehicleEvent,
     VehicleSnapshot,
@@ -64,6 +65,10 @@ class TelemetryRepository(abc.ABC):
         self, vin: str, *, days: int = 30, tz: tzinfo = UTC
     ) -> list[dict[str, Any]]:
         """Per-day aggregates, days being calendar days in ``tz``."""
+
+    @abc.abstractmethod
+    async def get_full_charge_samples(self, vin: str) -> list[FullChargeSample]:
+        """Highest energy reported at SOC 100% per (UTC) day, oldest first."""
 
 
 class SettingsRepository(abc.ABC):

@@ -25,6 +25,7 @@ from leapmotor_api.models import Vehicle, VehicleStatus
 
 from leapconnect import config
 from leapconnect.application import settings_store
+from leapconnect.application.battery_health import get_battery_health
 from leapconnect.application.commands import (
     command_allowed,
     execute_mqtt_command,
@@ -501,6 +502,16 @@ class AppContainer:
                 await self.mqtt_service.publish_cloud_stats(vehicle.vin, cloud_stats)
         except Exception as exc:
             _LOGGER.debug("Cloud stats MQTT publish skipped: %s", exc)
+
+        if self.repo:
+            try:
+                health = await get_battery_health(self.repo, vehicle.vin)
+                if health:
+                    await self.mqtt_service.publish_battery_health(
+                        vehicle.vin, health.soh_pct, health.capacity_kwh
+                    )
+            except Exception as exc:
+                _LOGGER.debug("Battery health MQTT publish skipped: %s", exc)
 
     # -- lifecycle --------------------------------------------------------------------
 
