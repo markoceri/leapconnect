@@ -118,7 +118,8 @@
       </div>
       <p v-if="mergeMode" class="merge-hint">
         Click the <strong>first</strong> and the <strong>last</strong> session to merge: every session in between is
-        included. Sessions in progress can't be merged.
+        included. To merge across months, pick one session, change month and pick the other. Sessions in progress
+        can't be merged.
       </p>
       <div class="session-list">
         <div class="session-head">
@@ -174,18 +175,26 @@
         </div>
         <div v-if="!filteredSessions.length" class="empty-row">No charging sessions in this period</div>
       </div>
-      <div v-if="mergeMode && mergeRange.length" class="merge-bar">
-        <span>
-          <strong>{{ mergeRange.length }}</strong> session{{ mergeRange.length === 1 ? '' : 's' }}
-          <template v-if="mergeIncludedCount">
-            ({{ mergeIncludedCount }} included in between)
-          </template>
-          · {{ formatDate(mergeRange[mergeRange.length - 1].start_ts) }}
-          {{ formatTimeRange(mergeRange[mergeRange.length - 1].start_ts, mergeRange[0].end_ts) }}
+      <div v-if="mergeMode && mergeFirst" class="merge-bar">
+        <span v-if="!mergeLast">
+          First: <strong>{{ formatDate(mergeFirst.start_ts) }} {{ formatTimeRange(mergeFirst.start_ts, mergeFirst.end_ts) }}</strong>
+          <template v-if="!mergeFirstInView"> ({{ monthName(mergeFirst.start_ts) }})</template>
+          — now click the last session{{ mergeFirstInView ? '' : ' (here, or in another month)' }}
+        </span>
+        <span v-else-if="mergeAcrossMonths">
+          From <strong>{{ formatDate(mergeLow.start_ts) }} {{ formatTime(mergeLow.start_ts) }}</strong>
+          ({{ monthName(mergeLow.start_ts) }}) to
+          <strong>{{ formatDate(mergeHigh.start_ts) }} {{ formatTime(mergeHigh.start_ts) }}</strong>
+          ({{ monthName(mergeHigh.start_ts) }}) — the review lists every session involved
+        </span>
+        <span v-else>
+          <strong>{{ mergeRange.length }}</strong> sessions
+          <template v-if="mergeIncludedCount">({{ mergeIncludedCount }} included in between)</template>
+          · {{ formatDate(mergeLow.start_ts) }} {{ formatTimeRange(mergeLow.start_ts, mergeHigh.end_ts) }}
           · {{ mergeRangeEnergy.toFixed(1) }} kWh
         </span>
         <span class="chart-header-spacer" />
-        <button class="btn-save" :disabled="mergeRange.length < 2" @click="openMergeDialog">Review merge</button>
+        <button class="btn-save" :disabled="!mergeLast" @click="openMergeDialog">Review merge</button>
       </div>
     </div>
 
@@ -647,7 +656,7 @@ async function saveSession() {
 // Merge sessions — a range is picked in the list (first + last session, all
 // the ones in between included), reviewed in a dialog with the backend preview
 const mergeMode = ref(false)
-const mergeFirst = ref(null)  // start_ts of the clicked sessions
+const mergeFirst = ref(null)  // the clicked sessions; kept across month changes
 const mergeLast = ref(null)
 const mergeOpen = ref(false)
 const mergePreview = ref(null)
@@ -670,31 +679,60 @@ function toggleMergeMode() {
 function pickMergeRow(s) {
   if (!s.end_ts) return  // in progress
   if (!mergeFirst.value || mergeLast.value) {
-    mergeFirst.value = s.start_ts
+    mergeFirst.value = s
     mergeLast.value = null
-  } else if (s.start_ts === mergeFirst.value) {
+  } else if (s.start_ts === mergeFirst.value.start_ts) {
     mergeFirst.value = null
   } else {
-    mergeLast.value = s.start_ts
+    mergeLast.value = s
   }
 }
 
-// Sessions of the picked range (list order: newest first)
+const startMs = s => parseUTC(s.start_ts).getTime()
+// Picked endpoints in time order (they may be clicked in either order)
+const mergeLow = computed(() => {
+  const a = mergeFirst.value
+  const b = mergeLast.value
+  if (!a || !b) return a
+  return startMs(a) <= startMs(b) ? a : b
+})
+const mergeHigh = computed(() => {
+  const a = mergeFirst.value
+  const b = mergeLast.value
+  if (!a || !b) return a
+  return startMs(a) <= startMs(b) ? b : a
+})
+
+function inView(sel) {
+  return !!sel && filteredSessions.value.some(s => s.start_ts === sel.start_ts)
+}
+const mergeFirstInView = computed(() => inView(mergeFirst.value))
+const mergeAcrossMonths = computed(() => !!mergeLast.value && (!inView(mergeFirst.value) || !inView(mergeLast.value)))
+
+// Sessions of this month inside the picked range (by time, so an endpoint
+// picked in another month still includes the sessions between it and here)
 const mergeRange = computed(() => {
-  const list = filteredSessions.value
-  const a = list.findIndex(s => s.start_ts === mergeFirst.value)
-  if (a < 0) return []
-  const b = mergeLast.value ? list.findIndex(s => s.start_ts === mergeLast.value) : a
-  if (b < 0) return [list[a]]
-  return list.slice(Math.min(a, b), Math.max(a, b) + 1)
+  if (!mergeLow.value) return []
+  const lo = startMs(mergeLow.value)
+  const hi = startMs(mergeHigh.value)
+  return filteredSessions.value.filter(s => startMs(s) >= lo && startMs(s) <= hi)
 })
 const mergeIncludedCount = computed(() => mergeRange.value.filter(s => mergeRowState(s) === 'included').length)
 const mergeRangeEnergy = computed(() => mergeRange.value.reduce((sum, s) => sum + (s.energy_kwh || 0), 0))
 
 function mergeRowState(s) {
-  if (!mergeMode.value) return null
-  if (s.start_ts === mergeFirst.value || s.start_ts === mergeLast.value) return 'endpoint'
+  if (!mergeMode.value || !mergeFirst.value) return null
+  if (s.start_ts === mergeFirst.value.start_ts || s.start_ts === mergeLast.value?.start_ts) return 'endpoint'
+  if (!mergeLast.value) return null
   return mergeRange.value.includes(s) ? 'included' : null
+}
+
+function monthName(ts) {
+  return parseUTC(ts).toLocaleString('en-GB', { month: 'long' })
+}
+
+function mergeStarts() {
+  return [mergeFirst.value.start_ts, mergeLast.value.start_ts]
 }
 
 async function loadMergePreview() {
@@ -703,7 +741,7 @@ async function loadMergePreview() {
   mergeError.value = ''
   try {
     const preview = await api('POST', `/api/vehicles/${props.vin}/charging-costs/merge/preview`, {
-      start_ts: [mergeFirst.value, mergeLast.value],
+      start_ts: mergeStarts(),
       max_gap_minutes: mergeMaxGap.value,
       tier_id: mergeTier.value || undefined,
     })
@@ -745,7 +783,7 @@ async function runMerge() {
   mergeError.value = ''
   try {
     await api('POST', `/api/vehicles/${props.vin}/charging-costs/merge`, {
-      start_ts: [mergeFirst.value, mergeLast.value],
+      start_ts: mergeStarts(),
       max_gap_minutes: mergeMaxGap.value,
       tier_id: mergeTier.value || undefined,
     })
@@ -902,7 +940,6 @@ async function loadData() {
     sessionCosts.value = costs || []
     hasSolarPanels.value = prefs.has_solar_panels ?? false
     monthSessions.value = monthData?.sessions || []
-    resetMerge()
     monthTimeZone.value = monthData?.timezone || 'UTC'
   } catch { /* ignore */ }
   loading.value = false
