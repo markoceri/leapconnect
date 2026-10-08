@@ -14,6 +14,7 @@ from leapconnect.domain.trips.analysis import (
     calculate_local_regen_energy_kwh,
     detect_local_charge_sessions,
     flatten_trip_rows,
+    has_valid_position,
     trip_compare_metrics,
     trip_distance_km,
     trip_similarity_breakdown,
@@ -126,11 +127,7 @@ async def get_trip_gps(vin: str, gpskey: str, repo: HistoryRepo, vehicle: Vehicl
             "speed": s.drive_speed,
         }
         for s in snapshots
-        if (
-            s.vehicle_latitude is not None
-            and s.vehicle_longitude is not None
-            and start_dt <= s.timestamp <= end_dt
-        )
+        if has_valid_position(s) and start_dt <= s.timestamp <= end_dt
     ]
     return points
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 
 from leapconnect.application.ports.repositories import (
     TelemetryRepository,
@@ -243,6 +243,12 @@ class SqlTelemetryRepository(SqlRepositoryBase, TelemetryRepository):
             "date"
         )
 
+        # Partial status payloads report the odometer as 0: ignore them so a
+        # glitch doesn't turn the whole odometer into "km driven".
+        valid_mileage = case(
+            (VehicleSnapshotRow.total_mileage > 0, VehicleSnapshotRow.total_mileage)
+        )
+
         stmt = (
             select(
                 date_label,
@@ -251,8 +257,8 @@ class SqlTelemetryRepository(SqlRepositoryBase, TelemetryRepository):
                 func.round(func.avg(VehicleSnapshotRow.battery_soc)).label("avg_soc"),
                 func.min(VehicleSnapshotRow.expected_mileage).label("min_range"),
                 func.max(VehicleSnapshotRow.expected_mileage).label("max_range"),
-                func.min(VehicleSnapshotRow.total_mileage).label("min_mileage"),
-                func.max(VehicleSnapshotRow.total_mileage).label("max_mileage"),
+                func.min(valid_mileage).label("min_mileage"),
+                func.max(valid_mileage).label("max_mileage"),
                 func.round(func.avg(VehicleSnapshotRow.outdoor_temp)).label("avg_temp"),
                 func.sum(
                     func.iif(VehicleSnapshotRow.is_charging == True, 1, 0)  # noqa: E712

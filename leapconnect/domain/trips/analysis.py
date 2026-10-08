@@ -38,6 +38,25 @@ def _segment_start(seg: list[VehicleSnapshot]) -> VehicleSnapshot:
     return seg[0]
 
 
+# The vehicle occasionally reports partial status payloads where odometer,
+# SOC, energy and GPS come back as 0/None.  Such readings must never be used
+# as a trip boundary, otherwise ``end - start`` becomes the whole odometer.
+def _positive(value: float | None) -> float | None:
+    return value if value is not None and value > 0 else None
+
+
+def has_valid_position(snapshot: VehicleSnapshot) -> bool:
+    lat, lng = snapshot.vehicle_latitude, snapshot.vehicle_longitude
+    return lat is not None and lng is not None and (lat, lng) != (0, 0)
+
+
+def _first_valid(segment: list[VehicleSnapshot], getter, *, reverse: bool = False):
+    for s in reversed(segment) if reverse else segment:
+        if (value := getter(s)) is not None:
+            return value
+    return None
+
+
 def build_trip_row(segment: list[VehicleSnapshot]) -> dict | None:
     """Turn a *merged* segment into a trip row for the response payload."""
     if len(segment) < 2:
@@ -49,8 +68,11 @@ def build_trip_row(segment: list[VehicleSnapshot]) -> dict | None:
     if duration_h <= 0:
         return None
 
-    start_km = start.drive_total_mileage
-    end_km = end.drive_total_mileage
+    def mileage(s: VehicleSnapshot) -> float | None:
+        return _positive(s.drive_total_mileage)
+
+    start_km = _first_valid(segment, mileage)
+    end_km = _first_valid(segment, mileage, reverse=True)
     travel_km = 0.0
     if start_km is not None and end_km is not None:
         travel_km = max(0.0, float(end_km) - float(start_km))
@@ -58,11 +80,25 @@ def build_trip_row(segment: list[VehicleSnapshot]) -> dict | None:
     if travel_km < MIN_TRIP_KM:
         return None
 
-    start_wh = start.battery_dump_energy
-    end_wh = end.battery_dump_energy
+    def energy(s: VehicleSnapshot) -> float | None:
+        return _positive(s.battery_dump_energy)
+
+    start_wh = _first_valid(segment, energy)
+    end_wh = _first_valid(segment, energy, reverse=True)
     energy_wh = 0.0
     if start_wh is not None and end_wh is not None:
         energy_wh = abs(float(end_wh) - float(start_wh))
+
+    def soc(s: VehicleSnapshot) -> int | None:
+        return _positive(s.battery_soc)
+
+    def position(s: VehicleSnapshot) -> tuple[float, float] | None:
+        if has_valid_position(s):
+            return s.vehicle_latitude, s.vehicle_longitude
+        return None
+
+    start_lat, start_lng = _first_valid(segment, position) or (None, None)
+    end_lat, end_lng = _first_valid(segment, position, reverse=True) or (None, None)
 
     return {
         "beginTime": start.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
@@ -72,13 +108,13 @@ def build_trip_row(segment: list[VehicleSnapshot]) -> dict | None:
         "energyRecovered": int(round(segment_regen_energy_wh(segment))),
         "maxSpeed": max((s.drive_speed or 0) for s in segment),
         "avgSpeed": round(travel_km / duration_h, 1) if duration_h > 0 else 0,
-        "startSoc": start.battery_soc,
-        "endSoc": end.battery_soc,
+        "startSoc": _first_valid(segment, soc),
+        "endSoc": _first_valid(segment, soc, reverse=True),
         "outdoorTemp": start.climate_outdoor_temp,
-        "startLat": start.vehicle_latitude,
-        "startLng": start.vehicle_longitude,
-        "endLat": end.vehicle_latitude,
-        "endLng": end.vehicle_longitude,
+        "startLat": start_lat,
+        "startLng": start_lng,
+        "endLat": end_lat,
+        "endLng": end_lng,
         "gpskey": (
             f"{int(start.timestamp.timestamp())}_{int(end.timestamp.timestamp())}"
         ),
@@ -486,6 +522,7 @@ __all__ = [
     "calculate_local_regen_energy_kwh",
     "detect_local_charge_sessions",
     "flatten_trip_rows",
+    "has_valid_position",
     "haversine_km",
     "is_snapshot_moving",
     "merge_segments",
