@@ -16,10 +16,11 @@ for the previous month, finding the sessions server-side.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, tzinfo
+from datetime import datetime, timedelta, tzinfo
 from typing import TYPE_CHECKING
 
 from leapconnect.application.settings_store import (
+    calculate_session_cost,
     load_user_timezone,
     recalculate_session,
 )
@@ -30,12 +31,21 @@ from leapconnect.domain.charging.location import (
 from leapconnect.domain.charging.models import ChargingSessionCost
 from leapconnect.domain.charging.sessions import (
     HISTORY_MARGIN,
+    MERGE_MAX_GAP,
+    MERGE_NOT_IN_HISTORY,
+    MERGE_ONGOING,
+    MERGE_TIER_CONFLICT,
+    MERGE_TOO_FEW,
     SAME_SESSION_TOLERANCE,
     ChargeSessionRow,
+    DetectedChargeSession,
+    MergeGap,
     detect_charge_sessions,
-    merge_sessions,
+    merge_gaps,
+    merge_violation,
     month_bounds,
     naive_utc,
+    pair_sessions,
 )
 
 if TYPE_CHECKING:
@@ -188,7 +198,7 @@ async def list_sessions(
         to_date=(end + HISTORY_MARGIN).date().isoformat(),
         max_points=None,
     )
-    return merge_sessions(
+    return pair_sessions(
         detect_charge_sessions(history),
         await repo.get_session_costs(vin),
         start,
@@ -242,3 +252,152 @@ async def calculate_month_missing_costs(
     if not sessions:
         return MissingCostsResult()
     return await calculate_missing_costs(repo, vin, sessions, close_orphans=True)
+
+
+# -- merging ----------------------------------------------------------------
+
+
+class MergeError(Exception):
+    """The selected sessions can't be merged; ``reason`` is a MERGE_* code."""
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(reason)
+        self.reason = reason
+
+
+@dataclass
+class MergePlan:
+    """What merging a selection would do: the dialog's preview, and the
+    input of the merge itself."""
+
+    rows: list[ChargeSessionRow]  # oldest first, the in-between ones included
+    runs: list[DetectedChargeSession] = field(default_factory=list)
+    places: list[str | None] = field(default_factory=list)
+    gaps: list[MergeGap] = field(default_factory=list)
+    tiers: list[str] = field(default_factory=list)  # tiers of the sessions
+    tier_id: str | None = None  # tier of the result; None when to be chosen
+    energy_kwh: float | None = None
+    cost: float | None = None  # estimated, run by run
+    reason: str | None = None  # why it can't be merged (MERGE_*)
+
+    @property
+    def zone_name(self) -> str | None:
+        return next((p for p in self.places if p), None)
+
+
+async def plan_merge(
+    repo: AppRepository,
+    vin: str,
+    starts: list[datetime],
+    *,
+    tier_id: str | None = None,
+    max_gap: timedelta = MERGE_MAX_GAP,
+) -> MergePlan:
+    """Check a merge of the sessions starting at ``starts`` without saving.
+
+    Every session between the first and the last selected one is included.
+    The rules are in ``merge_violation``; ``reason`` is set when they fail.
+    """
+    starts = sorted(naive_utc(s) for s in starts)
+    if len(starts) < 2:
+        return MergePlan(rows=[], reason=MERGE_TOO_FEW)
+    rows = list(
+        reversed(
+            await list_sessions(
+                repo, vin, starts[0], starts[-1] + timedelta(microseconds=1)
+            )
+        )
+    )
+    plan = MergePlan(rows=rows)
+    if len(rows) < 2:
+        plan.reason = MERGE_TOO_FEW
+        return plan
+    if any(r.record is not None and r.record.end_ts is None for r in rows):
+        plan.reason = MERGE_ONGOING
+        return plan
+    if any(not r.parts for r in rows):
+        plan.reason = MERGE_NOT_IN_HISTORY
+        return plan
+
+    zones = await repo.get_zones(vin)
+    tiers: list[str] = []
+    for row in rows:
+        for run in row.parts:
+            location = resolve_charge_location(
+                zones, run.latitude, run.longitude, is_dc=run.is_dc
+            )
+            if row.record is not None and row.record.zone_name:
+                place = row.record.zone_name
+            elif run.latitude and run.longitude:
+                place = location.zone_name or ""
+            else:
+                place = None  # no GPS fix: place unknown
+            plan.runs.append(run)
+            plan.places.append(place)
+            if row.record is None and location.tier_id:
+                tiers.append(location.tier_id)
+        if row.record is not None:
+            tiers.append(row.record.tier_id)
+    plan.tiers = list(dict.fromkeys(tiers))
+    energies = [r.energy_kwh for r in plan.runs if r.energy_kwh is not None]
+    plan.energy_kwh = round(sum(energies), 2) if energies else None
+    plan.reason = merge_violation(plan.runs, plan.places, max_gap)
+    if plan.reason == MERGE_ONGOING:
+        return plan
+    plan.gaps = merge_gaps(plan.runs, plan.places, max_gap)
+
+    if tier_id is None and len(plan.tiers) > 1:
+        plan.reason = plan.reason or MERGE_TIER_CONFLICT
+        return plan
+    plan.tier_id = tier_id or next(iter(plan.tiers), "home_grid")
+    plan.cost = 0.0
+    for run in plan.runs:
+        if run.energy_kwh:
+            plan.cost += await calculate_session_cost(
+                repo, plan.tier_id, run.energy_kwh, run.start_ts, run.end_ts
+            )
+    plan.cost = round(plan.cost, 4)
+    return plan
+
+
+async def merge_charge_sessions(
+    repo: AppRepository,
+    vin: str,
+    starts: list[datetime],
+    *,
+    tier_id: str | None = None,
+    max_gap: timedelta = MERGE_MAX_GAP,
+) -> ChargingSessionCost:
+    """Merge the sessions starting at ``starts`` into one record.
+
+    Meant for a charge interrupted and resumed in place (plug out/in, car
+    unlocked mid-charge); checked by ``plan_merge``. The earliest stored
+    record is kept (or one is created), its window stretched over all the
+    runs, and the other records are deleted; energy and cost are then
+    re-measured run by run. Deleting the merged record splits it back into
+    its runs.
+    """
+    plan = await plan_merge(repo, vin, starts, tier_id=tier_id, max_gap=max_gap)
+    if plan.reason:
+        raise MergeError(plan.reason)
+    rows, runs = plan.rows, plan.runs
+    records = [r.record for r in rows if r.record is not None]
+    keeper = records[0] if records else ChargingSessionCost(vin=vin)
+    keeper.start_ts = rows[0].start_ts
+    keeper.end_ts = max(
+        [naive_utc(runs[-1].end_ts)]
+        + [naive_utc(r.end_ts) for r in records if r.end_ts]
+    )
+    keeper.tier_id = plan.tier_id
+    keeper.zone_name = plan.zone_name or keeper.zone_name
+    peaks = [r.peak_power_kw for r in runs if r.peak_power_kw is not None]
+    keeper.peak_power_kw = max(peaks) if peaks else keeper.peak_power_kw
+    notes = [r.note for r in records if r.note]
+    keeper.note = " · ".join(dict.fromkeys(notes)) or None
+    keeper.energy_kwh = None
+    keeper.cost = None
+    keeper = await repo.upsert_session_cost(keeper)
+    for other in records[1:]:
+        await repo.delete_session_cost(other.id)
+    await recalculate_session(repo, keeper)
+    return await repo.upsert_session_cost(keeper)

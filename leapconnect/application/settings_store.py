@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
 
 from leapconnect.domain.charging.costing import calculate_tou_cost, flat_cost
+from leapconnect.domain.charging.sessions import detect_charge_sessions
 from leapconnect.domain.settings.models import (
     AbrpSettings,
     MqttSettings,
@@ -109,34 +110,75 @@ async def calculate_session_cost(
     return flat_cost(energy_kwh, tier.price_kwh)
 
 
+async def _session_window(repo: AppRepository, sc: ChargingSessionCost) -> list:
+    """Snapshots inside a session's window (open end = until now)."""
+    end_ts = sc.end_ts
+    history = await repo.get_history(
+        sc.vin,
+        from_date=sc.start_ts.date().isoformat(),
+        to_date=(end_ts or datetime.now()).date().isoformat(),
+        max_points=None,
+    )
+    return [
+        s
+        for s in history
+        if s.timestamp >= sc.start_ts and (end_ts is None or s.timestamp <= end_ts)
+    ]
+
+
+def _measured_runs(snaps: list) -> list:
+    """The charging runs of a window that added measurable energy."""
+    return [r for r in detect_charge_sessions(snaps) if r.energy_kwh]
+
+
 async def recompute_session_energy(
     repo: AppRepository, sc: ChargingSessionCost
 ) -> float | None:
     """Measure a session's total energy from the stored snapshots.
 
-    Returns the battery dump-energy delta (kWh) between the first and last
-    snapshot inside the session window, or ``None`` when there aren't at least
-    two snapshots with an energy reading to measure it.
+    For a merged session (several charging runs in its window) this is the
+    sum of the runs, so whatever happened between them (e.g. a drive) is not
+    counted. Otherwise it is the battery dump-energy delta between the first
+    and last snapshot inside the window. ``None`` when it can't be measured.
     """
     if not sc.start_ts:
         return None
-    end_ts = sc.end_ts
-    from_date = sc.start_ts.date().isoformat()
-    to_date = (end_ts or datetime.now()).date().isoformat()
-    history = await repo.get_history(
-        sc.vin, from_date=from_date, to_date=to_date, max_points=None
-    )
-    snaps = [
-        s
-        for s in history
-        if s.battery_dump_energy is not None
-        and s.timestamp >= sc.start_ts
-        and (end_ts is None or s.timestamp <= end_ts)
-    ]
+    window = await _session_window(repo, sc)
+    runs = _measured_runs(window)
+    if len(runs) > 1:
+        return round(sum(r.energy_kwh for r in runs), 2)
+    snaps = [s for s in window if s.battery_dump_energy is not None]
     if len(snaps) < 2:
         return None
     energy = abs(snaps[-1].battery_dump_energy - snaps[0].battery_dump_energy) / 1000
     return round(energy, 2) if energy > 0 else None
+
+
+async def price_session(repo: AppRepository, sc: ChargingSessionCost) -> float | None:
+    """Cost of a session's ``energy_kwh`` with the tier's current price.
+
+    A merged session is priced run by run — its energy split in proportion to
+    each run's measured energy — so time-of-use bands only see the time it was
+    actually charging, not the pauses in between.
+    """
+    if sc.energy_kwh is None:
+        return None
+    runs = _measured_runs(await _session_window(repo, sc)) if sc.start_ts else []
+    if len(runs) < 2:
+        return await calculate_session_cost(
+            repo, sc.tier_id, sc.energy_kwh, sc.start_ts, sc.end_ts
+        )
+    measured = sum(r.energy_kwh for r in runs)
+    cost = 0.0
+    for r in runs:
+        cost += await calculate_session_cost(
+            repo,
+            sc.tier_id,
+            sc.energy_kwh * r.energy_kwh / measured,
+            r.start_ts,
+            r.end_ts or sc.end_ts,
+        )
+    return round(cost, 4)
 
 
 async def recalculate_session(
@@ -154,9 +196,7 @@ async def recalculate_session(
     if energy is not None:
         sc.energy_kwh = energy
     if sc.energy_kwh is not None:
-        sc.cost = await calculate_session_cost(
-            repo, sc.tier_id, sc.energy_kwh, sc.start_ts, sc.end_ts
-        )
+        sc.cost = await price_session(repo, sc)
     return sc
 
 

@@ -152,6 +152,8 @@ class ChargingSessionRowSchema(BaseModel):
     detected_end_ts: str | None = None
     start_soc: int | None = None
     end_soc: int | None = None
+    # Charging runs in the session: more than one for a merged session
+    parts: int = 0
 
 
 class ChargingSessionsResponse(BaseModel):
@@ -178,6 +180,54 @@ class ChargingSessionCostUpdate(BaseModel):
     peak_power_kw: float | None = None
     note: str | None = None
     zone_name: str | None = None
+
+
+class MergeChargingSessionsRequest(BaseModel):
+    # Start of each selected session (those in between are included too)
+    start_ts: list[str]
+    # Tier of the merged session; required when the sessions' tiers differ
+    tier_id: str | None = None
+    # Longest pause allowed between two charging runs
+    max_gap_minutes: int = 120
+
+
+class MergePreviewSession(BaseModel):
+    id: int | None = None
+    start_ts: str
+    end_ts: str | None = None
+    energy_kwh: float | None = None
+    parts: int = 0
+    selected: bool  # False = included because it lies between the selected ones
+
+
+class MergePreviewRun(BaseModel):
+    start_ts: str
+    end_ts: str | None = None
+    energy_kwh: float | None = None
+    zone_name: str | None = None  # "" = outside every zone, None = unknown
+
+
+class MergePreviewGap(BaseModel):
+    start_ts: str
+    end_ts: str
+    minutes: int
+    within_max_gap: bool
+    same_odometer: bool | None = None  # None = can't be checked
+    same_place: bool | None = None
+
+
+class MergePreviewResponse(BaseModel):
+    sessions: list[MergePreviewSession]  # oldest first
+    runs: list[MergePreviewRun]
+    gaps: list[MergePreviewGap]
+    tiers: list[str]
+    tier_id: str | None = None
+    zone_name: str | None = None
+    energy_kwh: float | None = None
+    cost: float | None = None
+    max_gap_minutes: int
+    reason: str | None = None
+    message: str | None = None  # human-readable reason
 
 
 class MissingCostSessionItem(BaseModel):

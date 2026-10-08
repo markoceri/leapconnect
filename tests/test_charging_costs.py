@@ -24,8 +24,8 @@ from leapconnect.domain.charging.models import (
 )
 from leapconnect.domain.charging.sessions import (
     detect_charge_sessions,
-    merge_sessions,
     month_bounds,
+    pair_sessions,
 )
 from leapconnect.domain.telemetry.models import VehicleSnapshot
 from leapconnect.domain.zones import Zone
@@ -93,6 +93,14 @@ class _Repo:
             sc.id = self._next_id
             self.costs.append(sc)
         return sc
+
+    async def delete_session_cost(self, cost_id):
+        before = len(self.costs)
+        self.costs = [c for c in self.costs if c.id != cost_id]
+        return len(self.costs) < before
+
+    async def get_time_bands(self, tier_id=None):
+        return list(getattr(self, "bands", []))
 
     async def get_price_tiers(self):
         return [
@@ -446,7 +454,7 @@ def test_merge_keeps_unmatched_records_and_fills_detected_values():
         id=2, vin="V1", start_ts=T0 + timedelta(days=3), tier_id="public_ac"
     )
     start, end = month_bounds(2026, 9)
-    rows = merge_sessions(detected, [matched, manual], start, end)
+    rows = pair_sessions(detected, [matched, manual], start, end)
     assert [r.record.id for r in rows] == [2, 1]
     assert (rows[1].energy_kwh, rows[1].detected_end_ts) == (
         10.0,

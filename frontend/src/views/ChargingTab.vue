@@ -106,7 +106,20 @@
         >
           <Calculator :size="14" /> Calculate missing costs ({{ missingCosts.total }})
         </button>
+        <button
+          v-if="filteredSessions.length > 1"
+          class="btn-bulk"
+          :class="{ active: mergeMode }"
+          @click="toggleMergeMode"
+          title="Join a charge that was interrupted and resumed in place (plug out/in, car unlocked…)"
+        >
+          <Combine :size="14" /> {{ mergeMode ? 'Cancel merge' : 'Merge sessions' }}
+        </button>
       </div>
+      <p v-if="mergeMode" class="merge-hint">
+        Click the <strong>first</strong> and the <strong>last</strong> session to merge: every session in between is
+        included. Sessions in progress can't be merged.
+      </p>
       <div class="session-list">
         <div class="session-head">
           <span>Date</span>
@@ -118,8 +131,26 @@
           <span>Cost</span>
           <span class="head-edit" />
         </div>
-        <div v-for="s in filteredSessions" :key="s.id || s.start_ts" class="session-row">
-          <span class="cell cell-date" data-label="Date">{{ formatDate(s.start_ts) }}</span>
+        <div
+          v-for="s in filteredSessions"
+          :key="s.id || s.start_ts"
+          class="session-row"
+          :class="mergeMode && {
+            'merge-pickable': !!s.end_ts,
+            'merge-disabled': !s.end_ts,
+            'merge-endpoint': mergeRowState(s) === 'endpoint',
+            'merge-included': mergeRowState(s) === 'included',
+          }"
+          @click="mergeMode && pickMergeRow(s)"
+        >
+          <span class="cell cell-date" data-label="Date">
+            <span class="date-line">
+              {{ formatDate(s.start_ts) }}
+              <span v-if="s.parts > 1" class="merged-badge" :title="`Merged session: ${s.parts} charging runs`">
+                <Layers :size="11" />×{{ s.parts }}
+              </span>
+            </span>
+          </span>
           <span class="cell cell-time" data-label="Time">{{ formatTimeRange(s.start_ts, s.end_ts) }}</span>
           <span class="cell cell-energy" data-label="Energy">{{ s.energy_kwh != null ? s.energy_kwh.toFixed(1) + ' kWh' : '—' }}</span>
           <span class="cell cell-peak" data-label="Peak">{{ s.peak_power_kw != null ? s.peak_power_kw.toFixed(1) + ' kW' : '—' }}</span>
@@ -133,12 +164,28 @@
             <span v-else class="cost-none">—</span>
           </span>
           <span class="cell cell-edit">
-            <button class="edit-btn" @click="editSession(s)" title="Edit session cost">
+            <span v-if="mergeMode && mergeRowState(s)" class="merge-chip" :class="'merge-chip-' + mergeRowState(s)">
+              {{ mergeRowState(s) === 'endpoint' ? 'Selected' : 'Included' }}
+            </span>
+            <button v-else-if="!mergeMode" class="edit-btn" @click="editSession(s)" title="Edit session cost">
               <Pencil :size="14" />
             </button>
           </span>
         </div>
         <div v-if="!filteredSessions.length" class="empty-row">No charging sessions in this period</div>
+      </div>
+      <div v-if="mergeMode && mergeRange.length" class="merge-bar">
+        <span>
+          <strong>{{ mergeRange.length }}</strong> session{{ mergeRange.length === 1 ? '' : 's' }}
+          <template v-if="mergeIncludedCount">
+            ({{ mergeIncludedCount }} included in between)
+          </template>
+          · {{ formatDate(mergeRange[mergeRange.length - 1].start_ts) }}
+          {{ formatTimeRange(mergeRange[mergeRange.length - 1].start_ts, mergeRange[0].end_ts) }}
+          · {{ mergeRangeEnergy.toFixed(1) }} kWh
+        </span>
+        <span class="chart-header-spacer" />
+        <button class="btn-save" :disabled="mergeRange.length < 2" @click="openMergeDialog">Review merge</button>
       </div>
     </div>
 
@@ -162,6 +209,10 @@
         <div class="modal-dialog">
           <h3>Edit session cost</h3>
           <p class="edit-date">{{ formatDate(editingSession.start_ts) }} {{ formatTimeRange(editingSession.start_ts, editingSession.end_ts) }}</p>
+          <p v-if="editingSession.parts > 1" class="merged-note">
+            <Layers :size="13" /> Merged from {{ editingSession.parts }} charging runs. Delete it to split it back into
+            separate sessions.
+          </p>
           <div class="form-group">
             <label>Tier</label>
             <select v-model="editForm.tier_id">
@@ -213,6 +264,94 @@
             <button class="btn-save" :disabled="saving" @click="saveSession">{{ saving ? 'Saving…' : 'Save' }}</button>
           </div>
           <div v-if="editError" class="field-error">{{ editError }}</div>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- Merge sessions dialog -->
+    <Teleport to="body">
+      <div v-if="mergeOpen" class="modal-backdrop" @click.self="closeMergeDialog">
+        <div class="modal-dialog modal-wide">
+          <h3>Merge charging sessions</h3>
+          <p class="edit-date">
+            For a charge interrupted and resumed in place. The sessions become one, priced only for the time it was
+            charging.
+          </p>
+
+          <div v-if="mergePreview" class="merge-sessions">
+            <div v-for="ps in mergePreview.sessions" :key="ps.start_ts" class="merge-session" :class="{ 'is-included': !ps.selected }">
+              <span class="merge-chip" :class="ps.selected ? 'merge-chip-endpoint' : 'merge-chip-included'">
+                {{ ps.selected ? 'Selected' : 'Included' }}
+              </span>
+              <span class="merge-session-time">{{ formatDate(ps.start_ts) }} {{ formatTimeRange(ps.start_ts, ps.end_ts) }}</span>
+              <span v-if="ps.parts > 1" class="merged-badge"><Layers :size="11" />×{{ ps.parts }}</span>
+              <span class="chart-header-spacer" />
+              <span class="merge-session-energy">{{ ps.energy_kwh != null ? ps.energy_kwh.toFixed(1) + ' kWh' : '—' }}</span>
+            </div>
+            <p v-if="mergePreview.sessions.some(ps => !ps.selected)" class="form-hint">
+              <strong>Included</strong> sessions weren't clicked but lie between the selected ones, so they are part of
+              the merge too.
+            </p>
+          </div>
+
+          <div v-if="mergePreview && mergePreview.runs.length" class="merge-timeline" aria-hidden="true">
+            <div
+              v-for="(r, i) in mergePreview.runs"
+              :key="'r' + i"
+              class="merge-run"
+              :style="timelineStyle(r.start_ts, r.end_ts)"
+              :title="`${formatTimeRange(r.start_ts, r.end_ts)} · ${r.energy_kwh != null ? r.energy_kwh.toFixed(1) + ' kWh' : '—'}`"
+            />
+            <div
+              v-for="(g, i) in mergePreview.gaps"
+              :key="'g' + i"
+              class="merge-gap-bar"
+              :class="{ bad: !gapOk(g) }"
+              :style="timelineStyle(g.start_ts, g.end_ts)"
+            />
+          </div>
+
+          <div v-if="mergePreview && mergePreview.gaps.length" class="merge-gaps">
+            <div v-for="(g, i) in mergePreview.gaps" :key="i" class="merge-gap" :class="{ bad: !gapOk(g) }">
+              <span class="merge-gap-title">Pause {{ formatTimeRange(g.start_ts, g.end_ts) }} · {{ formatMinutes(g.minutes) }}</span>
+              <span class="merge-checks">
+                <span :class="checkClass(g.within_max_gap)">{{ checkMark(g.within_max_gap) }} ≤ {{ formatMinutes(mergePreview.max_gap_minutes) }}</span>
+                <span :class="checkClass(g.same_odometer)">{{ checkMark(g.same_odometer) }} Same odometer</span>
+                <span :class="checkClass(g.same_place)">{{ checkMark(g.same_place) }} Same place</span>
+              </span>
+            </div>
+          </div>
+
+          <div class="merge-form">
+            <div class="form-group">
+              <label>Max pause between sessions (min)</label>
+              <input v-model.number="mergeMaxGap" type="number" min="1" max="720" step="5" />
+            </div>
+            <div class="form-group">
+              <label>Tier</label>
+              <select v-model="mergeTier">
+                <option v-for="t in availableTiers" :key="t.id" :value="t.id">{{ t.label }}</option>
+              </select>
+            </div>
+          </div>
+
+          <div v-if="mergePreview && !mergePreview.reason" class="merge-result">
+            <span>Result: <strong>{{ mergePreview.energy_kwh != null ? mergePreview.energy_kwh.toFixed(1) + ' kWh' : '—' }}</strong></span>
+            <span v-if="mergePreview.cost != null">≈ <strong>€{{ mergePreview.cost.toFixed(2) }}</strong></span>
+            <span v-if="mergePreview.zone_name">in {{ mergePreview.zone_name }}</span>
+          </div>
+          <div v-if="mergePreview && mergePreview.reason" class="field-error">Can't merge: {{ mergePreview.message }}</div>
+          <div v-if="mergeError" class="field-error">{{ mergeError }}</div>
+
+          <div class="modal-actions">
+            <span class="modal-actions-spacer" />
+            <button class="btn-cancel" :disabled="mergeSaving" @click="closeMergeDialog">Cancel</button>
+            <button
+              class="btn-save"
+              :disabled="mergeSaving || mergeLoading || !mergePreview || !!mergePreview.reason"
+              @click="runMerge"
+            >{{ mergeSaving ? 'Merging…' : 'Merge' }}</button>
+          </div>
         </div>
       </div>
     </Teleport>
@@ -301,7 +440,7 @@ import { ref, computed, onMounted, watch, nextTick, onUnmounted } from 'vue'
 import { Chart, registerables } from 'chart.js'
 import { api } from '../composables/useApi'
 import { parseUTC } from '../utils/maintenance'
-import { Zap, TrendingUp, PieChart, Clock, CalendarDays, ChevronLeft, ChevronRight, List, Pencil, MapPin, RotateCw, Calculator, Trash2 } from 'lucide-vue-next'
+import { Zap, TrendingUp, PieChart, Clock, CalendarDays, ChevronLeft, ChevronRight, List, Pencil, MapPin, RotateCw, Calculator, Trash2, Combine, Layers } from 'lucide-vue-next'
 
 Chart.register(...registerables)
 
@@ -505,11 +644,154 @@ async function saveSession() {
   }
 }
 
+// Merge sessions — a range is picked in the list (first + last session, all
+// the ones in between included), reviewed in a dialog with the backend preview
+const mergeMode = ref(false)
+const mergeFirst = ref(null)  // start_ts of the clicked sessions
+const mergeLast = ref(null)
+const mergeOpen = ref(false)
+const mergePreview = ref(null)
+const mergeLoading = ref(false)
+const mergeSaving = ref(false)
+const mergeError = ref('')
+const mergeMaxGap = ref(120)
+const mergeTier = ref(null)
+
+function resetMerge() {
+  mergeFirst.value = null
+  mergeLast.value = null
+}
+
+function toggleMergeMode() {
+  mergeMode.value = !mergeMode.value
+  resetMerge()
+}
+
+function pickMergeRow(s) {
+  if (!s.end_ts) return  // in progress
+  if (!mergeFirst.value || mergeLast.value) {
+    mergeFirst.value = s.start_ts
+    mergeLast.value = null
+  } else if (s.start_ts === mergeFirst.value) {
+    mergeFirst.value = null
+  } else {
+    mergeLast.value = s.start_ts
+  }
+}
+
+// Sessions of the picked range (list order: newest first)
+const mergeRange = computed(() => {
+  const list = filteredSessions.value
+  const a = list.findIndex(s => s.start_ts === mergeFirst.value)
+  if (a < 0) return []
+  const b = mergeLast.value ? list.findIndex(s => s.start_ts === mergeLast.value) : a
+  if (b < 0) return [list[a]]
+  return list.slice(Math.min(a, b), Math.max(a, b) + 1)
+})
+const mergeIncludedCount = computed(() => mergeRange.value.filter(s => mergeRowState(s) === 'included').length)
+const mergeRangeEnergy = computed(() => mergeRange.value.reduce((sum, s) => sum + (s.energy_kwh || 0), 0))
+
+function mergeRowState(s) {
+  if (!mergeMode.value) return null
+  if (s.start_ts === mergeFirst.value || s.start_ts === mergeLast.value) return 'endpoint'
+  return mergeRange.value.includes(s) ? 'included' : null
+}
+
+async function loadMergePreview() {
+  if (!mergeFirst.value || !mergeLast.value) return
+  mergeLoading.value = true
+  mergeError.value = ''
+  try {
+    const preview = await api('POST', `/api/vehicles/${props.vin}/charging-costs/merge/preview`, {
+      start_ts: [mergeFirst.value, mergeLast.value],
+      max_gap_minutes: mergeMaxGap.value,
+      tier_id: mergeTier.value || undefined,
+    })
+    mergePreview.value = preview
+    if (!mergeTier.value && preview.tier_id) mergeTier.value = preview.tier_id
+  } catch (e) {
+    mergeError.value = e.message || 'Preview failed'
+  } finally {
+    mergeLoading.value = false
+  }
+}
+
+function openMergeDialog() {
+  mergePreview.value = null
+  mergeTier.value = null
+  mergeError.value = ''
+  mergeOpen.value = true
+  loadMergePreview()
+}
+
+function closeMergeDialog() {
+  if (mergeSaving.value) return
+  mergeOpen.value = false
+}
+
+let mergePreviewTimer
+watch([mergeMaxGap, mergeTier], () => {
+  if (!mergeOpen.value) return
+  clearTimeout(mergePreviewTimer)
+  if (!(mergeMaxGap.value >= 1 && mergeMaxGap.value <= 720)) {
+    mergeError.value = 'Max pause must be between 1 and 720 minutes'
+    return
+  }
+  mergePreviewTimer = setTimeout(loadMergePreview, 350)
+})
+
+async function runMerge() {
+  mergeSaving.value = true
+  mergeError.value = ''
+  try {
+    await api('POST', `/api/vehicles/${props.vin}/charging-costs/merge`, {
+      start_ts: [mergeFirst.value, mergeLast.value],
+      max_gap_minutes: mergeMaxGap.value,
+      tier_id: mergeTier.value || undefined,
+    })
+    mergeOpen.value = false
+    mergeMode.value = false
+    resetMerge()
+    await loadData()
+  } catch (e) {
+    mergeError.value = e.message || 'Merge failed'
+  } finally {
+    mergeSaving.value = false
+  }
+}
+
+function gapOk(g) {
+  return g.within_max_gap && g.same_odometer !== false && g.same_place !== false
+}
+function checkMark(v) { return v === true ? '✓' : v === false ? '✗' : '?' }
+function checkClass(v) { return v === true ? 'check-ok' : v === false ? 'check-bad' : 'check-unknown' }
+function formatMinutes(min) {
+  if (min < 60) return `${min} min`
+  const h = Math.floor(min / 60)
+  const m = min % 60
+  return m ? `${h} h ${m} min` : `${h} h`
+}
+
+// Position of a span on the merge timeline (first run start → last run end)
+function timelineStyle(start, end) {
+  const runs = mergePreview.value?.runs || []
+  if (!runs.length) return {}
+  const t0 = parseUTC(runs[0].start_ts).getTime()
+  const t1 = parseUTC(runs[runs.length - 1].end_ts || runs[runs.length - 1].start_ts).getTime()
+  const span = Math.max(t1 - t0, 1)
+  const a = (parseUTC(start).getTime() - t0) / span * 100
+  const b = (parseUTC(end || start).getTime() - t0) / span * 100
+  return { left: `${a}%`, width: `${Math.max(b - a, 0.8)}%` }
+}
+
 // Delete a stored session record (e.g. a duplicate). A session that is also
 // visible in the snapshots stays listed, back without a cost.
 async function deleteSession(session) {
   if (!session.id) return
-  if (!confirm('Delete this charging session record? Its cost and notes will be lost.')) return
+  const message = session.parts > 1
+    ? `Delete this merged session? It will split back into its ${session.parts} charging runs, without costs.`
+    : 'Delete this charging session record? Its cost and notes will be lost.'
+  if (!confirm(message)) return
   saving.value = true
   editError.value = ''
   try {
@@ -620,6 +902,7 @@ async function loadData() {
     sessionCosts.value = costs || []
     hasSolarPanels.value = prefs.has_solar_panels ?? false
     monthSessions.value = monthData?.sessions || []
+    resetMerge()
     monthTimeZone.value = monthData?.timezone || 'UTC'
   } catch { /* ignore */ }
   loading.value = false
@@ -872,6 +1155,43 @@ watch(selectedMonth, loadData)
 .edit-btn:disabled { cursor: default; opacity: 0.6; }
 .spinning { animation: spin 0.8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* Merged sessions & merge mode */
+.date-line { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.merged-badge { display: inline-flex; align-items: center; gap: 2px; font-size: 10px; font-weight: 600; color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); border-radius: 4px; padding: 1px 5px; }
+.merged-note { display: flex; gap: 6px; align-items: flex-start; font-size: 12px; color: var(--muted); background: var(--btn-bg); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; margin: -6px 0 14px; line-height: 1.4; }
+.btn-bulk.active { border-color: var(--accent); color: var(--accent); }
+.merge-hint { font-size: 12px; color: var(--muted); margin: -2px 0 10px; line-height: 1.45; }
+.session-row.merge-pickable { cursor: pointer; }
+.session-row.merge-pickable:hover { background: var(--btn-bg); }
+.session-row.merge-disabled { opacity: 0.45; cursor: not-allowed; }
+.session-row.merge-endpoint, .session-row.merge-included { box-shadow: inset 3px 0 0 var(--accent); }
+.session-row.merge-endpoint { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.session-row.merge-included { background: color-mix(in srgb, var(--accent) 6%, transparent); }
+.merge-chip { font-size: 10px; font-weight: 600; border-radius: 4px; padding: 2px 6px; white-space: nowrap; }
+.merge-chip-endpoint { background: var(--accent); color: var(--card); }
+.merge-chip-included { border: 1px dashed var(--accent); color: var(--accent); }
+.merge-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 10px; padding: 10px 12px; border: 1px solid var(--accent); border-radius: 10px; font-size: 12px; color: var(--text); }
+.modal-dialog.modal-wide { max-width: 560px; max-height: 90vh; overflow-y: auto; }
+.merge-sessions { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+.merge-session { display: flex; align-items: center; gap: 8px; font-size: 12px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; }
+.merge-session.is-included { border-style: dashed; border-color: var(--accent); }
+.merge-session-time { color: var(--text); }
+.merge-session-energy { font-weight: 600; color: var(--green); }
+.merge-timeline { position: relative; height: 14px; border-radius: 7px; background: var(--btn-bg); margin: 4px 0 10px; overflow: hidden; }
+.merge-run { position: absolute; top: 0; bottom: 0; background: var(--green); border-radius: 7px; }
+.merge-gap-bar { position: absolute; top: 5px; bottom: 5px; background: var(--muted); opacity: 0.35; }
+.merge-gap-bar.bad { background: var(--red); opacity: 0.8; }
+.merge-gaps { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+.merge-gap { display: flex; flex-direction: column; gap: 4px; font-size: 12px; padding: 6px 8px; border-left: 3px solid var(--green); background: var(--btn-bg); border-radius: 0 8px 8px 0; }
+.merge-gap.bad { border-left-color: var(--red); }
+.merge-gap-title { color: var(--text); }
+.merge-checks { display: flex; gap: 10px; flex-wrap: wrap; font-size: 11px; }
+.check-ok { color: var(--green); }
+.check-bad { color: var(--red); font-weight: 600; }
+.check-unknown { color: var(--muted); }
+.merge-form { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.merge-result { display: flex; gap: 12px; flex-wrap: wrap; font-size: 13px; color: var(--text); margin-top: 4px; }
 
 /* Mobile: each session becomes a compact labelled card */
 @media (max-width: 640px) {

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 from fastapi import APIRouter, HTTPException
 
@@ -24,21 +24,36 @@ from leapconnect.api.schemas import (
     ChargingTimeBandUpdate,
     ConsumptionLastWeekResponse,
     ConsumptionWeeklyRankResponse,
+    MergeChargingSessionsRequest,
+    MergePreviewGap,
+    MergePreviewResponse,
+    MergePreviewRun,
+    MergePreviewSession,
     SkippedSessionSchema,
 )
 from leapconnect.application.charging_costs import (
+    MergeError,
     MissingCostSession,
     calculate_missing_costs,
     list_sessions,
+    merge_charge_sessions,
+    plan_merge,
 )
 from leapconnect.application.settings_store import (
     calculate_session_cost,
     load_preferences,
+    price_session,
     recalculate_session,
     resolve_timezone,
 )
 from leapconnect.domain.charging.models import ChargingSessionCost, ChargingTimeBand
-from leapconnect.domain.charging.sessions import day_range_bounds, month_bounds
+from leapconnect.domain.charging.sessions import (
+    MERGE_MAX_GAP_LIMITS,
+    MERGE_REASON_LABELS,
+    day_range_bounds,
+    month_bounds,
+    naive_utc,
+)
 
 router = APIRouter(tags=["charging"])
 
@@ -334,6 +349,7 @@ async def get_charging_sessions(
                     else None,
                     "start_soc": row.start_soc,
                     "end_soc": row.end_soc,
+                    "parts": len(row.parts),
                 }
             )
         )
@@ -379,6 +395,116 @@ async def create_charging_cost(
     )
     sc = await repo.upsert_session_cost(sc)
     return _cost_response(sc, tiers, {})
+
+
+async def _merge_params(
+    body: MergeChargingSessionsRequest, repo
+) -> tuple[list[datetime], timedelta, dict]:
+    """Validated selection, max pause and the price tiers of a merge request."""
+    tiers = {t.id: t for t in await repo.get_price_tiers()}
+    if body.tier_id is not None and body.tier_id not in tiers:
+        raise HTTPException(status_code=422, detail=f"Unknown tier: {body.tier_id}")
+    max_gap = timedelta(minutes=body.max_gap_minutes)
+    low, high = MERGE_MAX_GAP_LIMITS
+    if not low <= max_gap <= high:
+        raise HTTPException(
+            status_code=422,
+            detail=f"'max_gap_minutes' must be between {low // timedelta(minutes=1)}"
+            f" and {high // timedelta(minutes=1)}",
+        )
+    return [datetime.fromisoformat(ts) for ts in body.start_ts], max_gap, tiers
+
+
+def _iso(ts: datetime | None) -> str | None:
+    return ts.isoformat() if ts else None
+
+
+@router.post(
+    "/api/vehicles/{vin}/charging-costs/merge/preview",
+    response_model=MergePreviewResponse,
+)
+async def preview_charging_sessions_merge(
+    vin: str, body: MergeChargingSessionsRequest, repo: RepoDep
+) -> MergePreviewResponse:
+    """What merging the selected sessions would do, without saving anything.
+
+    Lists every session involved (the ones between the selected ones too),
+    their charging runs, each pause with its checks (duration, odometer,
+    place), the resulting energy/estimated cost and, when the merge isn't
+    allowed, why.
+    """
+    starts, max_gap, _ = await _merge_params(body, repo)
+    plan = await plan_merge(repo, vin, starts, tier_id=body.tier_id, max_gap=max_gap)
+    selected = {naive_utc(s) for s in starts}
+    return MergePreviewResponse(
+        sessions=[
+            MergePreviewSession(
+                id=r.record.id if r.record else None,
+                start_ts=r.start_ts.isoformat(),
+                end_ts=_iso(r.end_ts),
+                energy_kwh=r.energy_kwh,
+                parts=len(r.parts),
+                selected=r.start_ts in selected,
+            )
+            for r in plan.rows
+        ],
+        runs=[
+            MergePreviewRun(
+                start_ts=run.start_ts.isoformat(),
+                end_ts=_iso(run.end_ts),
+                energy_kwh=run.energy_kwh,
+                zone_name=place,
+            )
+            for run, place in zip(plan.runs, plan.places, strict=True)
+        ],
+        gaps=[
+            MergePreviewGap(
+                start_ts=g.start_ts.isoformat(),
+                end_ts=g.end_ts.isoformat(),
+                minutes=g.minutes,
+                within_max_gap=g.within_max_gap,
+                same_odometer=g.same_odometer,
+                same_place=g.same_place,
+            )
+            for g in plan.gaps
+        ],
+        tiers=plan.tiers,
+        tier_id=plan.tier_id,
+        zone_name=plan.zone_name,
+        energy_kwh=plan.energy_kwh,
+        cost=plan.cost,
+        max_gap_minutes=body.max_gap_minutes,
+        reason=plan.reason,
+        message=MERGE_REASON_LABELS.get(plan.reason) if plan.reason else None,
+    )
+
+
+@router.post(
+    "/api/vehicles/{vin}/charging-costs/merge",
+    response_model=ChargingSessionCostResponse,
+)
+async def merge_charging_sessions(
+    vin: str, body: MergeChargingSessionsRequest, repo: RepoDep
+) -> ChargingSessionCostResponse:
+    """Merge consecutive charging sessions into one (charge resumed in place).
+
+    Every session between the first and last selected one is included. Refused
+    (422) when a session is ongoing, the vehicle moved or changed place between
+    them, or a pause exceeds the limit (see the preview). Deleting the merged
+    session splits it back into its charging runs.
+    """
+    starts, max_gap, tiers = await _merge_params(body, repo)
+    try:
+        sc = await merge_charge_sessions(
+            repo, vin, starts, tier_id=body.tier_id, max_gap=max_gap
+        )
+    except MergeError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Can't merge: {MERGE_REASON_LABELS.get(exc.reason, exc.reason)}",
+        ) from exc
+    bands = {b.id: b for b in await repo.get_time_bands("home_grid")}
+    return _cost_response(sc, tiers, bands)
 
 
 @router.post(
@@ -454,9 +580,7 @@ async def update_charging_cost(
         sc.zone_name = body.zone_name or None
     # Recalculate cost
     if sc.energy_kwh is not None:
-        sc.cost = await calculate_session_cost(
-            repo, sc.tier_id, sc.energy_kwh, sc.start_ts, sc.end_ts
-        )
+        sc.cost = await price_session(repo, sc)
     await repo.upsert_session_cost(sc)
     tiers = {t.id: t for t in await repo.get_price_tiers()}
     bands = {b.id: b for b in await repo.get_time_bands("home_grid")}
