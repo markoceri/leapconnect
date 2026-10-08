@@ -190,10 +190,13 @@ async def find_month_missing_costs(
     the history (carrying that end so they can be closed).
     """
     start, end = month_bounds(year, month)
-    # One extra day so a charge running across midnight still gets its end.
+    # One extra day on each side so a charge running across midnight is seen
+    # whole: its end in the next month, and — for one already running when the
+    # month starts — its real start, so it isn't mistaken for a new session
+    # beginning at the first snapshot of the month.
     history = await repo.get_history(
         vin,
-        from_date=start.date().isoformat(),
+        from_date=(start - timedelta(days=1)).date().isoformat(),
         to_date=end.date().isoformat(),
         max_points=None,
     )

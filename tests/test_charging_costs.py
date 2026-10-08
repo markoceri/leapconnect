@@ -70,8 +70,13 @@ class _Repo:
     async def get_zones(self, vin=None):
         return list(self.zones)
 
-    async def get_history(self, vin, **kwargs):
-        return list(self.snaps)
+    async def get_history(self, vin, *, from_date=None, to_date=None, **kwargs):
+        snaps = self.snaps
+        if from_date and to_date:
+            since = datetime.fromisoformat(from_date)
+            until = datetime.fromisoformat(to_date) + timedelta(days=1)
+            snaps = [s for s in snaps if since <= s.timestamp < until]
+        return list(snaps)
 
     async def get_session_costs(self, vin, **kwargs):
         return list(self.costs)
@@ -287,6 +292,28 @@ async def test_find_month_missing_costs_selects_only_costless_in_month():
         (2, T0 + timedelta(days=1), T0 + timedelta(days=1, hours=1)),
         (None, T0 + timedelta(days=2), T0 + timedelta(days=2, hours=1)),
     ]
+
+
+async def test_charge_across_month_start_is_not_split():
+    """A charge already running at midnight belongs to the previous month only."""
+    start = datetime(2026, 8, 31, 22, 46)
+    costed = ChargingSessionCost(
+        id=1,
+        vin="V1",
+        start_ts=start,
+        end_ts=datetime(2026, 9, 1, 6, 44),
+        tier_id="home_grid",
+        cost=7.43,
+    )
+    snaps = [
+        _idle(start - timedelta(minutes=5)),
+        *_snaps(HOME, start=start, kwh=(40.0, 45.0, 50.0)),
+        # telemetry gap across midnight, then the same charge continues
+        *_snaps(HOME, start=datetime(2026, 9, 1, 0, 12), kwh=(52.0, 60.0)),
+        _idle(datetime(2026, 9, 1, 6, 50)),
+    ]
+    repo = _Repo(snaps=snaps, costs=[costed])
+    assert await find_month_missing_costs(repo, "V1", 2026, 9) == []
 
 
 # -- scheduler month-end trigger --------------------------------------------

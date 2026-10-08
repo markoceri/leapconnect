@@ -135,14 +135,18 @@ class TransitionDetector:
         for field_def in BOOLEAN_FIELDS:
             field_name = field_def["field_name"]
             current_val = _get_nested_attr(status, field_def["attr_path"])
-            new_state[field_name] = current_val
+            # An unknown reading (partial payload) keeps the last known value,
+            # so True → None → True is not reported as a fresh transition.
+            new_state[field_name] = (
+                prev.get(field_name) if current_val is None else current_val
+            )
 
             if field_name not in prev:
                 # First observation — no transition to report
                 continue
 
             old_val = prev[field_name]
-            if current_val == old_val or current_val is None:
+            if current_val is None or old_val is None or current_val == old_val:
                 continue
 
             # Dedup check
@@ -179,7 +183,9 @@ class TransitionDetector:
             # Normalize enum values
             if hasattr(current_val, "value"):
                 current_val = current_val.value
-            new_state[field_name] = current_val
+            new_state[field_name] = (
+                prev.get(field_name) if current_val is None else current_val
+            )
 
             if field_name not in prev:
                 continue

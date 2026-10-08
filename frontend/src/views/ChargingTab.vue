@@ -199,6 +199,15 @@
               <RotateCw :size="14" :class="{ spinning: recalculatingId === editingSession.id }" />
               {{ recalculatingId === editingSession.id ? 'Recalculating…' : 'Recalculate' }}
             </button>
+            <button
+              v-if="editingSession.id"
+              class="btn-delete"
+              :disabled="saving"
+              @click="deleteSession(editingSession)"
+              title="Delete this session's cost record"
+            >
+              <Trash2 :size="14" /> Delete
+            </button>
             <span class="modal-actions-spacer" />
             <button class="btn-cancel" @click="editingSession = null">Cancel</button>
             <button class="btn-save" :disabled="saving" @click="saveSession">{{ saving ? 'Saving…' : 'Save' }}</button>
@@ -292,7 +301,7 @@ import { ref, computed, onMounted, watch, nextTick, onUnmounted } from 'vue'
 import { Chart, registerables } from 'chart.js'
 import { api } from '../composables/useApi'
 import { parseUTC } from '../utils/maintenance'
-import { Zap, TrendingUp, PieChart, Clock, CalendarDays, ChevronLeft, ChevronRight, List, Pencil, MapPin, RotateCw, Calculator } from 'lucide-vue-next'
+import { Zap, TrendingUp, PieChart, Clock, CalendarDays, ChevronLeft, ChevronRight, List, Pencil, MapPin, RotateCw, Calculator, Trash2 } from 'lucide-vue-next'
 
 Chart.register(...registerables)
 
@@ -355,8 +364,13 @@ const filteredSessions = computed(() => {
   const y = selectedMonth.value.getFullYear()
   const m = selectedMonth.value.getMonth()
 
-  // Start with detected sessions from snapshots
-  const merged = detectedSessions.value.map(ds => {
+  const inMonth = ts => {
+    const d = parseUTC(ts)
+    return d.getFullYear() === y && d.getMonth() === m
+  }
+
+  // Start with detected sessions from snapshots that began in this month
+  const merged = detectedSessions.value.filter(ds => inMonth(ds.start_ts)).map(ds => {
     // Try to match with a cost record (within 2 min of start_ts)
     const match = sessionCosts.value.find(sc =>
       sc.start_ts && Math.abs(parseUTC(sc.start_ts) - parseUTC(ds.start_ts)) < 120000
@@ -371,8 +385,7 @@ const filteredSessions = computed(() => {
 
   // Also include cost records that don't match any detected session (e.g. manually created)
   for (const sc of sessionCosts.value) {
-    const d = parseUTC(sc.start_ts)
-    if (d.getFullYear() !== y || d.getMonth() !== m) continue
+    if (!inMonth(sc.start_ts)) continue
     const alreadyMerged = merged.some(ms => ms.id === sc.id)
     if (!alreadyMerged) {
       merged.push(sc)
@@ -522,6 +535,24 @@ async function saveSession() {
   }
 }
 
+// Delete a stored session record (e.g. a duplicate). A session that is also
+// visible in the snapshots stays listed, back without a cost.
+async function deleteSession(session) {
+  if (!session.id) return
+  if (!confirm('Delete this charging session record? Its cost and notes will be lost.')) return
+  saving.value = true
+  editError.value = ''
+  try {
+    await api('DELETE', `/api/vehicles/${props.vin}/charging-costs/${session.id}`)
+    await loadData()
+    editingSession.value = null
+  } catch (e) {
+    editError.value = e.message || 'Failed to delete'
+  } finally {
+    saving.value = false
+  }
+}
+
 // Recalculate a stored session's total energy & cost from current data
 async function recalcSession(session) {
   if (!session.id || recalculatingId.value) return
@@ -657,9 +688,13 @@ async function loadData() {
     // Build date range for selected month
     const y = selectedMonth.value.getFullYear()
     const m = selectedMonth.value.getMonth()
-    const fromDate = `${y}-${String(m + 1).padStart(2, '0')}-01`
-    const lastDay = new Date(y, m + 1, 0).getDate()
-    const toDate = `${y}-${String(m + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
+    // The history API takes UTC dates: fetch one extra day on each side so a
+    // charge running across midnight is seen whole (a charge already running at
+    // the month start would otherwise look like a new session beginning at the
+    // first snapshot of the month). Sessions are then kept by local month.
+    const DAY_MS = 86400000
+    const fromDate = new Date(Date.UTC(y, m, 1) - DAY_MS).toISOString().slice(0, 10)
+    const toDate = new Date(Date.UTC(y, m + 1, 1)).toISOString().slice(0, 10)
 
     const [tiersData, costs, prefs, historyData, zonesData] = await Promise.all([
       api('GET', '/api/charging/tiers'),
@@ -971,6 +1006,9 @@ watch(selectedMonth, loadData)
 .btn-recalc { display: inline-flex; align-items: center; gap: 6px; background: var(--btn-bg); border: 1px solid var(--btn-border); border-radius: 8px; padding: 8px 14px; color: var(--text); cursor: pointer; font-size: 13px; }
 .btn-recalc:hover:not(:disabled) { border-color: var(--text); }
 .btn-recalc:disabled { opacity: 0.6; cursor: default; }
+.btn-delete { display: inline-flex; align-items: center; gap: 6px; background: var(--btn-bg); border: 1px solid var(--btn-border); border-radius: 8px; padding: 8px 14px; color: var(--red); cursor: pointer; font-size: 13px; }
+.btn-delete:hover:not(:disabled) { border-color: var(--red); }
+.btn-delete:disabled { opacity: 0.6; cursor: default; }
 .btn-cancel { background: var(--btn-bg); border: 1px solid var(--btn-border); border-radius: 8px; padding: 8px 16px; color: var(--muted); cursor: pointer; font-size: 13px; }
 .btn-save { background: var(--green); border: none; border-radius: 8px; padding: 8px 16px; color: #000; font-weight: 600; cursor: pointer; font-size: 13px; }
 .btn-save:disabled { opacity: 0.5; }
