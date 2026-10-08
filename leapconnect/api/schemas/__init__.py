@@ -5,6 +5,8 @@ from leapconnect.api.schemas.charging import (  # noqa: F401
     CalculateMissingCostsResponse,
     ChargeRecordSchema,
     ChargingHistoryResponse,
+    ChargingMonthSessionSchema,
+    ChargingMonthSessionsResponse,
     ChargingPriceTierResponse,
     ChargingPriceTierUpdate,
     ChargingSessionCostCreate,

@@ -7,8 +7,9 @@ session costs from the user's pricing configuration.
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import UTC, datetime, tzinfo
 from typing import TYPE_CHECKING
+from zoneinfo import ZoneInfo
 
 from leapconnect.domain.charging.costing import calculate_tou_cost, flat_cost
 from leapconnect.domain.settings.models import (
@@ -34,6 +35,7 @@ async def load_preferences(repo: AppRepository) -> UserPreferences:
     pricing_mode_raw = await repo.get_setting("home_pricing_mode")
     auto_theme_raw = await repo.get_setting("auto_theme_from_vehicle")
     auto_costs_raw = await repo.get_setting("auto_calculate_monthly_costs")
+    timezone_raw = await repo.get_setting("timezone")
     return UserPreferences(
         electricity_price_kwh=float(raw) if raw else 0.25,
         theme=theme_raw if theme_raw in ("dark", "light", "vehicle") else "dark",
@@ -47,7 +49,29 @@ async def load_preferences(repo: AppRepository) -> UserPreferences:
         auto_calculate_monthly_costs=auto_costs_raw != "false"
         if auto_costs_raw
         else True,
+        timezone=timezone_raw
+        if timezone_raw and is_valid_timezone(timezone_raw)
+        else "",
     )
+
+
+def is_valid_timezone(name: str) -> bool:
+    """True if ``name`` is a known IANA time zone."""
+    try:
+        ZoneInfo(name)
+    except (ValueError, KeyError):  # ZoneInfoNotFoundError is a KeyError
+        return False
+    return True
+
+
+def resolve_timezone(name: str) -> tzinfo:
+    """The preference's time zone; UTC when unset or unknown."""
+    return ZoneInfo(name) if name and is_valid_timezone(name) else UTC
+
+
+async def load_user_timezone(repo: AppRepository) -> tzinfo:
+    """The user's time zone (``timezone`` preference), UTC when unset."""
+    return resolve_timezone((await load_preferences(repo)).timezone)
 
 
 async def calculate_session_cost(

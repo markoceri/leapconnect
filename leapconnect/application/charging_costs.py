@@ -16,23 +16,30 @@ for the previous month, finding the sessions server-side.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, tzinfo
 from typing import TYPE_CHECKING
 
-from leapconnect.application.settings_store import recalculate_session
+from leapconnect.application.settings_store import (
+    load_user_timezone,
+    recalculate_session,
+)
 from leapconnect.domain.charging.location import (
     DC_CHARGE_STATE,
     resolve_charge_location,
 )
 from leapconnect.domain.charging.models import ChargingSessionCost
-from leapconnect.domain.charging.sessions import detect_charge_sessions
+from leapconnect.domain.charging.sessions import (
+    MONTH_HISTORY_MARGIN,
+    SAME_SESSION_TOLERANCE,
+    MonthChargeSession,
+    detect_charge_sessions,
+    merge_month_sessions,
+    month_bounds,
+    naive_utc,
+)
 
 if TYPE_CHECKING:
     from leapconnect.application.ports.repositories import AppRepository
-
-# A stored record within this distance of a detected start is the same session
-# (matches the frontend's merge tolerance).
-SAME_SESSION_TOLERANCE = timedelta(minutes=2)
 
 SKIP_ONGOING = "ongoing"
 SKIP_NO_TIER = "no_tier"
@@ -68,13 +75,6 @@ class MissingCostsResult:
     skipped: list[SkippedSession] = field(default_factory=list)
 
 
-def _naive_utc(ts: datetime | None) -> datetime | None:
-    """Snapshots are stored as naive UTC; align client timestamps with them."""
-    if ts is None or ts.tzinfo is None:
-        return ts
-    return ts.astimezone(UTC).replace(tzinfo=None)
-
-
 async def _locate_from_snapshots(
     repo: AppRepository, vin: str, start: datetime, end: datetime
 ):
@@ -85,7 +85,7 @@ async def _locate_from_snapshots(
         to_date=end.date().isoformat(),
         max_points=None,
     )
-    window = [s for s in history if start <= _naive_utc(s.timestamp) <= end]
+    window = [s for s in history if start <= naive_utc(s.timestamp) <= end]
     positioned = next(
         (s for s in window if s.vehicle_latitude and s.vehicle_longitude), None
     )
@@ -118,8 +118,8 @@ async def calculate_missing_costs(
     by_id = {sc.id: sc for sc in stored}
 
     for item in sessions:
-        start = _naive_utc(item.start_ts)
-        end = _naive_utc(item.end_ts)
+        start = naive_utc(item.start_ts)
+        end = naive_utc(item.end_ts)
 
         if item.cost_id is not None:
             sc = by_id.get(item.cost_id)
@@ -141,7 +141,7 @@ async def calculate_missing_costs(
                     c
                     for c in stored
                     if c.start_ts
-                    and abs(_naive_utc(c.start_ts) - start) < SAME_SESSION_TOLERANCE
+                    and abs(naive_utc(c.start_ts) - start) < SAME_SESSION_TOLERANCE
                 ),
                 None,
             )
@@ -173,83 +173,63 @@ async def calculate_missing_costs(
     return result
 
 
-def month_bounds(year: int, month: int) -> tuple[datetime, datetime]:
-    """``[first instant, first instant of next month)`` as naive UTC."""
-    start = datetime(year, month, 1)
-    end = datetime(year + month // 12, month % 12 + 1, 1)
-    return start, end
+async def list_month_sessions(
+    repo: AppRepository, vin: str, year: int, month: int, tz: tzinfo | None = None
+) -> list[MonthChargeSession]:
+    """The month's charging sessions, newest first — the Charging tab's list.
+
+    The month is a calendar month in the user's time zone (``tz``, from the
+    preferences when omitted). Sessions are detected from the snapshots and
+    paired with the stored cost records.
+    """
+    if tz is None:
+        tz = await load_user_timezone(repo)
+    start, end = month_bounds(year, month, tz)
+    # The history API takes UTC dates (whole days, end inclusive).
+    history = await repo.get_history(
+        vin,
+        from_date=(start - MONTH_HISTORY_MARGIN).date().isoformat(),
+        to_date=(end + MONTH_HISTORY_MARGIN).date().isoformat(),
+        max_points=None,
+    )
+    return merge_month_sessions(
+        detect_charge_sessions(history),
+        await repo.get_session_costs(vin),
+        start,
+        end,
+    )
 
 
 async def find_month_missing_costs(
-    repo: AppRepository, vin: str, year: int, month: int
+    repo: AppRepository, vin: str, year: int, month: int, tz: tzinfo | None = None
 ) -> list[MissingCostSession]:
-    """Server-side equivalent of the Charging tab's "missing costs" selection.
+    """The month's sessions without a cost, oldest first.
 
-    Returns every session started in the month (UTC) without a cost: stored
+    Same selection as the Charging tab's "missing costs" button: stored
     records, snapshot-only sessions, and open records whose end is visible in
     the history (carrying that end so they can be closed).
     """
-    start, end = month_bounds(year, month)
-    # One extra day on each side so a charge running across midnight is seen
-    # whole: its end in the next month, and — for one already running when the
-    # month starts — its real start, so it isn't mistaken for a new session
-    # beginning at the first snapshot of the month.
-    history = await repo.get_history(
-        vin,
-        from_date=(start - timedelta(days=1)).date().isoformat(),
-        to_date=end.date().isoformat(),
-        max_points=None,
-    )
-    detected = [
-        s
-        for s in detect_charge_sessions(history)
-        if start <= _naive_utc(s.start_ts) < end
-    ]
-    stored = [
-        c
-        for c in await repo.get_session_costs(vin)
-        if c.start_ts and start <= _naive_utc(c.start_ts) < end
-    ]
-
     missing: list[MissingCostSession] = []
-    matched_ids: set[int] = set()
-    for ds in detected:
-        ds_start = _naive_utc(ds.start_ts)
-        match = next(
-            (
-                c
-                for c in stored
-                if abs(_naive_utc(c.start_ts) - ds_start) < SAME_SESSION_TOLERANCE
-            ),
-            None,
-        )
-        if match is None:
-            missing.append(MissingCostSession(start_ts=ds_start, end_ts=ds.end_ts))
-            continue
-        matched_ids.add(match.id)
-        if match.cost is None:
+    for row in reversed(await list_month_sessions(repo, vin, year, month, tz)):
+        rec = row.record
+        if rec is None:
+            missing.append(MissingCostSession(start_ts=row.start_ts, end_ts=row.end_ts))
+        elif rec.cost is None:
             missing.append(
                 MissingCostSession(
-                    start_ts=_naive_utc(match.start_ts),
-                    end_ts=match.end_ts or ds.end_ts,
-                    cost_id=match.id,
-                )
-            )
-    for c in stored:
-        if c.cost is None and c.id not in matched_ids:
-            missing.append(
-                MissingCostSession(
-                    start_ts=_naive_utc(c.start_ts), end_ts=c.end_ts, cost_id=c.id
+                    start_ts=row.start_ts,
+                    end_ts=row.end_ts or row.detected_end_ts,
+                    cost_id=rec.id,
                 )
             )
     return missing
 
 
 async def calculate_month_missing_costs(
-    repo: AppRepository, vin: str, year: int, month: int
+    repo: AppRepository, vin: str, year: int, month: int, tz: tzinfo | None = None
 ) -> MissingCostsResult:
     """Unattended month-end run: infer tiers, skip unknown ones, close orphans."""
-    sessions = await find_month_missing_costs(repo, vin, year, month)
+    sessions = await find_month_missing_costs(repo, vin, year, month, tz)
     if not sessions:
         return MissingCostsResult()
     return await calculate_missing_costs(repo, vin, sessions, close_orphans=True)

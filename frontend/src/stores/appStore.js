@@ -57,11 +57,24 @@ export const useAppStore = defineStore('app', () => {
       const data = await api('GET', '/api/preferences')
       applyTheme(data.theme || 'dark')
       autoThemeFromVehicle.value = !!data.auto_theme_from_vehicle
+      adoptBrowserTimeZone(data)
     } catch {
       // Fallback to localStorage (e.g. on login page before auth)
       const saved = localStorage.getItem('theme')
       if (saved) applyTheme(saved)
     }
+  }
+
+  // The backend computes calendar months (charging sessions, month-end costs)
+  // in the `timezone` preference: seed it once from the browser; it can then
+  // be changed in Settings.
+  async function adoptBrowserTimeZone(prefs) {
+    if (prefs.timezone) return
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone
+    if (!tz) return
+    try {
+      await api('PUT', '/api/preferences', { timezone: tz })
+    } catch { /* ignore */ }
   }
 
   // --- Per-vehicle colour theme ---

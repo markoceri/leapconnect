@@ -312,7 +312,8 @@ const props = defineProps({
 // State
 const selectedMonth = ref(new Date())
 const sessionCosts = ref([])
-const detectedSessions = ref([])
+const monthSessions = ref([])
+const monthTimeZone = ref('UTC')  // time zone the backend computes months in
 const availableTiers = ref([])
 const availableZones = ref([])
 const timeBands = ref([])
@@ -359,41 +360,9 @@ function nextMonth() {
   selectedMonth.value = d
 }
 
-// Filtered sessions for selected month — merges snapshot-detected sessions with cost records
-const filteredSessions = computed(() => {
-  const y = selectedMonth.value.getFullYear()
-  const m = selectedMonth.value.getMonth()
-
-  const inMonth = ts => {
-    const d = parseUTC(ts)
-    return d.getFullYear() === y && d.getMonth() === m
-  }
-
-  // Start with detected sessions from snapshots that began in this month
-  const merged = detectedSessions.value.filter(ds => inMonth(ds.start_ts)).map(ds => {
-    // Try to match with a cost record (within 2 min of start_ts)
-    const match = sessionCosts.value.find(sc =>
-      sc.start_ts && Math.abs(parseUTC(sc.start_ts) - parseUTC(ds.start_ts)) < 120000
-    )
-    if (match) {
-      // _detected_end_ts lets an open record whose charge stop was missed be closed
-      return { ...match, energy_kwh: match.energy_kwh ?? ds.energy_kwh, peak_power_kw: match.peak_power_kw ?? ds.peak_power_kw, _detected: true, _detected_end_ts: ds.end_ts }
-    }
-    // No cost record — return detected session as-is
-    return { ...ds, id: null, tier_id: null, tier_label: null, cost: null, _detected: true }
-  })
-
-  // Also include cost records that don't match any detected session (e.g. manually created)
-  for (const sc of sessionCosts.value) {
-    if (!inMonth(sc.start_ts)) continue
-    const alreadyMerged = merged.some(ms => ms.id === sc.id)
-    if (!alreadyMerged) {
-      merged.push(sc)
-    }
-  }
-
-  return merged.sort((a, b) => parseUTC(b.start_ts) - parseUTC(a.start_ts))
-})
+// Sessions of the selected month, from the backend: detected from the vehicle
+// history and paired with the cost records (same list the month-end job uses)
+const filteredSessions = computed(() => monthSessions.value)
 
 // KPI cards
 const kpiCards = computed(() => {
@@ -430,9 +399,10 @@ const monthlySummary = computed(() => {
   const all = sessionCosts.value
   if (!all.length) return []
   const months = {}
+  // Months in the same time zone the backend uses for the session list
+  const monthOf = new Intl.DateTimeFormat('en-CA', { timeZone: monthTimeZone.value, year: 'numeric', month: '2-digit' })
   for (const s of all) {
-    const d = parseUTC(s.start_ts)
-    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+    const key = monthOf.format(parseUTC(s.start_ts))
     if (!months[key]) months[key] = { month: key, sessions: 0, energy: 0, homeGrid: 0, solar: 0, public: 0, cost: 0 }
     months[key].sessions++
     months[key].energy += s.energy_kwh || 0
@@ -566,58 +536,6 @@ async function recalcSession(session) {
   }
 }
 
-// Detect charge sessions from snapshots (same algorithm as HistoryTab)
-function detectSessionsFromSnapshots(snapshots) {
-  const sessions = []
-  let inSession = false
-  let startIdx = -1
-  let peakKw = 0
-  for (let i = 0; i < snapshots.length; i++) {
-    const snap = snapshots[i]
-    if (snap.battery_is_charging && !inSession) {
-      inSession = true
-      startIdx = i
-      peakKw = snap.battery_charging_power_kw != null ? snap.battery_charging_power_kw : 0
-    } else if (snap.battery_is_charging && inSession) {
-      // Track peak while session continues
-      const power = snap.battery_charging_power_kw
-      if (power != null && power > peakKw) peakKw = power
-    } else if (!snap.battery_is_charging && inSession) {
-      inSession = false
-      const startSnap = snapshots[startIdx]
-      const endSnap = snapshots[i - 1] || snap
-      const startEnergy = startSnap.battery_dump_energy != null ? startSnap.battery_dump_energy / 1000 : null
-      const endEnergy = endSnap.battery_dump_energy != null ? endSnap.battery_dump_energy / 1000 : null
-      const energy = (startEnergy != null && endEnergy != null) ? Math.abs(endEnergy - startEnergy) : null
-      sessions.push({
-        start_ts: startSnap.timestamp,
-        end_ts: endSnap.timestamp,
-        energy_kwh: energy != null ? Math.round(energy * 100) / 100 : null,
-        start_soc: startSnap.battery_soc,
-        end_soc: endSnap.battery_soc,
-        peak_power_kw: peakKw > 0 ? Math.round(peakKw * 10) / 10 : null,
-      })
-    }
-  }
-  // Handle session still in progress at end of data
-  if (inSession && startIdx >= 0) {
-    const startSnap = snapshots[startIdx]
-    const endSnap = snapshots[snapshots.length - 1]
-    const startEnergy = startSnap.battery_dump_energy != null ? startSnap.battery_dump_energy / 1000 : null
-    const endEnergy = endSnap.battery_dump_energy != null ? endSnap.battery_dump_energy / 1000 : null
-    const energy = (startEnergy != null && endEnergy != null) ? Math.abs(endEnergy - startEnergy) : null
-    sessions.push({
-      start_ts: startSnap.timestamp,
-      end_ts: null,
-      energy_kwh: energy != null ? Math.round(energy * 100) / 100 : null,
-      start_soc: startSnap.battery_soc,
-      end_soc: endSnap.battery_soc,
-      peak_power_kw: peakKw > 0 ? Math.round(peakKw * 10) / 10 : null,
-    })
-  }
-  return sessions
-}
-
 // Calculate missing costs (current month only)
 const missingCosts = computed(() => {
   const stored = []    // record with a tier, finished, no cost
@@ -627,7 +545,7 @@ const missingCosts = computed(() => {
     if (s.cost != null) continue
     if (s.id && s.end_ts) stored.push(s)
     else if (!s.id && s.end_ts) detected.push(s)
-    else if (s.id && !s.end_ts && s._detected_end_ts) orphans.push(s)
+    else if (s.id && !s.end_ts && s.detected_end_ts) orphans.push(s)
   }
   return { stored, detected, orphans, total: stored.length + detected.length + orphans.length }
 })
@@ -636,7 +554,7 @@ const bulkSelection = computed(() => {
   const { stored, detected, orphans } = missingCosts.value
   const items = [...stored, ...detected].map(s => ({ start_ts: s.start_ts, end_ts: s.end_ts, cost_id: s.id ?? null }))
   if (bulkCloseOrphans.value) {
-    for (const s of orphans) items.push({ start_ts: s.start_ts, end_ts: s._detected_end_ts, cost_id: s.id })
+    for (const s of orphans) items.push({ start_ts: s.start_ts, end_ts: s.detected_end_ts, cost_id: s.id })
   }
   return items
 })
@@ -685,22 +603,14 @@ function skipReasonLabel(reason) {
 async function loadData() {
   loading.value = true
   try {
-    // Build date range for selected month
     const y = selectedMonth.value.getFullYear()
     const m = selectedMonth.value.getMonth()
-    // The history API takes UTC dates: fetch one extra day on each side so a
-    // charge running across midnight is seen whole (a charge already running at
-    // the month start would otherwise look like a new session beginning at the
-    // first snapshot of the month). Sessions are then kept by local month.
-    const DAY_MS = 86400000
-    const fromDate = new Date(Date.UTC(y, m, 1) - DAY_MS).toISOString().slice(0, 10)
-    const toDate = new Date(Date.UTC(y, m + 1, 1)).toISOString().slice(0, 10)
 
-    const [tiersData, costs, prefs, historyData, zonesData] = await Promise.all([
+    const [tiersData, costs, prefs, monthData, zonesData] = await Promise.all([
       api('GET', '/api/charging/tiers'),
       api('GET', `/api/vehicles/${props.vin}/charging-costs`),
       api('GET', '/api/preferences'),
-      api('GET', `/api/vehicles/${props.vin}/history?from_date=${fromDate}&to_date=${toDate}&max_points=5000`),
+      api('GET', `/api/vehicles/${props.vin}/charging-sessions?year=${y}&month=${m + 1}`),
       api('GET', `/api/zones?vin=${props.vin}`),
     ])
     availableZones.value = zonesData || []
@@ -709,10 +619,8 @@ async function loadData() {
     homePricingMode.value = tiersData.home_pricing_mode || 'flat'
     sessionCosts.value = costs || []
     hasSolarPanels.value = prefs.has_solar_panels ?? false
-
-    // Detect sessions from snapshots
-    const snapshots = historyData?.snapshots || historyData || []
-    detectedSessions.value = detectSessionsFromSnapshots(snapshots)
+    monthSessions.value = monthData?.sessions || []
+    monthTimeZone.value = monthData?.timezone || 'UTC'
   } catch { /* ignore */ }
   loading.value = false
   await nextTick()

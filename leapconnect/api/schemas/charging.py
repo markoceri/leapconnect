@@ -133,6 +133,32 @@ class ChargingSessionCostResponse(BaseModel):
     zone_name: str | None = None
 
 
+class ChargingMonthSessionSchema(BaseModel):
+    """One row of a month's session list (detected and/or stored)."""
+
+    id: int | None = None  # stored cost record; None = detected only
+    start_ts: str
+    end_ts: str | None = None
+    tier_id: str | None = None
+    tier_label: str | None = None
+    time_band_id: int | None = None
+    time_band_name: str | None = None
+    energy_kwh: float | None = None
+    peak_power_kw: float | None = None
+    cost: float | None = None
+    note: str | None = None
+    zone_name: str | None = None
+    # End seen in the history, for an open record whose charge stop was missed
+    detected_end_ts: str | None = None
+
+
+class ChargingMonthSessionsResponse(BaseModel):
+    year: int
+    month: int
+    timezone: str  # IANA zone the month is computed in
+    sessions: list[ChargingMonthSessionSchema]  # newest first
+
+
 class ChargingSessionCostCreate(BaseModel):
     start_ts: str
     end_ts: str | None = None

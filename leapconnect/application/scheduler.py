@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta, tzinfo
 from typing import TYPE_CHECKING
 
 from leapmotor_api.exceptions import LeapmotorApiError
@@ -580,11 +580,18 @@ class VehicleDataScheduler:
         from leapconnect.application.charging_costs import (
             calculate_month_missing_costs,
         )
-        from leapconnect.application.settings_store import load_preferences
+        from leapconnect.application.settings_store import (
+            load_preferences,
+            resolve_timezone,
+        )
 
         if not self._vehicles:
             return
-        now = now or datetime.now(UTC).replace(tzinfo=None)
+        prefs = await load_preferences(self._repo)
+        # Months are calendar months in the user's time zone, as in the
+        # Charging tab; ``now`` is the local wall-clock time.
+        tz = resolve_timezone(prefs.timezone)
+        now = now or datetime.now(tz).replace(tzinfo=None)
         if now.day < MONTH_END_COSTS_FROM_DAY:
             return
         prev = now.replace(day=1) - timedelta(days=1)
@@ -592,14 +599,14 @@ class VehicleDataScheduler:
         last = await self._repo.get_setting(MONTH_END_COSTS_SETTING)
         if last and last >= target:
             return
-        if not (await load_preferences(self._repo)).auto_calculate_monthly_costs:
+        if not prefs.auto_calculate_monthly_costs:
             return
 
         all_ok = True
         for vehicle in self._vehicles:
             try:
                 result = await calculate_month_missing_costs(
-                    self._repo, vehicle.vin, prev.year, prev.month
+                    self._repo, vehicle.vin, prev.year, prev.month, tz
                 )
             except Exception:
                 all_ok = False
@@ -615,17 +622,19 @@ class VehicleDataScheduler:
                 len(result.skipped),
             )
             if result.skipped and self._notification_dispatcher:
-                await self._notify_month_end_costs(vehicle, prev, result)
+                await self._notify_month_end_costs(vehicle, prev, result, tz)
         if all_ok:
             await self._repo.save_setting(MONTH_END_COSTS_SETTING, target)
 
-    async def _notify_month_end_costs(self, vehicle, month: datetime, result) -> None:
+    async def _notify_month_end_costs(
+        self, vehicle, month: datetime, result, tz: tzinfo
+    ) -> None:
         """Send the ``charging_costs_incomplete`` summary for one vehicle."""
         from leapconnect.application.charging_costs import SKIP_REASON_LABELS
 
         lines = [
-            # Stored timestamps are UTC; show them in the server's local time.
-            f"• {sk.start_ts.replace(tzinfo=UTC).astimezone():%d %b %H:%M}"
+            # Stored timestamps are UTC; show them in the user's time zone.
+            f"• {sk.start_ts.replace(tzinfo=UTC).astimezone(tz):%d %b %H:%M}"
             f" — {SKIP_REASON_LABELS.get(sk.reason, sk.reason)}"
             for sk in result.skipped[:MONTH_END_COSTS_MAX_LISTED]
         ]

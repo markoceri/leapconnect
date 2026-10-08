@@ -20,6 +20,9 @@ class UserPreferences:
     auto_theme_from_vehicle: bool = False  # auto-pick accent colour from the vehicle
     # Cost the previous month's cost-less charging sessions at month end
     auto_calculate_monthly_costs: bool = True
+    # IANA time zone (e.g. "Europe/Rome") defining calendar months for the
+    # charging sessions/costs; "" = not set yet (UTC). Set from the browser.
+    timezone: str = ""
 
 
 @dataclass

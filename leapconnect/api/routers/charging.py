@@ -11,6 +11,8 @@ from leapconnect.api.schemas import (
     CalculateMissingCostsRequest,
     CalculateMissingCostsResponse,
     ChargingHistoryResponse,
+    ChargingMonthSessionSchema,
+    ChargingMonthSessionsResponse,
     ChargingPriceTierResponse,
     ChargingPriceTierUpdate,
     ChargingSessionCostCreate,
@@ -27,11 +29,13 @@ from leapconnect.api.schemas import (
 from leapconnect.application.charging_costs import (
     MissingCostSession,
     calculate_missing_costs,
+    list_month_sessions,
 )
 from leapconnect.application.settings_store import (
     calculate_session_cost,
     load_preferences,
     recalculate_session,
+    resolve_timezone,
 )
 from leapconnect.domain.charging.models import ChargingSessionCost, ChargingTimeBand
 
@@ -269,6 +273,50 @@ async def get_charging_costs(
     tiers = {t.id: t for t in await repo.get_price_tiers()}
     bands = {b.id: b for b in await repo.get_time_bands("home_grid")}
     return [_cost_response(c, tiers, bands) for c in costs]
+
+
+@router.get(
+    "/api/vehicles/{vin}/charging-sessions",
+    response_model=ChargingMonthSessionsResponse,
+)
+async def get_month_charging_sessions(
+    vin: str, year: int, month: int, repo: RepoDep
+) -> ChargingMonthSessionsResponse:
+    """A month's charging sessions, newest first.
+
+    Sessions are detected from the vehicle history and paired with the stored
+    cost records; the month is a calendar month in the ``timezone``
+    preference. Same selection as the month-end cost calculation.
+    """
+    if not 1 <= month <= 12:
+        raise HTTPException(status_code=422, detail="'month' must be 1-12")
+    tz_name = (await load_preferences(repo)).timezone
+    rows = await list_month_sessions(repo, vin, year, month, resolve_timezone(tz_name))
+    tiers = {t.id: t for t in await repo.get_price_tiers()}
+    bands = {b.id: b for b in await repo.get_time_bands("home_grid")}
+    sessions = []
+    for row in rows:
+        base = (
+            _cost_response(row.record, tiers, bands).model_dump() if row.record else {}
+        )
+        base.pop("vin", None)
+        sessions.append(
+            ChargingMonthSessionSchema(
+                **{
+                    **base,
+                    "start_ts": row.start_ts.isoformat(),
+                    "end_ts": row.end_ts.isoformat() if row.end_ts else None,
+                    "energy_kwh": row.energy_kwh,
+                    "peak_power_kw": row.peak_power_kw,
+                    "detected_end_ts": row.detected_end_ts.isoformat()
+                    if row.detected_end_ts
+                    else None,
+                }
+            )
+        )
+    return ChargingMonthSessionsResponse(
+        year=year, month=month, timezone=tz_name or "UTC", sessions=sessions
+    )
 
 
 @router.post(

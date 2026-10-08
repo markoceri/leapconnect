@@ -2,6 +2,7 @@
 
 from datetime import datetime, timedelta
 from types import SimpleNamespace
+from zoneinfo import ZoneInfo
 
 from leapconnect.application.charging_costs import (
     SKIP_NO_ENERGY,
@@ -10,6 +11,7 @@ from leapconnect.application.charging_costs import (
     MissingCostSession,
     calculate_missing_costs,
     find_month_missing_costs,
+    list_month_sessions,
 )
 from leapconnect.application.scheduler import (
     MONTH_END_COSTS_SETTING,
@@ -20,7 +22,11 @@ from leapconnect.domain.charging.models import (
     ChargingPriceTier,
     ChargingSessionCost,
 )
-from leapconnect.domain.charging.sessions import detect_charge_sessions
+from leapconnect.domain.charging.sessions import (
+    detect_charge_sessions,
+    merge_month_sessions,
+    month_bounds,
+)
 from leapconnect.domain.telemetry.models import VehicleSnapshot
 from leapconnect.domain.zones import Zone
 
@@ -243,6 +249,43 @@ def test_endpoint_reports_skipped_sessions(auth_client):
     }
 
 
+def test_month_sessions_endpoint(auth_client):
+    created = auth_client.post(
+        "/api/vehicles/V1/charging-costs",
+        json={"start_ts": "2026-07-31T22:46:00", "tier_id": "home_grid"},
+    )
+    assert created.status_code == 201
+    assert (
+        auth_client.put("/api/preferences", json={"timezone": "Europe/Rome"}).json()[
+            "timezone"
+        ]
+        == "Europe/Rome"
+    )
+
+    resp = auth_client.get("/api/vehicles/V1/charging-sessions?year=2026&month=8")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["timezone"] == "Europe/Rome"
+    [row] = body["sessions"]
+    assert (row["id"], row["start_ts"], row["tier_id"]) == (
+        created.json()["id"],
+        "2026-07-31T22:46:00",
+        "home_grid",
+    )
+    july = auth_client.get("/api/vehicles/V1/charging-sessions?year=2026&month=7")
+    assert july.json()["sessions"] == []
+
+
+def test_month_sessions_endpoint_rejects_bad_month(auth_client):
+    resp = auth_client.get("/api/vehicles/V1/charging-sessions?year=2026&month=13")
+    assert resp.status_code == 422
+
+
+def test_preferences_reject_unknown_timezone(auth_client):
+    resp = auth_client.put("/api/preferences", json={"timezone": "Mars/Base"})
+    assert resp.status_code == 422
+
+
 # -- session detection ------------------------------------------------------
 
 
@@ -316,6 +359,78 @@ async def test_charge_across_month_start_is_not_split():
     assert await find_month_missing_costs(repo, "V1", 2026, 9) == []
 
 
+ROME = ZoneInfo("Europe/Rome")
+
+
+def test_month_bounds_follow_the_time_zone():
+    assert month_bounds(2026, 8, ROME) == (
+        datetime(2026, 7, 31, 22, 0),
+        datetime(2026, 8, 31, 22, 0),
+    )
+    assert month_bounds(2026, 12) == (datetime(2026, 12, 1), datetime(2027, 1, 1))
+
+
+def _issue31_repo():
+    """Overnight charge from 00:46 local (22:46 UTC of the previous day) with a
+    telemetry gap; a duplicate record was created at the UTC month start."""
+    start = datetime(2026, 7, 31, 22, 46)
+    real = ChargingSessionCost(
+        id=1,
+        vin="V1",
+        start_ts=start,
+        end_ts=datetime(2026, 8, 1, 6, 47),
+        tier_id="home_grid",
+        energy_kwh=21.2,
+        cost=7.43,
+        zone_name="Home",
+    )
+    snaps = [
+        _idle(start - timedelta(minutes=5)),
+        *_snaps(HOME, start=start, kwh=(40.0, 45.0)),
+        *_snaps(HOME, start=datetime(2026, 8, 1, 1, 36), kwh=(52.0, 61.2)),
+        _idle(datetime(2026, 8, 1, 6, 50)),
+    ]
+    return _Repo(snaps=snaps, costs=[real]), real
+
+
+async def test_overnight_charge_is_one_session_of_the_local_month():
+    repo, real = _issue31_repo()
+    august = await list_month_sessions(repo, "V1", 2026, 8, ROME)
+    assert [(r.record, r.start_ts) for r in august] == [(real, real.start_ts)]
+    assert august[0].detected_end_ts == datetime(2026, 8, 1, 2, 36)
+    assert await list_month_sessions(repo, "V1", 2026, 7, ROME) == []
+
+
+async def test_month_end_job_uses_the_same_local_month():
+    repo, _ = _issue31_repo()
+    repo.costs[0].cost = None  # left without a cost → only August's run picks it up
+    assert await find_month_missing_costs(repo, "V1", 2026, 7, ROME) == []
+    [missing] = await find_month_missing_costs(repo, "V1", 2026, 8, ROME)
+    assert (missing.cost_id, missing.start_ts) == (1, datetime(2026, 7, 31, 22, 46))
+
+
+def test_merge_keeps_unmatched_records_and_fills_detected_values():
+    detected = detect_charge_sessions(
+        [
+            *_snaps(HOME, kwh=(40.0, 50.0)),
+            _idle(T0 + timedelta(hours=2)),
+        ]
+    )
+    matched = ChargingSessionCost(
+        id=1, vin="V1", start_ts=T0 + timedelta(seconds=30), tier_id="home_grid"
+    )
+    manual = ChargingSessionCost(
+        id=2, vin="V1", start_ts=T0 + timedelta(days=3), tier_id="public_ac"
+    )
+    start, end = month_bounds(2026, 9)
+    rows = merge_month_sessions(detected, [matched, manual], start, end)
+    assert [r.record.id for r in rows] == [2, 1]
+    assert (rows[1].energy_kwh, rows[1].detected_end_ts) == (
+        10.0,
+        T0 + timedelta(hours=1),
+    )
+
+
 # -- scheduler month-end trigger --------------------------------------------
 
 
@@ -366,6 +481,17 @@ async def test_month_end_costs_previous_month_and_notifies_skipped():
     # Already done for September → second run is a no-op.
     await sched._maybe_run_month_end_costs(now=datetime(2026, 10, 3, 8))
     assert len(dispatcher.sent) == 1 and len(repo.costs) == 1
+
+
+async def test_month_end_runs_on_the_local_calendar():
+    """With a time zone set, the job's "previous month" is the local one."""
+    repo = _Repo(
+        zones=[_zone()], snaps=_month_snaps(), settings={"timezone": "Europe/Rome"}
+    )
+    sched, _ = _scheduler(repo)
+    await sched._maybe_run_month_end_costs(now=datetime(2026, 10, 2, 0, 30))
+    assert repo.settings[MONTH_END_COSTS_SETTING] == "2026-09"
+    assert [(c.tier_id, c.cost) for c in repo.costs] == [("home_solar", 2.5)]
 
 
 async def test_month_end_respects_disabled_preference():

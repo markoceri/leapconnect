@@ -26,6 +26,7 @@ from leapconnect.api.schemas import (
     UnreadCountResponse,
 )
 from leapconnect.application.settings_store import (
+    is_valid_timezone,
     load_disk_alert_settings,
     load_preferences,
     save_abrp_settings,
@@ -56,6 +57,7 @@ def _prefs_response(prefs) -> PreferencesResponse:
         home_pricing_mode=prefs.home_pricing_mode,
         auto_theme_from_vehicle=prefs.auto_theme_from_vehicle,
         auto_calculate_monthly_costs=prefs.auto_calculate_monthly_costs,
+        timezone=prefs.timezone,
     )
 
 
@@ -167,6 +169,15 @@ async def update_preferences(request: Request, repo: RepoDep) -> PreferencesResp
         await repo.save_setting(
             "auto_calculate_monthly_costs", "true" if auto_costs else "false"
         )
+    # -- time zone (calendar months of charging sessions/costs) --
+    tz_name = body.get("timezone")
+    if tz_name is not None:
+        if not isinstance(tz_name, str) or not is_valid_timezone(tz_name):
+            raise HTTPException(
+                status_code=422,
+                detail="'timezone' must be an IANA time zone (e.g. 'Europe/Rome')",
+            )
+        await repo.save_setting("timezone", tz_name)
     return _prefs_response(await load_preferences(repo))
 
 

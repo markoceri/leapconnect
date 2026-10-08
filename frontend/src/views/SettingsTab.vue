@@ -342,6 +342,21 @@
           <ToggleSwitch :modelValue="autoCalculateMonthlyCosts" @update:modelValue="toggleAutoMonthlyCosts" />
         </div>
 
+        <!-- Time zone defining calendar months for sessions and costs -->
+        <div class="pref-row">
+          <div class="pref-info">
+            <Globe :size="15" class="pref-icon" />
+            <span class="pref-label">Time zone</span>
+            <span class="pref-hint">
+              Calendar months of the Charging tab and of the month-end calculation follow this time zone. Set
+              automatically from your browser
+            </span>
+          </div>
+          <select v-model="timeZone" class="log-level-select" @change="saveTimeZone">
+            <option v-for="tz in timeZoneOptions" :key="tz" :value="tz">{{ tz }}</option>
+          </select>
+        </div>
+
         <div class="divider" />
 
         <!-- Price Tiers -->
@@ -1369,7 +1384,7 @@ import ToggleSwitch from '../components/ToggleSwitch.vue'
 import LogViewer from '../components/LogViewer.vue'
 import { api } from '../composables/useApi'
 import { useAppStore } from '../stores/appStore'
-import { User, Car, Bell, SlidersHorizontal, BarChart3, Code, KeyRound, ShieldCheck, Wifi, Wrench, Settings, Github, Info, Star, AlertTriangle, ExternalLink, Moon, Sun, RefreshCw, Terminal, Navigation, Activity, Eye, EyeOff, Send, ChevronDown, ChevronRight, Search, Locate, Zap, CarFront, Lock, X, Trash2, Link2, Copy, Check, Home, Plug, Clock, Plus, Database, Palette, Sparkles, Calculator, Server, Map as MapIcon } from 'lucide-vue-next'
+import { User, Car, Bell, SlidersHorizontal, BarChart3, Code, KeyRound, ShieldCheck, Wifi, Wrench, Settings, Github, Info, Star, AlertTriangle, ExternalLink, Moon, Sun, RefreshCw, Terminal, Navigation, Activity, Eye, EyeOff, Send, ChevronDown, ChevronRight, Search, Locate, Zap, CarFront, Lock, X, Trash2, Link2, Copy, Check, Home, Plug, Clock, Plus, Database, Palette, Sparkles, Calculator, Server, Map as MapIcon, Globe } from 'lucide-vue-next'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { MAP_PROVIDERS, mapTileSettings, getMapProvider, loadMapTileSettings, saveMapTileSettings, addBaseLayer } from '../utils/mapTiles'
@@ -2047,6 +2062,13 @@ const electricitySuccess = ref('')
 
 const hasSolarPanels = ref(false)
 const autoCalculateMonthlyCosts = ref(true)
+const timeZone = ref('')
+const timeZoneOptions = computed(() => {
+  const zones = typeof Intl.supportedValuesOf === 'function' ? Intl.supportedValuesOf('timeZone') : []
+  const list = zones.includes('UTC') ? [...zones] : ['UTC', ...zones]
+  if (timeZone.value && !list.includes(timeZone.value)) list.unshift(timeZone.value)
+  return list
+})
 const homePricingMode = ref('flat')
 const chargingTiers = ref([])
 const timeBands = ref([])
@@ -2073,6 +2095,7 @@ async function loadPreferences() {
     savedElectricityPrice.value = data.electricity_price_kwh
     hasSolarPanels.value = data.has_solar_panels || false
     autoCalculateMonthlyCosts.value = data.auto_calculate_monthly_costs ?? true
+    timeZone.value = data.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
     homePricingMode.value = data.home_pricing_mode || 'flat'
   } catch { /* ignore */ }
 }
@@ -2104,6 +2127,13 @@ async function toggleAutoMonthlyCosts(newVal) {
   try {
     await api('PUT', '/api/preferences', { auto_calculate_monthly_costs: newVal })
     autoCalculateMonthlyCosts.value = newVal
+  } catch { /* ignore */ }
+}
+
+async function saveTimeZone() {
+  try {
+    const data = await api('PUT', '/api/preferences', { timezone: timeZone.value })
+    timeZone.value = data.timezone || timeZone.value
   } catch { /* ignore */ }
 }
 
