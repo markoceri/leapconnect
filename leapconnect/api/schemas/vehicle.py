@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from leapmotor_api.models import (
+    ShareInvitation,
     Vehicle,
     VehicleStatus,
 )
@@ -421,3 +422,37 @@ class VehicleStatusSchema(BaseModel):
             ),
             raw=status.raw,
         )
+
+
+class ShareInvitationSchema(BaseModel):
+    """A car-share invitation waiting for this account (recipient side)."""
+
+    vin: str
+    car_type: str | None = None
+    car_alias: str | None = None
+    owner_nickname: str | None = None
+    owner_email: str | None = None
+    share_time: int | None = None
+    expire_time: int | None = None
+
+    @classmethod
+    def from_model(cls, i: ShareInvitation) -> ShareInvitationSchema:
+        return cls(
+            vin=i.vin,
+            car_type=i.car_type,
+            car_alias=i.car_alias,
+            owner_nickname=i.owner_nickname,
+            owner_email=i.owner_email,
+            share_time=i.share_time,
+            expire_time=i.expire_time,
+        )
+
+
+class ShareInvitationListResponse(BaseModel):
+    invitations: list[ShareInvitationSchema]
+
+
+class ShareInvitationAnswerResponse(BaseModel):
+    vin: str
+    accepted: bool
+    vehicles: list[VehicleSchema]

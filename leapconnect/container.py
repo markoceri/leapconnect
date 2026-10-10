@@ -250,6 +250,16 @@ class AppContainer:
             self.reset_connection()
             raise
 
+    async def refresh_vehicles(self) -> list[Vehicle]:
+        """Reload the vehicle list (e.g. after accepting a shared car) and
+        hand it to the scheduler and ABRP."""
+        self.vehicles = await self.get_client().get_vehicle_list()
+        if self.scheduler:
+            self.scheduler.set_client(self.client, self.vehicles)
+        if self.abrp_service:
+            self.abrp_service.set_vehicles(self.vehicles, self.vehicle_cache)
+        return self.vehicles
+
     def reset_connection(self) -> None:
         """Clear connection state after a failure or explicit disconnect."""
         self.connected = False

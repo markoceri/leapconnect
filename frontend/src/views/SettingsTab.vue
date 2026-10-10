@@ -77,6 +77,8 @@
           </button>
         </SectionCard>
 
+        <ShareInvitationsCard />
+
         <SectionCard title="Certificates" :icon="ShieldCheck">
           <InfoRow label="App Certificate" :value="certsStatus.cert_exists ? 'Installed' : 'Missing'" :color="certsStatus.cert_exists ? '#00e676' : '#ff5252'" :dot="true" />
           <InfoRow label="Private Key" :value="certsStatus.key_exists ? 'Installed' : 'Missing'" :color="certsStatus.key_exists ? '#00e676' : '#ff5252'" :dot="true" />
@@ -1382,6 +1384,7 @@ import ConfirmDialog from '../components/ConfirmDialog.vue'
 import InfoRow from '../components/InfoRow.vue'
 import ToggleSwitch from '../components/ToggleSwitch.vue'
 import LogViewer from '../components/LogViewer.vue'
+import ShareInvitationsCard from '../components/ShareInvitationsCard.vue'
 import { api } from '../composables/useApi'
 import { useAppStore } from '../stores/appStore'
 import { User, Car, Bell, SlidersHorizontal, BarChart3, Code, KeyRound, ShieldCheck, Wifi, Wrench, Settings, Github, Info, Star, AlertTriangle, ExternalLink, Moon, Sun, RefreshCw, Terminal, Navigation, Activity, Eye, EyeOff, Send, ChevronDown, ChevronRight, Search, Locate, Zap, CarFront, Lock, X, Trash2, Link2, Copy, Check, Home, Plug, Clock, Plus, Database, Palette, Sparkles, Calculator, Server, Map as MapIcon, Globe } from 'lucide-vue-next'

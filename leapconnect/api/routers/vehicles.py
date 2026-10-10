@@ -23,10 +23,17 @@ from leapconnect.api.deps import (
 from leapconnect.api.schemas import (
     FullVehicleDataResponse,
     LiveRefreshStatusResponse,
+    ShareInvitationAnswerResponse,
+    ShareInvitationListResponse,
+    ShareInvitationSchema,
     VehicleListResponse,
     VehicleSchema,
     VehicleStatusResponse,
     VehicleStatusSchema,
+)
+from leapconnect.application.car_sharing import (
+    InvitationNotFoundError,
+    answer_share_invitation,
 )
 from leapconnect.application.status_sanitizer import fetch_vehicle_status
 from leapconnect.asyncutils import spawn
@@ -86,6 +93,60 @@ async def get_vehicles(client: ClientDep, container: ContainerDep):
     return VehicleListResponse(
         vehicles=[VehicleSchema.from_model(v) for v in container.vehicles]
     )
+
+
+# ---------------------------------------------------------------------------
+# Car sharing (recipient side)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/api/share-invitations", response_model=ShareInvitationListResponse)
+async def get_share_invitations(client: ClientDep) -> ShareInvitationListResponse:
+    """Car-share invitations waiting for this account; a shared car stays out
+    of the vehicle list until its invitation is accepted."""
+    invitations = await client.get_share_invitations()
+    return ShareInvitationListResponse(
+        invitations=[ShareInvitationSchema.from_model(i) for i in invitations]
+    )
+
+
+async def _answer_invitation(
+    vin: str, container: AppContainer, *, accept: bool
+) -> ShareInvitationAnswerResponse:
+    try:
+        await answer_share_invitation(container.get_client(), vin, accept=accept)
+    except InvitationNotFoundError as exc:
+        raise HTTPException(
+            status_code=404, detail=f"No pending invitation for {vin}"
+        ) from exc
+    vehicles = await container.refresh_vehicles()
+    return ShareInvitationAnswerResponse(
+        vin=vin,
+        accepted=accept,
+        vehicles=[VehicleSchema.from_model(v) for v in vehicles],
+    )
+
+
+@router.post(
+    "/api/share-invitations/{vin}/accept",
+    response_model=ShareInvitationAnswerResponse,
+)
+async def accept_share_invitation(
+    vin: str, container: ContainerDep
+) -> ShareInvitationAnswerResponse:
+    """Accept the invitation: the shared car joins the vehicle list."""
+    return await _answer_invitation(vin, container, accept=True)
+
+
+@router.post(
+    "/api/share-invitations/{vin}/reject",
+    response_model=ShareInvitationAnswerResponse,
+)
+async def reject_share_invitation(
+    vin: str, container: ContainerDep
+) -> ShareInvitationAnswerResponse:
+    """Reject the invitation."""
+    return await _answer_invitation(vin, container, accept=False)
 
 
 def snapshot_from_status(vin: str, status: VehicleStatus) -> VehicleSnapshot:
