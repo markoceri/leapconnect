@@ -125,6 +125,7 @@
         <div class="session-head">
           <span>Date</span>
           <span>Time</span>
+          <span>Battery</span>
           <span>Energy</span>
           <span>Peak</span>
           <span>Tier</span>
@@ -160,6 +161,7 @@
             </span>
           </span>
           <span class="cell cell-time" data-label="Time">{{ formatTimeRange(s.start_ts, s.end_ts) }}</span>
+          <span class="cell cell-soc" data-label="Battery">{{ formatSocRange(s) }}</span>
           <span class="cell cell-energy" data-label="Energy">{{ s.energy_kwh != null ? s.energy_kwh.toFixed(1) + ' kWh' : '—' }}</span>
           <span class="cell cell-peak" data-label="Peak">{{ s.peak_power_kw != null ? s.peak_power_kw.toFixed(1) + ' kW' : '—' }}</span>
           <span class="cell cell-tier" data-label="Tier">
@@ -175,7 +177,7 @@
             <span v-if="mergeMode && mergeRowState(s)" class="merge-chip" :class="'merge-chip-' + mergeRowState(s)">
               {{ mergeRowState(s) === 'endpoint' ? 'Selected' : 'Included' }}
             </span>
-            <button v-else-if="!mergeMode" class="edit-btn" @click="editSession(s)" title="Edit session cost">
+            <button v-else-if="!mergeMode" class="edit-btn" @click="editSession(s)" title="Session details">
               <Pencil :size="14" />
             </button>
           </span>
@@ -219,12 +221,21 @@
     </div>
     </template>
 
-    <!-- Edit session dialog -->
+    <!-- Session detail & edit dialog -->
     <Teleport to="body">
-      <div v-if="editingSession" class="modal-backdrop" @click.self="editingSession = null">
-        <div class="modal-dialog">
-          <h3>Edit session cost</h3>
-          <p class="edit-date">{{ formatDate(editingSession.start_ts) }} {{ formatTimeRange(editingSession.start_ts, editingSession.end_ts) }}</p>
+      <div v-if="editingSession" class="modal-backdrop" @click.self="closeSession">
+        <div class="modal-dialog session-modal">
+          <div class="modal-header">
+            <h3>Charging Detail</h3>
+            <button class="close-btn" @click="closeSession">✕</button>
+          </div>
+          <p class="edit-date">
+            {{ formatDate(editingSession.start_ts) }}
+            <span v-if="editingSession.parts > 1" class="merged-badge" :title="`Merged session: ${editingSession.parts} charging runs`">
+              <Layers :size="11" />×{{ editingSession.parts }}
+            </span>
+            <span v-if="editingSession.duplicate_of_id" class="duplicate-badge"><CopyX :size="11" /> Possible duplicate</span>
+          </p>
           <div v-if="editingSession.duplicate_of_id" class="duplicate-note">
             <CopyX :size="14" />
             <span>
@@ -239,43 +250,101 @@
             <Layers :size="13" /> Merged from {{ editingSession.parts }} charging runs. Delete it to split it back into
             separate sessions.
           </p>
-          <div class="form-group">
-            <label>Tier</label>
-            <select v-model="editForm.tier_id">
-              <option v-for="t in availableTiers" :key="t.id" :value="t.id">{{ t.label }}</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label>Zone</label>
-            <select v-model="editForm.zone_name">
-              <option :value="''">No zone</option>
-              <option v-for="z in availableZones" :key="z.id" :value="z.name">{{ z.name }}</option>
-              <option v-if="editForm.zone_name && !availableZones.some(z => z.name === editForm.zone_name)" :value="editForm.zone_name">{{ editForm.zone_name }}</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label>Energy (kWh)</label>
-            <div class="input-with-action">
-              <input v-model.number="editForm.energy_kwh" type="number" step="0.1" min="0" />
-              <button
-                v-if="editingSession.id"
-                class="btn-recalc"
-                :disabled="recalculatingId === editingSession.id"
-                @click="recalcSession(editingSession)"
-                title="Recalculate energy &amp; cost from current data"
-              >
-                <RotateCw :size="14" :class="{ spinning: recalculatingId === editingSession.id }" />
-              </button>
+
+          <div class="session-detail-stats">
+            <div class="detail-stat">
+              <span class="stat-label">Time</span>
+              <span class="stat-value">{{ formatTimeRange(editingSession.start_ts, editingSession.end_ts) }}</span>
+            </div>
+            <div class="detail-stat">
+              <span class="stat-label">Duration</span>
+              <span class="stat-value" style="color: #7c6aff">{{ sessionDuration(editingSession) }}</span>
+            </div>
+            <div class="detail-stat">
+              <span class="stat-label">Energy</span>
+              <span class="stat-value" style="color: #00e676">{{ editingSession.energy_kwh != null ? editingSession.energy_kwh.toFixed(1) + ' kWh' : '—' }}</span>
+            </div>
+            <div class="detail-stat">
+              <span class="stat-label">SOC</span>
+              <span class="stat-value" style="color: #66bb6a">{{ formatSocRange(editingSession) }}</span>
+            </div>
+            <div class="detail-stat">
+              <span class="stat-label">SOC added</span>
+              <span class="stat-value" style="color: #42a5f5">{{ formatSocDelta(editingSession) }}</span>
+            </div>
+            <div class="detail-stat">
+              <span class="stat-label">Peak power</span>
+              <span class="stat-value" style="color: #ff7043">{{ editingSession.peak_power_kw != null ? editingSession.peak_power_kw.toFixed(1) + ' kW' : '—' }}</span>
+            </div>
+            <div class="detail-stat">
+              <span class="stat-label">Avg power</span>
+              <span class="stat-value" style="color: #ffab40">{{ sessionAvgPower(editingSession) }}</span>
+            </div>
+            <div class="detail-stat">
+              <span class="stat-label">Cost</span>
+              <span class="stat-value" style="color: #ffd54f">{{ editingSession.cost != null ? '€' + editingSession.cost.toFixed(2) : '—' }}</span>
+            </div>
+            <div class="detail-stat">
+              <span class="stat-label">Price</span>
+              <span class="stat-value" style="color: #fdd835">{{ sessionUnitPrice(editingSession) }}</span>
+            </div>
+            <div class="detail-stat">
+              <span class="stat-label">Charge type</span>
+              <span class="stat-value">{{ editingSession.parts ? (editingSession.is_dc ? 'DC' : 'AC') : '—' }}</span>
             </div>
           </div>
-          <div class="form-group">
-            <label>Cost override (€) — leave empty for auto</label>
-            <input v-model.number="editForm.cost" type="number" step="0.01" min="0" placeholder="Auto-calculate" />
+
+          <template v-if="editingSession.latitude != null && editingSession.longitude != null">
+            <div ref="sessionMapEl" class="session-map" />
+            <a class="map-link" :href="mapsUrl(editingSession)" target="_blank" rel="noopener">
+              <MapPin :size="13" /> Open in Google Maps
+            </a>
+          </template>
+          <div v-else class="map-empty">No GPS position recorded for this session</div>
+
+          <div class="session-edit">
+            <div class="session-edit-title"><Pencil :size="13" /> Edit session</div>
+            <div class="session-edit-grid">
+              <div class="form-group">
+                <label>Tier</label>
+                <select v-model="editForm.tier_id">
+                  <option v-for="t in availableTiers" :key="t.id" :value="t.id">{{ t.label }}</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>Zone</label>
+                <select v-model="editForm.zone_name">
+                  <option :value="''">No zone</option>
+                  <option v-for="z in availableZones" :key="z.id" :value="z.name">{{ z.name }}</option>
+                  <option v-if="editForm.zone_name && !availableZones.some(z => z.name === editForm.zone_name)" :value="editForm.zone_name">{{ editForm.zone_name }}</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>Energy (kWh)</label>
+                <div class="input-with-action">
+                  <input v-model.number="editForm.energy_kwh" type="number" step="0.1" min="0" />
+                  <button
+                    v-if="editingSession.id"
+                    class="btn-recalc"
+                    :disabled="recalculatingId === editingSession.id"
+                    @click="recalcSession(editingSession)"
+                    title="Recalculate energy &amp; cost from current data"
+                  >
+                    <RotateCw :size="14" :class="{ spinning: recalculatingId === editingSession.id }" />
+                  </button>
+                </div>
+              </div>
+              <div class="form-group">
+                <label>Cost override (€) — leave empty for auto</label>
+                <input v-model.number="editForm.cost" type="number" step="0.01" min="0" placeholder="Auto-calculate" />
+              </div>
+              <div class="form-group span-2">
+                <label>Note</label>
+                <input v-model="editForm.note" type="text" placeholder="Optional note" />
+              </div>
+            </div>
           </div>
-          <div class="form-group">
-            <label>Note</label>
-            <input v-model="editForm.note" type="text" placeholder="Optional note" />
-          </div>
+
           <div class="modal-actions">
             <button
               v-if="editingSession.id"
@@ -287,7 +356,7 @@
               <Trash2 :size="14" /> Delete
             </button>
             <span class="modal-actions-spacer" />
-            <button class="btn-cancel" @click="editingSession = null">Cancel</button>
+            <button class="btn-cancel" @click="closeSession">Cancel</button>
             <button class="btn-save" :disabled="saving" @click="saveSession">{{ saving ? 'Saving…' : 'Save' }}</button>
           </div>
           <div v-if="editError" class="field-error">{{ editError }}</div>
@@ -482,7 +551,11 @@
 <script setup>
 import { ref, computed, onMounted, watch, nextTick, onUnmounted } from 'vue'
 import { Chart, registerables } from 'chart.js'
+import L from 'leaflet'
+import 'leaflet/dist/leaflet.css'
 import { api } from '../composables/useApi'
+import { addBaseLayer } from '../utils/mapTiles'
+import { accentHex } from '../utils/theme'
 import { parseUTC } from '../utils/maintenance'
 import { Zap, TrendingUp, PieChart, Clock, CalendarDays, ChevronLeft, ChevronRight, List, Pencil, MapPin, RotateCw, Calculator, Trash2, Combine, Layers, CopyX, AlertTriangle } from 'lucide-vue-next'
 
@@ -645,6 +718,67 @@ function formatTimeRange(start, end) {
   return `${s} – ${e}`
 }
 
+// Session detail & edit dialog
+const sessionMapEl = ref(null)
+let sessionMap = null
+
+function destroySessionMap() {
+  sessionMap?.remove()
+  sessionMap = null
+}
+
+async function renderSessionMap(session) {
+  destroySessionMap()
+  if (session.latitude == null || session.longitude == null) return
+  await nextTick()
+  if (!sessionMapEl.value) return
+  const pos = [session.latitude, session.longitude]
+  sessionMap = L.map(sessionMapEl.value, { zoomControl: true, attributionControl: false }).setView(pos, 16)
+  addBaseLayer(sessionMap)
+  L.circleMarker(pos, { radius: 9, color: '#fff', fillColor: accentHex(), fillOpacity: 1, weight: 2 })
+    .bindTooltip(session.zone_name || 'Charging location')
+    .addTo(sessionMap)
+}
+
+function closeSession() {
+  destroySessionMap()
+  editingSession.value = null
+}
+
+function formatSocRange(s) {
+  if (s.start_soc == null && s.end_soc == null) return '—'
+  return `${s.start_soc ?? '?'}% → ${s.end_soc ?? '?'}%`
+}
+function formatSocDelta(s) {
+  if (s.start_soc == null || s.end_soc == null) return '—'
+  const d = s.end_soc - s.start_soc
+  return `${d >= 0 ? '+' : ''}${d}%`
+}
+function sessionHours(s) {
+  if (!s.start_ts) return null
+  const end = s.end_ts ? parseUTC(s.end_ts) : new Date()
+  return (end - parseUTC(s.start_ts)) / 3600000
+}
+function sessionDuration(s) {
+  const h = sessionHours(s)
+  if (h == null || h < 0) return '—'
+  const mins = Math.round(h * 60)
+  return mins >= 60 ? `${Math.floor(mins / 60)}h ${String(mins % 60).padStart(2, '0')}m` : `${mins} min`
+}
+// Over the whole window: for a merged session it includes the pauses
+function sessionAvgPower(s) {
+  const h = sessionHours(s)
+  if (s.energy_kwh == null || !s.end_ts || !h || h <= 0) return '—'
+  return `${(s.energy_kwh / h).toFixed(1)} kW`
+}
+function sessionUnitPrice(s) {
+  if (s.cost == null || !s.energy_kwh) return '—'
+  return `€${(s.cost / s.energy_kwh).toFixed(3)}/kWh`
+}
+function mapsUrl(s) {
+  return `https://www.google.com/maps/search/?api=1&query=${s.latitude},${s.longitude}`
+}
+
 // Edit session
 function editSession(session) {
   editingSession.value = session
@@ -656,6 +790,7 @@ function editSession(session) {
     note: session.note || '',
   }
   editError.value = ''
+  renderSessionMap(session)
 }
 
 async function saveSession() {
@@ -680,7 +815,7 @@ async function saveSession() {
       await api('POST', `/api/vehicles/${props.vin}/charging-costs`, body)
     }
     await loadData()
-    editingSession.value = null
+    closeSession()
   } catch (e) {
     editError.value = e.message || 'Failed to save'
   } finally {
@@ -896,7 +1031,7 @@ async function deleteSession(session) {
   try {
     await api('DELETE', `/api/vehicles/${props.vin}/charging-costs/${session.id}`)
     await loadData()
-    editingSession.value = null
+    closeSession()
   } catch (e) {
     editError.value = e.message || 'Failed to delete'
   } finally {
@@ -911,7 +1046,9 @@ async function recalcSession(session) {
   try {
     await api('POST', `/api/vehicles/${props.vin}/charging-costs/${session.id}/recalculate`)
     await loadData()
-    editingSession.value = null
+    const fresh = monthSessions.value.find(s => s.id === session.id)
+    if (fresh) editSession(fresh)
+    else closeSession()
   } catch { /* ignore */ } finally {
     recalculatingId.value = null
   }
@@ -1145,6 +1282,7 @@ onMounted(() => {
 onUnmounted(() => {
   window.removeEventListener('resize', handleResize)
   clearTimeout(resizeTimeout)
+  destroySessionMap()
 })
 watch(() => props.vin, loadData)
 watch(selectedMonth, loadData)
@@ -1227,7 +1365,7 @@ watch(selectedMonth, loadData)
 /* Desktop: aligned table with header */
 .session-head, .session-row {
   display: grid;
-  grid-template-columns: 1.1fr 1.4fr 0.9fr 0.8fr 1.1fr 1fr 0.9fr 40px;
+  grid-template-columns: 1.1fr 1.3fr 1.1fr 0.9fr 0.8fr 1.1fr 1fr 0.9fr 40px;
   gap: 12px; align-items: center;
 }
 .session-head { padding: 0 0 8px; border-bottom: 1px solid var(--border); }
@@ -1239,6 +1377,7 @@ watch(selectedMonth, loadData)
 .cell-time { font-size: 12px; color: var(--muted); }
 .cell-energy { font-weight: 600; color: var(--green); }
 .cell-peak { font-size: 12px; color: var(--amber); }
+.cell-soc { font-size: 12px; white-space: nowrap; }
 .cell-cost { font-weight: 600; color: var(--amber); }
 .cell-edit { display: flex; justify-content: flex-end; }
 .cost-none { color: var(--muted); }
@@ -1320,6 +1459,7 @@ watch(selectedMonth, loadData)
   }
   .cell-date { grid-column: 1; grid-row: 1; }
   .cell-time { grid-column: 2; grid-row: 1; }
+  .cell-soc { grid-column: 3; grid-row: 1; }
   .cell-energy { grid-column: 1; grid-row: 2; }
   .cell-peak { grid-column: 2; grid-row: 2; }
   .cell-cost { grid-column: 3; grid-row: 2; }
@@ -1333,6 +1473,29 @@ watch(selectedMonth, loadData)
 .modal-dialog { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 24px; width: 90%; max-width: 380px; }
 .modal-dialog h3 { font-size: 16px; font-weight: 700; color: var(--text); margin: 0 0 4px; }
 .edit-date { font-size: 12px; color: var(--muted); margin-bottom: 16px; }
+
+/* Session detail (same look as the trip detail) */
+.modal-dialog.session-modal { max-width: 700px; width: 100%; max-height: 85vh; overflow-y: auto; }
+.modal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+.modal-header h3 { margin: 0; }
+.close-btn { background: none; border: none; color: var(--muted); font-size: 18px; cursor: pointer; }
+.close-btn:hover { color: var(--text); }
+.session-modal .edit-date { display: flex; align-items: center; gap: 6px; }
+.session-detail-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-bottom: 16px; }
+.detail-stat { background: var(--bg2); border-radius: 8px; padding: 10px 12px; }
+.stat-label { display: block; font-size: 11px; color: var(--muted); text-transform: uppercase; margin-bottom: 4px; }
+.stat-value { font-size: 14px; font-weight: 600; color: var(--text); }
+.session-edit { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); }
+.session-edit-title { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin-bottom: 10px; }
+.session-edit-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; }
+.session-edit-grid .span-2 { grid-column: 1 / -1; }
+@media (max-width: 640px) {
+  .session-edit-grid { grid-template-columns: 1fr; }
+}
+.session-map { height: 300px; border-radius: 8px; overflow: hidden; border: 1px solid var(--border); }
+.map-link { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--accent); margin-top: 8px; text-decoration: none; }
+.map-link:hover { text-decoration: underline; }
+.map-empty { text-align: center; padding: 24px; color: var(--muted); font-size: 13px; background: var(--bg2); border-radius: 8px; }
 .form-group { margin-bottom: 12px; }
 .form-group label { display: block; font-size: 11px; color: var(--muted); margin-bottom: 4px; }
 .form-group input, .form-group select { width: 100%; background: var(--input); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; color: var(--text); font-size: 13px; }
