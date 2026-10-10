@@ -31,6 +31,7 @@ from leapconnect.application.commands import (
     execute_mqtt_command,
     execute_vehicle_command,
 )
+from leapconnect.application.hemisphere_memory import HemisphereMemory
 from leapconnect.application.notifications import NotificationDispatcher
 from leapconnect.application.scheduler import VehicleDataScheduler
 from leapconnect.application.status_sanitizer import fetch_vehicle_status
@@ -70,6 +71,7 @@ class AppContainer:
         self.vehicle_cache: VehicleStatusCache | None = None
         self.notification_dispatcher: NotificationDispatcher | None = None
         self.disk_monitor: DiskSpaceMonitor | None = None
+        self.hemisphere_memory: HemisphereMemory | None = None
 
         # Caches
         self.picture_cache: dict[str, dict[str, str]] = {}  # vin -> {name: data-URI}
@@ -218,12 +220,18 @@ class AppContainer:
         """
         self._close_sync_client()
         try:
+            guard = (
+                await self.hemisphere_memory.load_guard()
+                if self.hemisphere_memory
+                else None
+            )
             self.sync_client = LeapmotorApiClient(
                 username=username,
                 password=password,
                 app_cert_path=cert_path,
                 app_key_path=key_path,
                 account_p12_password=p12_password,
+                hemisphere_guard=guard,
             )
             self.client = AsyncLeapmotorApiClient(self.sync_client)
             await self.client.login()
@@ -620,6 +628,10 @@ class AppContainer:
         # Wire scheduler → MQTT publishing
         self.scheduler.set_on_status_callback(self._on_scheduler_status)
 
+        # Keep the GPS hemisphere memory across restarts
+        self.hemisphere_memory = HemisphereMemory(self.repo)
+        self.scheduler.set_after_history_poll_callback(self.save_hemisphere_memory)
+
         # Initialize ABRP telemetry service
         self.abrp_service = AbrpService()
         abrp_settings = await settings_store.load_abrp_settings(self.repo)
@@ -641,6 +653,11 @@ class AppContainer:
         if self.live_refresh_interval > 0 and self.connected:
             self.start_live_refresh()
 
+    async def save_hemisphere_memory(self) -> None:
+        """Persist the client's GPS hemisphere memory (no-op if unchanged)."""
+        if self.hemisphere_memory and self.sync_client:
+            await self.hemisphere_memory.save(self.sync_client.hemisphere_guard)
+
     async def shutdown(self) -> None:
         self.stop_live_refresh()
         if self.disk_monitor:
@@ -651,6 +668,8 @@ class AppContainer:
             await self.mqtt_service.stop()
         if self.scheduler:
             await self.scheduler.stop()
+        with suppress(Exception):
+            await self.save_hemisphere_memory()
         if self.repo:
             await self.repo.close()
         self._close_sync_client()

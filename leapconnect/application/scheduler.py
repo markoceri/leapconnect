@@ -80,6 +80,8 @@ class VehicleDataScheduler:
 
         # Optional callback for publishing status (e.g. MQTT)
         self._on_status_callback = None
+        # Optional callback run after each history poll
+        self._after_history_poll_callback = None
 
     # -- public API ----------------------------------------------------------
 
@@ -129,6 +131,10 @@ class VehicleDataScheduler:
     def set_on_status_callback(self, callback) -> None:
         """Set a callback invoked with (vehicle, status) after each MQTT poll."""
         self._on_status_callback = callback
+
+    def set_after_history_poll_callback(self, callback) -> None:
+        """Set a callback (no arguments) awaited after each history poll."""
+        self._after_history_poll_callback = callback
 
     def update_settings(
         self,
@@ -247,6 +253,11 @@ class VehicleDataScheduler:
         try:
             while self._settings.enabled:
                 await self._poll_history()
+                if self._after_history_poll_callback:
+                    try:
+                        await self._after_history_poll_callback()
+                    except Exception:
+                        _LOGGER.exception("Scheduler: after-poll callback failed")
                 try:
                     await self._maybe_run_month_end_costs()
                 except Exception:
