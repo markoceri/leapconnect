@@ -39,14 +39,31 @@
           <div class="cs-rank-note">The ranking may differ from the official app, which clamps values below 10% to 10% and above 99% to 99%.</div>
         </div>
 
-        <!-- Last week breakdown donut -->
-        <div v-if="lastWeek" class="cs-card cs-donut-card">
-          <div class="cs-card-title">Weekly energy distribution {{ lastWeekLabel }}</div>
-          <div class="cs-donut-row">
+        <!-- Energy breakdown donut (selectable period) -->
+        <div class="cs-card cs-donut-card">
+          <div class="cs-card-header">
+            <div class="cs-card-title">Energy distribution <span class="cs-period-label">{{ breakdownLabel }}</span></div>
+            <select v-model="breakdownPeriod" class="cs-select" :disabled="breakdownLoading" @change="onPeriodChange">
+              <option v-for="p in PERIODS" :key="p.id" :value="p.id">{{ p.label }}</option>
+            </select>
+          </div>
+          <div v-if="breakdownPeriod === 'custom'" class="cs-custom-range">
+            <input v-model="customFrom" type="date" class="cs-select" :max="customTo || todayIso()" />
+            <span class="cs-range-sep">–</span>
+            <input v-model="customTo" type="date" class="cs-select" :min="customFrom" :max="todayIso()" />
+            <button class="cs-retry-btn" :disabled="!customRangeValid || breakdownLoading" @click="fetchBreakdown">Apply</button>
+          </div>
+          <div v-if="breakdownLoading" class="cs-charging-loading">
+            <Loader2 :size="16" class="spinning" /> Loading...
+          </div>
+          <div v-else-if="breakdownError" class="cs-breakdown-error">
+            <AlertCircle :size="14" /> {{ breakdownError }}
+          </div>
+          <div v-else-if="breakdown" class="cs-donut-row">
             <div class="cs-donut-wrapper">
               <canvas ref="donutCanvas" width="180" height="180" />
               <div class="cs-donut-center">
-                <span class="cs-donut-value">{{ lastWeek.total_ec.toFixed(1) }}</span>
+                <span class="cs-donut-value">{{ breakdown.total_ec.toFixed(1) }}</span>
                 <span class="cs-donut-unit">kWh</span>
               </div>
             </div>
@@ -139,7 +156,22 @@ const props = defineProps({
 const loading = ref(false)
 const error = ref(null)
 const weeklyRank = ref(null)
-const lastWeek = ref(null)
+const breakdown = ref(null)
+const breakdownLoading = ref(false)
+const breakdownError = ref(null)
+// The cloud's last-week split is Monday–Sunday (UTC); every other period is a
+// range of whole days in the user's time zone.
+const PERIODS = [
+  { id: 'last_week', label: 'Last week' },
+  { id: 'last_30', label: 'Last 30 days' },
+  { id: 'this_month', label: 'This month' },
+  { id: 'last_month', label: 'Last month' },
+  { id: 'this_year', label: 'This year' },
+  { id: 'custom', label: 'Custom…' },
+]
+const breakdownPeriod = ref('last_week')
+const customFrom = ref('')
+const customTo = ref('')
 
 const chargeRecords = ref([])
 const chargingLoading = ref(false)
@@ -200,25 +232,59 @@ const rankBadgeColor = computed(() => {
   return '#FFA900'
 })
 
-const driverPct = computed(() => {
-  if (!lastWeek.value || lastWeek.value.total_ec === 0) return '0'
-  return ((lastWeek.value.driver_ec / lastWeek.value.total_ec) * 100).toFixed(2)
-})
-const acPct = computed(() => {
-  if (!lastWeek.value || lastWeek.value.total_ec === 0) return '0'
-  return ((lastWeek.value.ac_ec / lastWeek.value.total_ec) * 100).toFixed(2)
-})
-const otherPct = computed(() => {
-  if (!lastWeek.value || lastWeek.value.total_ec === 0) return '0'
-  return ((lastWeek.value.other_ec / lastWeek.value.total_ec) * 100).toFixed(2)
+function sharePct(key) {
+  if (!breakdown.value || breakdown.value.total_ec === 0) return '0'
+  return ((breakdown.value[key] / breakdown.value.total_ec) * 100).toFixed(2)
+}
+const driverPct = computed(() => sharePct('driver_ec'))
+const acPct = computed(() => sharePct('ac_ec'))
+const otherPct = computed(() => sharePct('other_ec'))
+
+const breakdownLabel = computed(() => {
+  if (breakdownPeriod.value === 'last_week') {
+    const weekly = weeklyRank.value?.weekly
+    if (!weekly || weekly.length === 0) return ''
+    const last = weekly[weekly.length - 1]
+    return `${formatShortDate(last.week_start)}–${formatShortDate(last.week_end)}`
+  }
+  if (!breakdown.value?.start) return ''
+  return formatRange(breakdown.value.start, breakdown.value.end)
 })
 
-const lastWeekLabel = computed(() => {
-  const weekly = weeklyRank.value?.weekly
-  if (!weekly || weekly.length === 0) return ''
-  const last = weekly[weekly.length - 1]
-  return `${formatShortDate(last.week_start)}–${formatShortDate(last.week_end)}`
-})
+const customRangeValid = computed(() =>
+  !!customFrom.value && !!customTo.value && customFrom.value <= customTo.value)
+
+function isoDay(d) {
+  const pad = n => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+
+function todayIso() {
+  return isoDay(new Date())
+}
+
+// [from, to] (inclusive, local days) of a preset period.
+function periodRange(id) {
+  const now = new Date()
+  const y = now.getFullYear(), m = now.getMonth()
+  switch (id) {
+    case 'last_30': return [isoDay(new Date(y, m, now.getDate() - 29)), isoDay(now)]
+    case 'this_month': return [isoDay(new Date(y, m, 1)), isoDay(now)]
+    case 'last_month': return [isoDay(new Date(y, m - 1, 1)), isoDay(new Date(y, m, 0))]
+    case 'this_year': return [isoDay(new Date(y, 0, 1)), isoDay(now)]
+    case 'custom': return customRangeValid.value ? [customFrom.value, customTo.value] : null
+    default: return null
+  }
+}
+
+function formatRange(from, to) {
+  const opts = { day: 'numeric', month: 'short' }
+  const f = new Date(`${from}T00:00:00`), t = new Date(`${to}T00:00:00`)
+  if (from === to) return f.toLocaleDateString('en-GB', { ...opts, year: 'numeric' })
+  const sameYear = f.getFullYear() === t.getFullYear()
+  const fromText = f.toLocaleDateString('en-GB', sameYear ? opts : { ...opts, year: 'numeric' })
+  return `${fromText} – ${t.toLocaleDateString('en-GB', { ...opts, year: 'numeric' })}`
+}
 
 function barHeight(val) {
   if (!weeklyRank.value?.weekly?.length) return 0
@@ -261,15 +327,9 @@ async function fetchAll() {
   loading.value = true
   error.value = null
   try {
-    const [rankRes, lastRes] = await Promise.all([
-      api('GET', `/api/vehicles/${props.vin}/consumption/weekly-rank`),
-      api('GET', `/api/vehicles/${props.vin}/consumption/last-week`),
-    ])
-    weeklyRank.value = rankRes
-    lastWeek.value = lastRes
+    weeklyRank.value = await api('GET', `/api/vehicles/${props.vin}/consumption/weekly-rank`)
     loading.value = false
-    await nextTick()
-    drawDonut()
+    await fetchBreakdown()
     // Start fetching charging history
     chargePage.value = 1
     await fetchCharging()
@@ -278,6 +338,42 @@ async function fetchAll() {
   } finally {
     loading.value = false
   }
+}
+
+function onPeriodChange() {
+  if (breakdownPeriod.value === 'custom') {
+    // Seed the custom range with the period shown so far.
+    if (!customRangeValid.value) {
+      [customFrom.value, customTo.value] = breakdown.value?.start
+        ? [breakdown.value.start, breakdown.value.end]
+        : periodRange('last_30')
+    }
+    return
+  }
+  fetchBreakdown()
+}
+
+async function fetchBreakdown() {
+  if (!props.vin) return
+  breakdownLoading.value = true
+  breakdownError.value = null
+  try {
+    if (breakdownPeriod.value === 'last_week') {
+      breakdown.value = await api('GET', `/api/vehicles/${props.vin}/consumption/last-week`)
+    } else {
+      const range = periodRange(breakdownPeriod.value)
+      if (!range) return
+      const [from, to] = range
+      breakdown.value = await api('GET', `/api/vehicles/${props.vin}/consumption/breakdown?from_date=${from}&to_date=${to}`)
+    }
+  } catch (e) {
+    breakdown.value = null
+    breakdownError.value = e.message || 'Failed to load the energy distribution'
+  } finally {
+    breakdownLoading.value = false
+  }
+  await nextTick()
+  drawDonut()
 }
 
 async function fetchCharging() {
@@ -297,7 +393,7 @@ async function fetchCharging() {
 
 function drawDonut() {
   const canvas = donutCanvas.value
-  if (!canvas || !lastWeek.value) return
+  if (!canvas || !breakdown.value) return
   const ctx = canvas.getContext('2d')
   const dpr = window.devicePixelRatio || 1
   canvas.width = 180 * dpr
@@ -305,11 +401,11 @@ function drawDonut() {
   ctx.scale(dpr, dpr)
 
   const cx = 90, cy = 90, r = 70, lw = 18
-  const total = lastWeek.value.total_ec || 1
+  const total = breakdown.value.total_ec || 1
   const segments = [
-    { val: lastWeek.value.driver_ec, color: '#4caf50' },
-    { val: lastWeek.value.ac_ec, color: '#42a5f5' },
-    { val: lastWeek.value.other_ec, color: '#ffab40' },
+    { val: breakdown.value.driver_ec, color: '#4caf50' },
+    { val: breakdown.value.ac_ec, color: '#42a5f5' },
+    { val: breakdown.value.other_ec, color: '#ffab40' },
   ]
 
   ctx.clearRect(0, 0, 180, 180)
@@ -406,6 +502,13 @@ fetchAll()
 .cs-legend-item { display: flex; align-items: center; gap: 8px; }
 .cs-legend-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
 .cs-legend-label { font-size: 13px; color: var(--text); }
+.cs-period-label { font-weight: 500; color: var(--muted); }
+.cs-donut-card .cs-card-header { flex-wrap: wrap; gap: 8px; }
+.cs-select { background: var(--btn-bg); border: 1px solid var(--border); border-radius: 6px; color: var(--text); padding: 6px 10px; font-size: 12px; cursor: pointer; }
+.cs-select:disabled { opacity: 0.6; cursor: default; }
+.cs-custom-range { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+.cs-range-sep { color: var(--muted); }
+.cs-breakdown-error { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 24px; font-size: 12px; color: #ff5252; }
 
 /* Charging list */
 .cs-charging-loading { display: flex; align-items: center; gap: 8px; padding: 20px; justify-content: center; font-size: 12px; color: var(--muted); }

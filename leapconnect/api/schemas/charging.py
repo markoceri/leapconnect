@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import date
+
 from leapmotor_api.models import (
     ChargeRecord,
     ConsumptionBreakdown,
@@ -325,4 +327,24 @@ class ConsumptionLastWeekResponse(BaseModel):
             ac_ec=r.ac_ec,
             other_ec=r.other_ec,
             total_ec=r.total_ec,
+        )
+
+
+class ConsumptionBreakdownResponse(ConsumptionLastWeekResponse):
+    """Driving / A/C / other split over a chosen range of days."""
+
+    start: date
+    end: date
+
+    @classmethod
+    def for_window(
+        cls, r: ConsumptionBreakdown, start: date, end: date
+    ) -> ConsumptionBreakdownResponse:
+        return cls(
+            driver_ec=r.driver_ec,
+            ac_ec=r.ac_ec,
+            other_ec=r.other_ec,
+            total_ec=r.total_ec,
+            start=start,
+            end=end,
         )

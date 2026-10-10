@@ -22,6 +22,7 @@ from leapconnect.api.schemas import (
     ChargingTimeBandCreate,
     ChargingTimeBandResponse,
     ChargingTimeBandUpdate,
+    ConsumptionBreakdownResponse,
     ConsumptionLastWeekResponse,
     ConsumptionWeeklyRankResponse,
     MergeChargingSessionsRequest,
@@ -42,6 +43,7 @@ from leapconnect.application.charging_costs import (
 from leapconnect.application.settings_store import (
     calculate_session_cost,
     load_preferences,
+    load_user_timezone,
     price_session,
     recalculate_session,
     resolve_timezone,
@@ -55,6 +57,7 @@ from leapconnect.domain.charging.sessions import (
     month_bounds,
     naive_utc,
 )
+from leapconnect.domain.telemetry.cloud_stats import cloud_window
 
 router = APIRouter(tags=["charging"])
 
@@ -113,6 +116,28 @@ async def get_consumption_last_week(
     """Get last week energy consumption breakdown."""
     result = await client.get_consumption_last_week_breakdown(vehicle)
     return ConsumptionLastWeekResponse.from_model(result)
+
+
+@router.get(
+    "/api/vehicles/{vin}/consumption/breakdown",
+    response_model=ConsumptionBreakdownResponse,
+)
+async def get_consumption_breakdown(
+    vin: str,
+    from_date: date,
+    to_date: date,
+    client: ClientDep,
+    vehicle: VehicleDep,
+    repo: RepoDep,
+) -> ConsumptionBreakdownResponse:
+    """Driving / A/C / other energy split over a range of days (inclusive),
+    in the ``timezone`` preference."""
+    try:
+        start, end = cloud_window(from_date, to_date, await load_user_timezone(repo))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    result = await client.get_consumption_breakdown(vehicle, start=start, end=end)
+    return ConsumptionBreakdownResponse.for_window(result, from_date, to_date)
 
 
 # ---------------------------------------------------------------------------
