@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from leapmotor_api.models import (
     ChargeRecord,
-    ConsumptionLastWeekBreakdown,
+    ConsumptionBreakdown,
     ConsumptionRank,
     ConsumptionWeeklyRank,
     WeeklyConsumption,
@@ -319,7 +319,7 @@ class ConsumptionLastWeekResponse(BaseModel):
     total_ec: float
 
     @classmethod
-    def from_model(cls, r: ConsumptionLastWeekBreakdown) -> ConsumptionLastWeekResponse:
+    def from_model(cls, r: ConsumptionBreakdown) -> ConsumptionLastWeekResponse:
         return cls(
             driver_ec=r.driver_ec,
             ac_ec=r.ac_ec,

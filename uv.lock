@@ -531,7 +531,7 @@ requires-dist = [
     { name = "cryptography", specifier = ">=43.0.0" },
     { name = "fastapi", specifier = ">=0.115.0" },
     { name = "httpx", specifier = ">=0.28.1" },
-    { name = "leapmotor-api", specifier = "==0.3.2" },
+    { name = "leapmotor-api", specifier = "==0.4.0" },
     { name = "pillow", specifier = ">=10.0.0" },
     { name = "pydantic-settings", specifier = ">=2.14.0" },
     { name = "python-multipart", specifier = ">=0.0.9" },
@@ -552,16 +552,16 @@ dev = [
 
 [[package]]
 name = "leapmotor-api"
-version = "0.3.2"
+version = "0.4.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "cryptography" },
     { name = "pillow" },
     { name = "requests" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/20/fc/c7dfb1e8d52db674df0438ee79bce253005118a1a97a099a41ea3894a1c7/leapmotor_api-0.3.2.tar.gz", hash = "sha256:5f9c06aee394958fbbba3365184fd1f2666f34ba41805aa1cc5776564d42568c", size = 110680, upload-time = "2026-06-21T22:47:05.291Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/d6/d1/dfe5f2f7e3f7e46b4688b2bd311336e304f081fa105ebd17e3256603a40a/leapmotor_api-0.4.0.tar.gz", hash = "sha256:0936641143a999c4898dec785ce6d20100533009d41716e28506dea35a03cabe", size = 129060, upload-time = "2026-10-10T16:51:15.749Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/60/19/e7d2d18666b44a40f4dbe84390cd5cb1e8a0b3c2688112f8f2f8816bc390/leapmotor_api-0.3.2-py3-none-any.whl", hash = "sha256:13352de8552276b2a739bc8afb19e7bd863868fc7f50b09dccec7373cb34d2f2", size = 64337, upload-time = "2026-06-21T22:47:03.91Z" },
+    { url = "https://files.pythonhosted.org/packages/f1/16/5c4f8033fb1f505420c3b2775cea575fc507331bbd6ad31839bc633d1e55/leapmotor_api-0.4.0-py3-none-any.whl", hash = "sha256:0b5be36185d9655894fb53cceeec05d0eb4851c3634fa8fe764bea0dbed29e7c", size = 71942, upload-time = "2026-10-10T16:51:13.939Z" },
 ]
 
 [[package]]
