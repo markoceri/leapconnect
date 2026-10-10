@@ -351,6 +351,7 @@ async def get_charging_sessions(
             _cost_response(row.record, tiers, bands).model_dump() if row.record else {}
         )
         base.pop("vin", None)
+        lat, lon = row.location or (None, None)
         sessions.append(
             ChargingSessionRowSchema(
                 **{
@@ -364,6 +365,9 @@ async def get_charging_sessions(
                     else None,
                     "start_soc": row.start_soc,
                     "end_soc": row.end_soc,
+                    "latitude": lat,
+                    "longitude": lon,
+                    "is_dc": row.is_dc,
                     "parts": len(row.parts),
                     **_duplicate_fields(row.duplicate_of),
                 }

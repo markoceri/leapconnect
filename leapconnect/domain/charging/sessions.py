@@ -110,6 +110,19 @@ class ChargeSessionRow:
     # most likely a duplicate of it
     duplicate_of: ChargingSessionCost | None = None
 
+    @property
+    def location(self) -> tuple[float, float] | None:
+        """Where the car charged: the last GPS fix of its latest run that has
+        one, ``(latitude, longitude)``."""
+        fix = next(
+            (p for p in reversed(self.parts) if p.latitude and p.longitude), None
+        )
+        return (fix.latitude, fix.longitude) if fix else None
+
+    @property
+    def is_dc(self) -> bool:
+        return any(p.is_dc for p in self.parts)
+
 
 def naive_utc(ts: datetime | None) -> datetime | None:
     """Normalize to naive UTC (stored timestamps are naive UTC)."""

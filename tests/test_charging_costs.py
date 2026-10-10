@@ -338,6 +338,29 @@ def test_detect_charge_sessions_splits_runs_and_keeps_open_tail():
     ]
 
 
+def test_session_row_reports_where_it_charged():
+    # Merged session: the latest run has no GPS fix, so the earlier one is used
+    runs = detect_charge_sessions(
+        [
+            *_snaps(HOME, charge_state=2),
+            _idle(T0 + timedelta(hours=2)),
+            *_snaps(None, start=T0 + timedelta(hours=3)),
+        ]
+    )
+    record = ChargingSessionCost(
+        id=1,
+        vin="V1",
+        start_ts=T0,
+        end_ts=T0 + timedelta(hours=4),
+        tier_id="public_dc",
+    )
+    [row] = pair_sessions(runs, [record], T0, T0 + timedelta(days=1))
+    assert (row.location, row.is_dc) == (HOME, True)
+
+    [bare] = pair_sessions(runs[1:], [], T0, T0 + timedelta(days=1))
+    assert (bare.location, bare.is_dc) == (None, False)
+
+
 # -- month selection --------------------------------------------------------
 
 

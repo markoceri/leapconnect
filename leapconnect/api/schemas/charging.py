@@ -152,6 +152,11 @@ class ChargingSessionRowSchema(BaseModel):
     detected_end_ts: str | None = None
     start_soc: int | None = None
     end_soc: int | None = None
+    # Where the car charged (last GPS fix of the session), and whether any of
+    # its runs was a DC charge
+    latitude: float | None = None
+    longitude: float | None = None
+    is_dc: bool = False
     # Charging runs in the session: more than one for a merged session
     parts: int = 0
     # Set on a record without charging runs lying inside another session's
