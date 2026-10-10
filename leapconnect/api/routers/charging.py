@@ -445,8 +445,8 @@ async def create_charging_cost(
     if body.tier_id not in tiers:
         raise HTTPException(status_code=422, detail=f"Unknown tier: {body.tier_id}")
     # Calculate cost
-    cost = None
-    if body.energy_kwh is not None:
+    cost = body.cost
+    if cost is None and body.energy_kwh is not None:
         cost = await calculate_session_cost(
             repo, body.tier_id, body.energy_kwh, start_ts, end_ts
         )
@@ -646,7 +646,9 @@ async def update_charging_cost(
         # Empty string clears the zone assignment.
         sc.zone_name = body.zone_name or None
     # Recalculate cost
-    if sc.energy_kwh is not None:
+    if body.cost is not None:
+        sc.cost = body.cost
+    else:
         sc.cost = await price_session(repo, sc)
     await repo.upsert_session_cost(sc)
     tiers = {t.id: t for t in await repo.get_price_tiers()}

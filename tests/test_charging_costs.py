@@ -4,6 +4,8 @@ from datetime import datetime, timedelta
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
+import pytest
+
 from leapconnect.application.charging_costs import (
     SKIP_NO_ENERGY,
     SKIP_NO_TIER,
@@ -33,6 +35,7 @@ from leapconnect.domain.zones import Zone
 HOME = (45.0, 9.0)
 AWAY = (48.0, 2.0)
 T0 = datetime(2026, 9, 10, 20, 0)
+COSTS_URL = "/api/vehicles/V1/charging-costs"
 
 
 def _zone(tier="home_solar"):
@@ -235,6 +238,61 @@ async def test_detected_session_matching_stored_record_is_not_duplicated():
 
 
 # -- endpoint ---------------------------------------------------------------
+
+
+def _create_session_cost(client, **fields):
+    tier = client.put("/api/charging/tiers/public_ac", json={"price_kwh": 0.25})
+    assert tier.status_code == 200
+    response = client.post(
+        COSTS_URL,
+        json={
+            "start_ts": T0.isoformat(),
+            "end_ts": (T0 + timedelta(hours=1)).isoformat(),
+            "tier_id": "public_ac",
+            "energy_kwh": 10.0,
+            **fields,
+        },
+    )
+    assert response.status_code == 201
+    return response.json()
+
+
+def _assert_saved_cost(client, session, expected):
+    assert session["cost"] == expected
+    response = client.get(COSTS_URL)
+    assert response.status_code == 200
+    [stored] = response.json()
+    assert stored["id"] == session["id"]
+    assert stored["cost"] == expected
+
+
+@pytest.mark.parametrize("cost, energy", [(12.34, 10.0), (0.0, None)])
+def test_create_session_cost_override(auth_client, cost, energy):
+    session = _create_session_cost(auth_client, cost=cost, energy_kwh=energy)
+    _assert_saved_cost(auth_client, session, cost)
+
+
+@pytest.mark.parametrize("cost", [12.34, 0.0])
+def test_update_session_cost_override(auth_client, cost):
+    session = _create_session_cost(auth_client)
+    assert session["cost"] == 2.5
+    response = auth_client.put(f"{COSTS_URL}/{session['id']}", json={"cost": cost})
+    assert response.status_code == 200
+    _assert_saved_cost(auth_client, response.json(), cost)
+
+
+@pytest.mark.parametrize("energy, expected", [(10.0, 2.5), (None, None)])
+def test_clear_session_cost_override(auth_client, energy, expected):
+    session = _create_session_cost(auth_client, cost=12.34, energy_kwh=energy)
+    assert session["cost"] == 12.34
+    response = auth_client.put(f"{COSTS_URL}/{session['id']}", json={"cost": None})
+    assert response.status_code == 200
+    _assert_saved_cost(auth_client, response.json(), expected)
+
+
+def test_create_session_cost_without_override_uses_tariff(auth_client):
+    session = _create_session_cost(auth_client)
+    _assert_saved_cost(auth_client, session, 2.5)
 
 
 def test_endpoint_rejects_unknown_fallback_tier(auth_client):
