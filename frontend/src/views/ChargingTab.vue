@@ -121,7 +121,7 @@
         included. To merge across months, pick one session, change month and pick the other. Sessions in progress
         can't be merged.
       </p>
-      <div class="session-list">
+      <div class="session-list" :class="{ 'merge-active': mergeMode }">
         <div class="session-head">
           <span>Date</span>
           <span>Time</span>
@@ -1367,6 +1367,12 @@ watch(selectedMonth, loadData)
   display: grid;
   grid-template-columns: 1.1fr 1.3fr 1.1fr 0.9fr 0.8fr 1.1fr 1fr 0.9fr 40px;
   gap: 12px; align-items: center;
+}
+/* Merge mode: the last column holds the Selected/Included chip instead of the edit button */
+@media (min-width: 641px) {
+  .merge-active .session-head, .merge-active .session-row {
+    grid-template-columns: 1.1fr 1.3fr 1.1fr 0.9fr 0.8fr 1.1fr 1fr 0.9fr 72px;
+  }
 }
 .session-head { padding: 0 0 8px; border-bottom: 1px solid var(--border); }
 .session-head span { font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); font-weight: 600; }
