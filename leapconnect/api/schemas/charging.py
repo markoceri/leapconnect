@@ -9,6 +9,7 @@ from leapmotor_api.models import (
     ConsumptionBreakdown,
     ConsumptionRank,
     ConsumptionWeeklyRank,
+    MileageEnergyHistory,
     WeeklyConsumption,
 )
 from pydantic import BaseModel
@@ -347,4 +348,54 @@ class ConsumptionBreakdownResponse(ConsumptionLastWeekResponse):
             total_ec=r.total_ec,
             start=start,
             end=end,
+        )
+
+
+class DailyMileageEnergySchema(BaseModel):
+    day: str
+    day_ms: int | None = None
+    odometer_km: float | None = None
+    mileage_km: float | None = None
+    energy_kwh: float | None = None
+
+
+class MileageEnergyHistoryResponse(BaseModel):
+    """Per-day mileage/energy over a range of days, plus lifetime totals.
+
+    The cloud's daily energy is coarse (often rounded to whole kWh);
+    ``total_energy_kwh`` (lifetime, standby included) is the precise figure.
+    """
+
+    start: date
+    end: date
+    total_mileage_km: float | None = None
+    total_energy_kwh: float | None = None
+    delivery_days: int | None = None
+    window_mileage_km: float | None = None
+    window_energy_kwh: float | None = None
+    days: list[DailyMileageEnergySchema]
+
+    @classmethod
+    def for_window(
+        cls, h: MileageEnergyHistory, start: date, end: date
+    ) -> MileageEnergyHistoryResponse:
+        energies = [d.energy_kwh for d in h.days if d.energy_kwh is not None]
+        return cls(
+            start=start,
+            end=end,
+            total_mileage_km=h.total_mileage_km,
+            total_energy_kwh=h.total_energy_kwh,
+            delivery_days=h.delivery_days,
+            window_mileage_km=h.window_mileage_km,
+            window_energy_kwh=round(sum(energies), 2) if energies else None,
+            days=[
+                DailyMileageEnergySchema(
+                    day=d.day,
+                    day_ms=d.day_ms,
+                    odometer_km=d.odometer_km,
+                    mileage_km=d.mileage_km,
+                    energy_kwh=d.energy_kwh,
+                )
+                for d in h.days
+            ],
         )

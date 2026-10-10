@@ -30,6 +30,7 @@ from leapconnect.api.schemas import (
     MergePreviewResponse,
     MergePreviewRun,
     MergePreviewSession,
+    MileageEnergyHistoryResponse,
     SkippedSessionSchema,
 )
 from leapconnect.application.charging_costs import (
@@ -138,6 +139,28 @@ async def get_consumption_breakdown(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     result = await client.get_consumption_breakdown(vehicle, start=start, end=end)
     return ConsumptionBreakdownResponse.for_window(result, from_date, to_date)
+
+
+@router.get(
+    "/api/vehicles/{vin}/mileage/daily",
+    response_model=MileageEnergyHistoryResponse,
+)
+async def get_daily_mileage_energy(
+    vin: str,
+    from_date: date,
+    to_date: date,
+    client: ClientDep,
+    vehicle: VehicleDep,
+    repo: RepoDep,
+) -> MileageEnergyHistoryResponse:
+    """Per-day mileage and energy over a range of days (inclusive), in the
+    ``timezone`` preference, plus the cloud's lifetime totals."""
+    try:
+        start, end = cloud_window(from_date, to_date, await load_user_timezone(repo))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    result = await client.get_mileage_energy_history(vehicle, start=start, end=end)
+    return MileageEnergyHistoryResponse.for_window(result, from_date, to_date)
 
 
 # ---------------------------------------------------------------------------

@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock
 from zoneinfo import ZoneInfo
 
 import pytest
-from leapmotor_api.models import ConsumptionBreakdown
+from leapmotor_api.models import ConsumptionBreakdown, MileageEnergyHistory
 
 from leapconnect.api import deps
 from leapconnect.domain.telemetry.cloud_stats import MAX_WINDOW_DAYS, cloud_window
@@ -92,3 +92,54 @@ def test_consumption_breakdown_rejects_inverted_range(cloud_client):
     )
     assert resp.status_code == 422
     stub.get_consumption_breakdown.assert_not_awaited()
+
+
+def test_daily_mileage_energy_sums_the_window(cloud_client):
+    http, stub = cloud_client
+    stub.get_mileage_energy_history.return_value = MileageEnergyHistory.from_dict(
+        {
+            "totalmileage": "12345.6",
+            "totalEnergy": "2100.4",
+            "deliveryDays": "400",
+            "totalAccumulatedMileage": "85",
+            "detail": [
+                {
+                    "day": "2026-07-01",
+                    "xDay": 1782856800000,
+                    "accumulatedMileage": "60",
+                    "accumulatedEnergyConsume": "9",
+                },
+                {
+                    "day": "2026-07-02",
+                    "accumulatedMileage": "25",
+                    "accumulatedEnergyConsume": "4.5",
+                },
+                {"day": "2026-07-03", "accumulatedMileage": "0"},
+            ],
+        }
+    )
+
+    resp = http.get(
+        "/api/vehicles/VIN123/mileage/daily",
+        params={"from_date": "2026-07-01", "to_date": "2026-07-03"},
+    )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["total_energy_kwh"] == 2100.4
+    assert body["delivery_days"] == 400
+    assert body["window_mileage_km"] == 85
+    assert body["window_energy_kwh"] == 13.5  # the day without energy is skipped
+    assert [d["mileage_km"] for d in body["days"]] == [60, 25, 0]
+    assert body["days"][2]["energy_kwh"] is None
+    assert body["days"][0]["day_ms"] == 1782856800000
+
+
+def test_daily_mileage_energy_rejects_too_long_window(cloud_client):
+    http, stub = cloud_client
+    resp = http.get(
+        "/api/vehicles/VIN123/mileage/daily",
+        params={"from_date": "2024-01-01", "to_date": "2026-01-01"},
+    )
+    assert resp.status_code == 422
+    stub.get_mileage_energy_history.assert_not_awaited()

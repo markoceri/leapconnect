@@ -103,6 +103,54 @@
         </div>
       </div>
 
+      <!-- Daily distance & energy (cloud) -->
+      <div class="cs-card">
+        <div class="cs-card-header">
+          <div class="cs-card-title">Daily {{ dailyMetric === 'km' ? 'distance' : 'energy' }} <span class="cs-period-label">{{ dailyLabel }}</span></div>
+          <div class="cs-header-controls">
+            <div class="cs-seg" role="group" aria-label="Metric">
+              <button :class="{ active: dailyMetric === 'km' }" @click="setDailyMetric('km')">Distance</button>
+              <button :class="{ active: dailyMetric === 'kwh' }" @click="setDailyMetric('kwh')">Energy</button>
+            </div>
+            <select v-model="dailyPeriod" class="cs-select" :disabled="dailyLoading" @change="fetchDaily">
+              <option v-for="p in DAILY_PERIODS" :key="p.id" :value="p.id">{{ p.label }}</option>
+            </select>
+          </div>
+        </div>
+        <div v-if="dailyLoading" class="cs-charging-loading">
+          <Loader2 :size="16" class="spinning" /> Loading...
+        </div>
+        <div v-else-if="dailyError" class="cs-breakdown-error">
+          <AlertCircle :size="14" /> {{ dailyError }}
+        </div>
+        <template v-else-if="daily">
+          <div class="cs-tiles">
+            <div class="cs-tile">
+              <span class="cs-tile-label">Distance in period</span>
+              <span class="cs-tile-value">{{ fmtNum(daily.window_mileage_km, 0) }} <small>km</small></span>
+            </div>
+            <div class="cs-tile">
+              <span class="cs-tile-label">Energy in period</span>
+              <span class="cs-tile-value">≈ {{ fmtNum(daily.window_energy_kwh, 0) }} <small>kWh</small></span>
+            </div>
+            <div class="cs-tile">
+              <span class="cs-tile-label">Lifetime energy</span>
+              <span class="cs-tile-value">{{ fmtNum(daily.total_energy_kwh, 1) }} <small>kWh</small></span>
+            </div>
+            <div class="cs-tile">
+              <span class="cs-tile-label">Lifetime distance</span>
+              <span class="cs-tile-value">{{ fmtNum(daily.total_mileage_km, 0) }} <small>km</small></span>
+              <span v-if="daily.delivery_days != null" class="cs-tile-sub">{{ daily.delivery_days }} days since delivery</span>
+            </div>
+          </div>
+          <div v-if="daily.days.length" class="cs-daily-chart">
+            <canvas ref="dailyCanvas" />
+          </div>
+          <div v-else class="cs-empty">No data for this period.</div>
+          <div class="cs-rank-note">Daily energy from the cloud is approximate (often rounded to whole kWh); lifetime energy includes standby consumption.</div>
+        </template>
+      </div>
+
       <!-- Charging history -->
       <div class="cs-card">
         <div class="cs-card-header">
@@ -146,7 +194,9 @@
 
 <script setup>
 import { ref, computed, watch, nextTick, onBeforeUnmount } from 'vue'
+import { Chart, registerables } from 'chart.js'
 import { api } from '../composables/useApi'
+import { accentHex } from '../utils/theme'
 import { Loader2, AlertCircle, ChevronLeft, ChevronRight, Zap } from 'lucide-vue-next'
 
 const props = defineProps({
@@ -180,6 +230,22 @@ const chargePageSize = 10
 
 const donutCanvas = ref(null)
 let donutChart = null
+
+Chart.register(...registerables)
+
+const DAILY_PERIODS = [
+  { id: 'last_7', label: 'Last 7 days' },
+  { id: 'last_30', label: 'Last 30 days' },
+  { id: 'this_month', label: 'This month' },
+  { id: 'last_month', label: 'Last month' },
+]
+const daily = ref(null)
+const dailyLoading = ref(false)
+const dailyError = ref(null)
+const dailyPeriod = ref('last_30')
+const dailyMetric = ref('km')
+const dailyCanvas = ref(null)
+let dailyChart = null
 
 // Gauge computed
 // The percentile is in `rank.rank`, a string like "85%". `rank.result` is
@@ -268,6 +334,7 @@ function periodRange(id) {
   const now = new Date()
   const y = now.getFullYear(), m = now.getMonth()
   switch (id) {
+    case 'last_7': return [isoDay(new Date(y, m, now.getDate() - 6)), isoDay(now)]
     case 'last_30': return [isoDay(new Date(y, m, now.getDate() - 29)), isoDay(now)]
     case 'this_month': return [isoDay(new Date(y, m, 1)), isoDay(now)]
     case 'last_month': return [isoDay(new Date(y, m - 1, 1)), isoDay(new Date(y, m, 0))]
@@ -329,7 +396,7 @@ async function fetchAll() {
   try {
     weeklyRank.value = await api('GET', `/api/vehicles/${props.vin}/consumption/weekly-rank`)
     loading.value = false
-    await fetchBreakdown()
+    await Promise.all([fetchBreakdown(), fetchDaily()])
     // Start fetching charging history
     chargePage.value = 1
     await fetchCharging()
@@ -338,6 +405,89 @@ async function fetchAll() {
   } finally {
     loading.value = false
   }
+}
+
+const dailyLabel = computed(() =>
+  daily.value?.start ? formatRange(daily.value.start, daily.value.end) : '')
+
+function fmtNum(v, digits) {
+  if (v == null) return '—'
+  return Number(v).toLocaleString('en-GB', { minimumFractionDigits: digits, maximumFractionDigits: digits })
+}
+
+// The cloud's `day_ms` is the day's local midnight; fall back to its `day` text.
+function dailyDayLabel(d) {
+  if (d.day_ms) return new Date(d.day_ms).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+  return d.day
+}
+
+async function fetchDaily() {
+  if (!props.vin) return
+  const [from, to] = periodRange(dailyPeriod.value)
+  dailyLoading.value = true
+  dailyError.value = null
+  try {
+    daily.value = await api('GET', `/api/vehicles/${props.vin}/mileage/daily?from_date=${from}&to_date=${to}`)
+  } catch (e) {
+    daily.value = null
+    dailyError.value = e.message || 'Failed to load daily distance and energy'
+  } finally {
+    dailyLoading.value = false
+  }
+  await nextTick()
+  drawDaily()
+}
+
+function setDailyMetric(metric) {
+  dailyMetric.value = metric
+  drawDaily()
+}
+
+function drawDaily() {
+  if (dailyChart) { dailyChart.destroy(); dailyChart = null }
+  const canvas = dailyCanvas.value
+  if (!canvas || !daily.value?.days?.length) return
+  const s = getComputedStyle(document.documentElement)
+  const css = (name, fallback) => s.getPropertyValue(name).trim() || fallback
+  const isKm = dailyMetric.value === 'km'
+  const unit = isKm ? 'km' : 'kWh'
+  const days = daily.value.days
+  dailyChart = new Chart(canvas, {
+    type: 'bar',
+    data: {
+      labels: days.map(dailyDayLabel),
+      datasets: [{
+        data: days.map(d => (isKm ? d.mileage_km : d.energy_kwh)),
+        backgroundColor: accentHex(),
+        borderRadius: { topLeft: 4, topRight: 4 },
+        borderSkipped: 'bottom',
+        maxBarThickness: 28,
+      }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: css('--tooltip-bg', '#161b2a'),
+          titleColor: css('--sub', '#8892a8'),
+          bodyColor: css('--text', '#e2e6f0'),
+          borderColor: css('--tooltip-border', '#1c2240'),
+          borderWidth: 1,
+          padding: 10,
+          displayColors: false,
+          callbacks: {
+            label: ctx => (ctx.raw == null ? 'No data' : `${fmtNum(ctx.raw, isKm ? 1 : 0)} ${unit}`),
+          },
+        },
+      },
+      scales: {
+        x: { grid: { display: false }, ticks: { color: css('--chart-tick', '#4a5468'), font: { size: 10 }, maxTicksLimit: 8, maxRotation: 0 } },
+        y: { beginAtZero: true, grid: { color: css('--chart-grid', '#1c2135'), drawTicks: false }, ticks: { color: css('--chart-tick', '#4a5468'), font: { size: 10 }, callback: v => `${v} ${unit}` } },
+      },
+    },
+  })
 }
 
 function onPeriodChange() {
@@ -438,6 +588,7 @@ watch(() => props.vin, () => { fetchAll() })
 
 onBeforeUnmount(() => {
   if (donutChart) { donutChart.destroy(); donutChart = null }
+  if (dailyChart) { dailyChart.destroy(); dailyChart = null }
 })
 
 // Initial fetch
@@ -504,6 +655,20 @@ fetchAll()
 .cs-legend-label { font-size: 13px; color: var(--text); }
 .cs-period-label { font-weight: 500; color: var(--muted); }
 .cs-donut-card .cs-card-header { flex-wrap: wrap; gap: 8px; }
+.cs-header-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.cs-card-header:has(.cs-header-controls) { flex-wrap: wrap; gap: 8px; }
+.cs-seg { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+.cs-seg button { background: var(--btn-bg); border: none; color: var(--muted); padding: 6px 10px; font-size: 12px; cursor: pointer; }
+.cs-seg button + button { border-left: 1px solid var(--border); }
+.cs-seg button.active { color: var(--accent); background: rgba(var(--accent-rgb), 0.12); font-weight: 600; }
+.cs-tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 16px; }
+@media (min-width: 768px) { .cs-tiles { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.cs-tile { display: flex; flex-direction: column; gap: 4px; padding: 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--btn-bg); min-width: 0; }
+.cs-tile-label { font-size: 11px; color: var(--muted); }
+.cs-tile-value { font-size: 18px; font-weight: 700; color: var(--text); }
+.cs-tile-value small { font-size: 11px; font-weight: 500; color: var(--muted); }
+.cs-tile-sub { font-size: 11px; color: var(--muted); }
+.cs-daily-chart { position: relative; height: 200px; }
 .cs-select { background: var(--btn-bg); border: 1px solid var(--border); border-radius: 6px; color: var(--text); padding: 6px 10px; font-size: 12px; cursor: pointer; }
 .cs-select:disabled { opacity: 0.6; cursor: default; }
 .cs-custom-range { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
