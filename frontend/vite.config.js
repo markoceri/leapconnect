@@ -39,6 +39,9 @@ export default defineConfig({
         // network by default — no absolute /api or /ws rules, which would break
         // under Home Assistant ingress where the whole app lives under /api/...
         navigateFallback: 'index.html',
+        // File downloads opened as a navigation must reach the backend, not the
+        // app shell. Unanchored, so it matches under the ingress prefix as well.
+        navigateFallbackDenylist: [/\/api\/vehicles\/[^/]+\/software\/(packages\/\d+\/)?download$/],
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
       },
     }),

@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Software version and pending OTA update** — the *Details* tab gains a **Software** card with the installed version and its install date and, when Leapmotor offers one, the update waiting to be installed: version, download size and number of packages, with a dialog showing the release notes and the per-ECU packages (component, version, build date, size). A *Software update … available* pill on the *Dashboard* opens the card and can be hidden for that version; the *Firmware* dialog shows the pending version too. The cloud answers only the account that **owns** the car: for a shared account the card explains that the information isn't available. A version the cloud reports as `0.00.00` (seen on a T03) is shown as *Unknown*. The answer is cached for 6 hours per vehicle (the card's refresh button asks again); download links, hashes and signatures never leave the backend. New endpoint `GET /api/vehicles/{vin}/software` (`application/software_updates`), backed by leapmotor-api 0.6.0.
+- **Download the pending OTA update** — the *Software* card gains a *Packages* button. In the update dialog's *Packages* tab, each package can be downloaded on its own, and *Download all* fetches the whole update as one ZIP (`Leapmotor-<model>-<version>.zip`, after a confirmation showing the size) with a `manifest.json` describing each package and the release notes. LeapConnect streams the files from Leapmotor's CDN without storing them, and single packages forward `Range`, so browsers can resume. Leapmotor serves the packages encrypted (`.encrypt`), so they are an archive copy and can't be installed; the cloud's md5/sha256 don't match the encrypted files and are left out. Links about to expire are fetched again first, and the signed links stay out of the responses and the logs: the query string httpx logs is redacted. Only the account that owns the car can download. New endpoints `GET /api/vehicles/{vin}/software/packages/{seq}/download` and `GET /api/vehicles/{vin}/software/download` (`infrastructure/ota_cdn`); the service worker lets both through to the backend.
+- **"Software update available" notification** — new `software_update_available` event (Maintenance category, opt-in like every notification), sent once per version after a history poll, with the version, size and release notes; the last notified version is kept in the `software_update_notified:{vin}` setting.
+- **Home Assistant software entity** — a read-only MQTT `update` entity (*Software*, diagnostic) with installed and latest version and a release summary. It is announced only for the account that owns the car, and there is no install command.
+- **Release notes language** — new `language` preference (*Settings → Preferences*), set automatically from the browser on first load, choosing the language of the release notes in the app, on Telegram and in Home Assistant; English when Leapmotor doesn't provide it.
+
+### Changed
+- Requires leapmotor-api 0.6.0.
+
 ## [0.12.0] - 2026-10-10
 
 ### Added

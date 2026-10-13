@@ -23,6 +23,10 @@ class UserPreferences:
     # IANA time zone (e.g. "Europe/Rome") defining calendar months for the
     # charging sessions/costs; "" = not set yet (UTC). Set from the browser.
     timezone: str = ""
+    # BCP 47 language tag (e.g. "it-IT") for content the Leapmotor cloud
+    # provides in several languages (software release notes); "" = not set
+    # yet (English). Set from the browser.
+    language: str = ""
 
 
 @dataclass

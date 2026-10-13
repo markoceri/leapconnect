@@ -2,14 +2,28 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+from typing import Literal
+
 from leapmotor_api.models import (
     ShareInvitation,
+    SoftwarePackage,
+    SoftwareVersion,
     Vehicle,
     VehicleStatus,
 )
 from pydantic import BaseModel
 
 from leapconnect.api.schemas._utils import _enum_val
+from leapconnect.application.software_updates import (
+    SoftwareLookup,
+    build_date,
+    component_label,
+    downloadable,
+    known_version,
+    note_text,
+    pick_release_notes,
+)
 
 
 class VehicleSchema(BaseModel):
@@ -456,3 +470,95 @@ class ShareInvitationAnswerResponse(BaseModel):
     vin: str
     accepted: bool
     vehicles: list[VehicleSchema]
+
+
+# ---------------------------------------------------------------------------
+# Software (OTA)
+# ---------------------------------------------------------------------------
+
+
+class SoftwareReleaseNoteSchema(BaseModel):
+    title: str | None = None
+    content: str = ""
+
+
+class SoftwarePackageSchema(BaseModel):
+    """One ECU package; download links, hashes and signatures stay server-side."""
+
+    seq: int | None = None  # id for the download endpoint
+    file_name: str | None = None  # as served: ``<fileName>.encrypt``
+    downloadable: bool = False
+    product: str | None = None
+    component: str | None = None  # readable ECU name, when known
+    ecu_id: str | None = None
+    soft_version: str | None = None
+    build_date: str | None = None  # ISO date
+    size_bytes: int = 0
+
+    @classmethod
+    def from_model(cls, p: SoftwarePackage) -> SoftwarePackageSchema:
+        return cls(
+            seq=p.seq,
+            file_name=p.served_file_name,
+            downloadable=downloadable(p),
+            product=p.product,
+            component=component_label(p),
+            ecu_id=p.ecu_id,
+            soft_version=p.soft_version,
+            build_date=build_date(p),
+            size_bytes=p.file_size or 0,
+        )
+
+
+class SoftwareVersionSchema(BaseModel):
+    version: str | None = None  # None when the cloud doesn't know it (0.00.00)
+    installed_at: int | None = None  # epoch ms, installed version only
+    campaign_id: int | None = None  # pending version only
+    state: int | None = None
+    notes_language: str | None = None
+    notes: list[SoftwareReleaseNoteSchema] = []
+    languages: list[str] = []
+    size_bytes: int = 0
+    packages: list[SoftwarePackageSchema] = []
+
+    @classmethod
+    def from_model(cls, v: SoftwareVersion, language: str) -> SoftwareVersionSchema:
+        notes_language, notes = pick_release_notes(v, language)
+        packages = sorted(v.packages, key=lambda p: p.file_size or 0, reverse=True)
+        return cls(
+            version=known_version(v),
+            installed_at=v.install_time,
+            campaign_id=v.request_version_id,
+            state=v.state,
+            notes_language=notes_language,
+            notes=[
+                SoftwareReleaseNoteSchema(title=n.title, content=note_text(n.content))
+                for n in notes
+            ],
+            languages=sorted(v.release_notes),
+            size_bytes=v.download_size,
+            packages=[SoftwarePackageSchema.from_model(p) for p in packages],
+        )
+
+
+class SoftwareInfoResponse(BaseModel):
+    vin: str
+    status: Literal["ok", "owner_only"]
+    checked_at: datetime
+    current: SoftwareVersionSchema | None = None
+    update: SoftwareVersionSchema | None = None
+
+    @classmethod
+    def from_lookup(cls, lookup: SoftwareLookup, language: str) -> SoftwareInfoResponse:
+        info = lookup.info
+        return cls(
+            vin=lookup.vin,
+            status="owner_only" if info is None else "ok",
+            checked_at=lookup.checked_at,
+            current=SoftwareVersionSchema.from_model(info.current_version, language)
+            if info and info.current_version
+            else None,
+            update=SoftwareVersionSchema.from_model(info.new_version, language)
+            if info and info.new_version
+            else None,
+        )

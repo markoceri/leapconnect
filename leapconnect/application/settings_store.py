@@ -7,6 +7,7 @@ session costs from the user's pricing configuration.
 from __future__ import annotations
 
 import json
+import re
 from datetime import UTC, datetime, tzinfo
 from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
@@ -37,6 +38,7 @@ async def load_preferences(repo: AppRepository) -> UserPreferences:
     auto_theme_raw = await repo.get_setting("auto_theme_from_vehicle")
     auto_costs_raw = await repo.get_setting("auto_calculate_monthly_costs")
     timezone_raw = await repo.get_setting("timezone")
+    language_raw = await repo.get_setting("language")
     return UserPreferences(
         electricity_price_kwh=float(raw) if raw else 0.25,
         theme=theme_raw if theme_raw in ("dark", "light", "vehicle") else "dark",
@@ -53,7 +55,24 @@ async def load_preferences(repo: AppRepository) -> UserPreferences:
         timezone=timezone_raw
         if timezone_raw and is_valid_timezone(timezone_raw)
         else "",
+        language=language_raw
+        if language_raw and is_valid_language(language_raw)
+        else "",
     )
+
+
+DEFAULT_LANGUAGE = "en-US"
+_LANGUAGE_RE = re.compile(r"[a-z]{2,3}(-[A-Z]{2})?")
+
+
+def is_valid_language(tag: str) -> bool:
+    """True if ``tag`` is a language tag such as ``it`` or ``it-IT``."""
+    return bool(_LANGUAGE_RE.fullmatch(tag))
+
+
+def resolve_language(tag: str) -> str:
+    """The preference's language; English when unset."""
+    return tag if tag and is_valid_language(tag) else DEFAULT_LANGUAGE
 
 
 def is_valid_timezone(name: str) -> bool:

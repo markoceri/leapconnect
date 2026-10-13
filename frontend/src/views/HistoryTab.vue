@@ -120,6 +120,7 @@
           <option value="unlocked_timeout">Unlocked timeout</option>
           <option value="tire_pressure_alert">Tire pressure alert</option>
           <option value="range_low">Low range</option>
+          <option value="software_update_available">Software update available</option>
           <option value="tracking_start">Tracking start</option>
           <option value="tracking_stop">Tracking stop</option>
         </select>
@@ -363,6 +364,7 @@ const EVENT_TYPE_LABELS = {
   zone_dwell: 'Zone dwell too long',
   zone_absence: 'Zone absence too long',
   charging_costs_incomplete: 'Monthly charging costs incomplete',
+  software_update_available: 'Software update available',
 }
 
 function formatEventType(type) {

@@ -17,6 +17,13 @@
               <span>Firmware operations may affect vehicle availability. Use with caution.</span>
             </div>
 
+            <!-- Pending update from the cloud (owner account only) -->
+            <div v-if="pendingUpdate" class="fo-pending">
+              Pending update <strong>{{ pendingUpdate.version || 'new version' }}</strong>
+              · {{ formatBytes(pendingUpdate.size_bytes) }}
+              · {{ pendingUpdate.packages.length }} package{{ pendingUpdate.packages.length === 1 ? '' : 's' }}
+            </div>
+
             <!-- Existing FOTA schedules -->
             <div v-if="loadingSchedules" class="fo-loading">
               <Loader :size="16" class="spinning" />
@@ -97,6 +104,7 @@
 import { ref, computed, watch } from 'vue'
 import { Download, Play, Clock, AlertTriangle, Loader, Trash2 } from 'lucide-vue-next'
 import { api } from '../composables/useApi'
+import { softwareState, loadSoftware, formatBytes } from '../composables/useSoftware'
 
 const props = defineProps({
   visible: Boolean,
@@ -119,10 +127,13 @@ const actions = [
   { value: 'schedule', label: 'Schedule', icon: Clock, color: '#ffab40' },
 ]
 
+const pendingUpdate = computed(() => (props.vin ? softwareState(props.vin).data?.update : null) || null)
+
 const selectedLabel = computed(() => actions.find(a => a.value === selectedAction.value)?.label ?? '')
 
 watch(() => props.visible, async (val) => {
   if (!val || !props.vin) return
+  loadSoftware(props.vin)
   loadingSchedules.value = true
   try {
     const data = await api('GET', `/api/vehicles/${props.vin}/fota/schedule`)
@@ -191,6 +202,11 @@ async function execute() {
 }
 .fo-body { padding: 20px; display: flex; flex-direction: column; gap: 16px; }
 
+.fo-pending {
+  padding: 10px 14px; border-radius: 10px; font-size: 12px; color: var(--sub);
+  background: rgba(255,171,64,.08); border: 1px solid rgba(255,171,64,.35);
+}
+.fo-pending strong { color: #ffab40; font-family: var(--mono); }
 .fo-warning {
   display: flex; align-items: center; gap: 8px;
   padding: 10px 14px; border-radius: 10px;

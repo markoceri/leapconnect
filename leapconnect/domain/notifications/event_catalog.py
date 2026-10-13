@@ -320,6 +320,17 @@ EVENT_CATALOG: list[dict] = [
         "configurable": True,
         "config_schema": {},
     },
+    {
+        "event_type": "software_update_available",
+        "label": "Software update available",
+        "description": (
+            "Notify when the Leapmotor cloud offers a new software (OTA) version "
+            "for the vehicle, once per version; owner account only"
+        ),
+        "category": "maintenance",
+        "has_image": False,
+        "configurable": False,
+    },
     # System (host health — not about a vehicle)
     {
         "event_type": "disk_space_low",
@@ -399,6 +410,13 @@ MESSAGE_TEMPLATES: dict[str, dict[str, str]] = {
             "{month}: {calculated} session(s) costed automatically, "
             "{skipped} need a manual cost.\n{sessions_list}\n"
             "Open the Charging tab to assign them."
+        ),
+    },
+    "software_update_available": {
+        "title": "🔄 Software update available",
+        "body": (
+            "Version {version} is waiting to be installed "
+            "(installed: {installed}).\n{size} · {packages} package(s)\n\n{notes}"
         ),
     },
     "driving_start": {

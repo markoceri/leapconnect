@@ -141,6 +141,9 @@
       <InfoRow label="Shared Vehicle" :value="vehicle.is_shared ? 'Yes' : 'No'" :color="vehicle.is_shared ? '#00e676' : 'var(--muted)'" />
     </SectionCard>
 
+    <!-- Software (OTA) -->
+    <SoftwareCard v-if="props.vehicle?.vin" id="software" :vin="props.vehicle.vin" />
+
     <!-- Mileage & Energy -->
     <SectionCard title="Mileage & Energy" :icon="Zap">
       <InfoRow label="Total Mileage" :value="driving.total_mileage != null ? `${driving.total_mileage.toLocaleString()} km` : '—'" color="#ffab40" />
@@ -158,6 +161,7 @@ import SectionCard from '../components/SectionCard.vue'
 import InfoRow from '../components/InfoRow.vue'
 import LocationCard from '../components/LocationCard.vue'
 import BatteryHealthCard from '../components/BatteryHealthCard.vue'
+import SoftwareCard from '../components/SoftwareCard.vue'
 import {
   DoorOpen, Thermometer, Circle, Battery, BatteryCharging,
   Wifi, Info, Zap, Armchair, ShieldCheck

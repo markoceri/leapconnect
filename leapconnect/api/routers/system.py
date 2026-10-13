@@ -26,6 +26,7 @@ from leapconnect.api.schemas import (
     UnreadCountResponse,
 )
 from leapconnect.application.settings_store import (
+    is_valid_language,
     is_valid_timezone,
     load_disk_alert_settings,
     load_preferences,
@@ -58,6 +59,7 @@ def _prefs_response(prefs) -> PreferencesResponse:
         auto_theme_from_vehicle=prefs.auto_theme_from_vehicle,
         auto_calculate_monthly_costs=prefs.auto_calculate_monthly_costs,
         timezone=prefs.timezone,
+        language=prefs.language,
     )
 
 
@@ -178,6 +180,15 @@ async def update_preferences(request: Request, repo: RepoDep) -> PreferencesResp
                 detail="'timezone' must be an IANA time zone (e.g. 'Europe/Rome')",
             )
         await repo.save_setting("timezone", tz_name)
+    # -- language (software release notes) --
+    language = body.get("language")
+    if language is not None:
+        if not isinstance(language, str) or not is_valid_language(language):
+            raise HTTPException(
+                status_code=422,
+                detail="'language' must be a language tag (e.g. 'it-IT')",
+            )
+        await repo.save_setting("language", language)
     return _prefs_response(await load_preferences(repo))
 
 

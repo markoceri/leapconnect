@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { api } from '../composables/useApi'
+import { resetSoftware } from '../composables/useSoftware'
 import { generateVehicleTheme, THEME_VARS } from '../utils/colorTheme'
 
 export const useAppStore = defineStore('app', () => {
@@ -58,6 +59,7 @@ export const useAppStore = defineStore('app', () => {
       applyTheme(data.theme || 'dark')
       autoThemeFromVehicle.value = !!data.auto_theme_from_vehicle
       adoptBrowserTimeZone(data)
+      adoptBrowserLanguage(data)
     } catch {
       // Fallback to localStorage (e.g. on login page before auth)
       const saved = localStorage.getItem('theme')
@@ -74,6 +76,18 @@ export const useAppStore = defineStore('app', () => {
     if (!tz) return
     try {
       await api('PUT', '/api/preferences', { timezone: tz })
+    } catch { /* ignore */ }
+  }
+
+  // The software release notes come in the `language` preference (also used
+  // for Telegram and Home Assistant, which have no browser): seed it once.
+  async function adoptBrowserLanguage(prefs) {
+    if (prefs.language) return
+    const lang = navigator.language
+    if (!lang || !/^[a-z]{2,3}(-[A-Z]{2})?$/.test(lang)) return
+    try {
+      await api('PUT', '/api/preferences', { language: lang })
+      resetSoftware() // notes possibly loaded meanwhile in English
     } catch { /* ignore */ }
   }
 

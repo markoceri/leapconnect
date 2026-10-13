@@ -34,6 +34,11 @@ from leapconnect.application.commands import (
 from leapconnect.application.hemisphere_memory import HemisphereMemory
 from leapconnect.application.notifications import NotificationDispatcher
 from leapconnect.application.scheduler import VehicleDataScheduler
+from leapconnect.application.software_updates import (
+    SoftwareUpdates,
+    home_assistant_state,
+    notify_pending_update,
+)
 from leapconnect.application.status_sanitizer import fetch_vehicle_status
 from leapconnect.application.system_health import DiskSpaceMonitor
 from leapconnect.application.vehicle_cache import VehicleStatusCache
@@ -74,6 +79,7 @@ class AppContainer:
         self.hemisphere_memory: HemisphereMemory | None = None
 
         # Caches
+        self.software_updates = SoftwareUpdates()  # vin -> /hotspot/fetch answer
         self.picture_cache: dict[str, dict[str, str]] = {}  # vin -> {name: data-URI}
         self.image_packages: dict[str, CarImagePackage] = {}  # vin -> package
 
@@ -219,6 +225,7 @@ class AppContainer:
         On failure the connection state is reset and the exception re-raised.
         """
         self._close_sync_client()
+        self.software_updates.clear()
         try:
             guard = (
                 await self.hemisphere_memory.load_guard()
@@ -640,7 +647,7 @@ class AppContainer:
 
         # Keep the GPS hemisphere memory across restarts
         self.hemisphere_memory = HemisphereMemory(self.repo)
-        self.scheduler.set_after_history_poll_callback(self.save_hemisphere_memory)
+        self.scheduler.set_after_history_poll_callback(self._after_history_poll)
 
         # Initialize ABRP telemetry service
         self.abrp_service = AbrpService()
@@ -662,6 +669,47 @@ class AppContainer:
         # Start live refresh if configured (needs client from auto-connect)
         if self.live_refresh_interval > 0 and self.connected:
             self.start_live_refresh()
+
+    async def _after_history_poll(self) -> None:
+        await self.save_hemisphere_memory()
+        await self.check_software_updates()
+
+    async def check_software_updates(self) -> None:
+        """Notify a pending OTA update and publish it to Home Assistant.
+
+        Reads the software cache, so the cloud is asked at most once per TTL
+        per vehicle however often the history poll runs.
+        """
+        if not self.client or not self.repo:
+            return
+        language = settings_store.resolve_language(
+            (await settings_store.load_preferences(self.repo)).language
+        )
+        for vehicle in list(self.vehicles):
+            try:
+                lookup = await self.software_updates.get(self.client, vehicle)
+            except Exception as exc:
+                _LOGGER.warning("Software info failed for %s: %s", vehicle.vin, exc)
+                continue
+            if self.notification_dispatcher:
+                try:
+                    await notify_pending_update(
+                        self.repo,
+                        self.notification_dispatcher,
+                        vehicle,
+                        lookup,
+                        language,
+                    )
+                except Exception:
+                    _LOGGER.exception(
+                        "Software update notification failed for %s", vehicle.vin
+                    )
+            state = home_assistant_state(lookup, language)
+            if state and self.mqtt_service and self.mqtt_service.is_connected:
+                try:
+                    await self.mqtt_service.publish_software(vehicle, state)
+                except Exception as exc:
+                    _LOGGER.debug("Software MQTT publish skipped: %s", exc)
 
     async def save_hemisphere_memory(self) -> None:
         """Persist the client's GPS hemisphere memory (no-op if unchanged)."""
