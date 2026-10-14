@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Trip summary energy shown in the right unit** ([#35](https://github.com/markoceri/leapconnect/pull/35), thanks @nofkclue) — the *Total energy* and *Regen energy* cards of the Trips tab got values in kWh but labelled them as Wh (e.g. 14 kWh shown as *14 Wh*); they now show kWh with one decimal.
+
 ## [0.13.0] - 2026-10-13
 
 ### Added
