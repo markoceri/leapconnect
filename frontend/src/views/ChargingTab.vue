@@ -802,6 +802,7 @@ async function saveSession() {
       tier_id: editForm.value.tier_id,
       zone_name: editForm.value.zone_name ?? '',
       energy_kwh: editForm.value.energy_kwh || undefined,
+      cost: editForm.value.cost === '' ? null : (editForm.value.cost ?? null),
       peak_power_kw: s.peak_power_kw ?? undefined,
       note: editForm.value.note || undefined,
     }

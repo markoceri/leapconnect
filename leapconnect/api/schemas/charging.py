@@ -182,6 +182,7 @@ class ChargingSessionCostCreate(BaseModel):
     tier_id: str
     energy_kwh: float | None = None
     peak_power_kw: float | None = None
+    cost: float | None = None
     note: str | None = None
     zone_name: str | None = None
 
@@ -191,6 +192,7 @@ class ChargingSessionCostUpdate(BaseModel):
     end_ts: str | None = None
     energy_kwh: float | None = None
     peak_power_kw: float | None = None
+    cost: float | None = None
     note: str | None = None
     zone_name: str | None = None
 
