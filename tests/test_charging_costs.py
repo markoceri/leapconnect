@@ -19,6 +19,7 @@ from leapconnect.application.scheduler import (
     MONTH_END_COSTS_SETTING,
     VehicleDataScheduler,
 )
+from leapconnect.application.settings_store import recalculate_session
 from leapconnect.domain.charging.location import resolve_charge_location
 from leapconnect.domain.charging.models import (
     ChargingPriceTier,
@@ -293,6 +294,79 @@ def test_clear_session_cost_override(auth_client, energy, expected):
 def test_create_session_cost_without_override_uses_tariff(auth_client):
     session = _create_session_cost(auth_client)
     _assert_saved_cost(auth_client, session, 2.5)
+
+
+@pytest.mark.parametrize("cost_field", [{}, {"cost": None}])
+def test_tier_change_reprices_an_automatic_cost(auth_client, cost_field):
+    # The dialog sends cost null when the field is empty (automatic cost)
+    session = _create_session_cost(auth_client)
+    assert session["cost_manual"] is False
+    auth_client.put("/api/charging/tiers/public_dc", json={"price_kwh": 0.6})
+    response = auth_client.put(
+        f"{COSTS_URL}/{session['id']}", json={"tier_id": "public_dc", **cost_field}
+    )
+    assert response.status_code == 200
+    _assert_saved_cost(auth_client, response.json(), 6.0)
+
+
+@pytest.mark.parametrize(
+    "change", [{"note": "receipt"}, {"tier_id": "public_dc"}, {"energy_kwh": 30.0}]
+)
+def test_manual_cost_is_kept_by_later_edits(auth_client, change):
+    session = _create_session_cost(auth_client, cost=8.0)
+    response = auth_client.put(f"{COSTS_URL}/{session['id']}", json=change)
+    assert response.status_code == 200
+    assert response.json()["cost_manual"] is True
+    _assert_saved_cost(auth_client, response.json(), 8.0)
+
+
+def test_corrected_energy_and_cost_are_saved_as_manual(auth_client):
+    session = _create_session_cost(auth_client)
+    response = auth_client.put(
+        f"{COSTS_URL}/{session['id']}", json={"energy_kwh": 25.0, "cost": 14.9}
+    )
+    assert response.status_code == 200
+    [stored] = auth_client.get(COSTS_URL).json()
+    assert (stored["energy_kwh"], stored["cost"]) == (25.0, 14.9)
+    assert stored["energy_manual"] is stored["cost_manual"] is True
+
+
+def test_recalculate_endpoint_replaces_manual_values(auth_client):
+    session = _create_session_cost(auth_client, cost=8.0)
+    response = auth_client.post(f"{COSTS_URL}/{session['id']}/recalculate")
+    assert response.status_code == 200
+    body = response.json()
+    # No snapshots to re-measure: the energy stays, the cost is priced again
+    assert (body["energy_kwh"], body["cost"]) == (10.0, 2.5)
+    assert body["energy_manual"] is body["cost_manual"] is False
+
+
+@pytest.mark.parametrize("field", ["cost", "energy_kwh"])
+def test_negative_values_are_rejected(auth_client, field):
+    session = _create_session_cost(auth_client)
+    response = auth_client.put(f"{COSTS_URL}/{session['id']}", json={field: -1})
+    assert response.status_code == 422
+
+
+async def test_automatic_recalculation_keeps_manual_values():
+    # Measured from the snapshots: 10 kWh, priced at 0.25 €/kWh
+    end = T0 + timedelta(hours=1)
+    auto = ChargingSessionCost(vin="V1", start_ts=T0, end_ts=end, tier_id="public_ac")
+    manual = ChargingSessionCost(
+        vin="V1",
+        start_ts=T0,
+        end_ts=end,
+        tier_id="public_ac",
+        energy_kwh=12.0,
+        energy_manual=True,
+        cost=8.0,
+        cost_manual=True,
+    )
+    repo = _Repo(snaps=_snaps(AWAY))
+    await recalculate_session(repo, auto)
+    await recalculate_session(repo, manual)
+    assert (auto.energy_kwh, auto.cost) == (10.0, 2.5)
+    assert (manual.energy_kwh, manual.cost) == (12.0, 8.0)
 
 
 def test_endpoint_rejects_unknown_fallback_tier(auth_client):

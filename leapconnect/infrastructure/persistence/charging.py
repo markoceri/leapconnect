@@ -162,6 +162,8 @@ class SqlChargingRepository(SqlRepositoryBase, ChargingRepository):
                 cost=r.cost,
                 note=r.note,
                 zone_name=r.zone_name,
+                cost_manual=bool(r.cost_manual),
+                energy_manual=bool(r.energy_manual),
             )
             for r in rows
         ]
@@ -182,6 +184,8 @@ class SqlChargingRepository(SqlRepositoryBase, ChargingRepository):
                     row.cost = sc.cost
                     row.note = sc.note
                     row.zone_name = sc.zone_name
+                    row.cost_manual = sc.cost_manual
+                    row.energy_manual = sc.energy_manual
                     await session.commit()
                     return sc
             # Create new
@@ -196,6 +200,8 @@ class SqlChargingRepository(SqlRepositoryBase, ChargingRepository):
                 cost=sc.cost,
                 note=sc.note,
                 zone_name=sc.zone_name,
+                cost_manual=sc.cost_manual,
+                energy_manual=sc.energy_manual,
             )
             session.add(row)
             await session.commit()

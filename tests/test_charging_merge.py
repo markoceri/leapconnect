@@ -93,6 +93,16 @@ async def test_merge_keeps_first_record_and_sums_runs():
     assert (single.record, len(single.parts)) == (None, 1)
 
 
+async def test_merge_drops_manual_values_of_the_parts():
+    first = _record(1, R1, R1 + timedelta(hours=1))
+    first.energy_kwh, first.energy_manual = 3.0, True
+    first.cost, first.cost_manual = 9.0, True
+    repo = _three_runs_repo(costs=[first, _record(2, R2, R2 + timedelta(hours=1))])
+    merged = await merge_charge_sessions(repo, "V1", [R1, R2])
+    assert merged.energy_kwh == 10.0 and merged.cost == 2.5
+    assert not merged.energy_manual and not merged.cost_manual
+
+
 async def test_sessions_in_between_are_included():
     repo = _three_runs_repo()
     merged = await merge_charge_sessions(repo, "V1", [R1, R3])

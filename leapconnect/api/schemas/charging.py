@@ -12,7 +12,7 @@ from leapmotor_api.models import (
     MileageEnergyHistory,
     WeeklyConsumption,
 )
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class ChargeRecordSchema(BaseModel):
@@ -132,6 +132,8 @@ class ChargingSessionCostResponse(BaseModel):
     energy_kwh: float | None = None
     peak_power_kw: float | None = None
     cost: float | None = None
+    cost_manual: bool = False  # entered by hand, kept by recalculations
+    energy_manual: bool = False
     note: str | None = None
     zone_name: str | None = None
 
@@ -149,6 +151,8 @@ class ChargingSessionRowSchema(BaseModel):
     energy_kwh: float | None = None
     peak_power_kw: float | None = None
     cost: float | None = None
+    cost_manual: bool = False
+    energy_manual: bool = False
     note: str | None = None
     zone_name: str | None = None
     # End seen in the history, for an open record whose charge stop was missed
@@ -180,9 +184,10 @@ class ChargingSessionCostCreate(BaseModel):
     start_ts: str
     end_ts: str | None = None
     tier_id: str
-    energy_kwh: float | None = None
+    # Entered by hand when given; else measured / priced with the tier
+    energy_kwh: float | None = Field(default=None, ge=0)
     peak_power_kw: float | None = None
-    cost: float | None = None
+    cost: float | None = Field(default=None, ge=0)
     note: str | None = None
     zone_name: str | None = None
 
@@ -190,9 +195,11 @@ class ChargingSessionCostCreate(BaseModel):
 class ChargingSessionCostUpdate(BaseModel):
     tier_id: str | None = None
     end_ts: str | None = None
-    energy_kwh: float | None = None
+    # energy_kwh/cost: a value is entered by hand, null goes back to the
+    # automatic one (measured / priced), omitted leaves it as it is
+    energy_kwh: float | None = Field(default=None, ge=0)
     peak_power_kw: float | None = None
-    cost: float | None = None
+    cost: float | None = Field(default=None, ge=0)
     note: str | None = None
     zone_name: str | None = None
 

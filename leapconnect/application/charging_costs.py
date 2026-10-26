@@ -408,8 +408,10 @@ async def merge_charge_sessions(
     keeper.peak_power_kw = max(peaks) if peaks else keeper.peak_power_kw
     notes = [r.note for r in records if r.note]
     keeper.note = " · ".join(dict.fromkeys(notes)) or None
+    # A new session: values entered by hand on one of its parts don't apply
     keeper.energy_kwh = None
     keeper.cost = None
+    keeper.energy_manual = keeper.cost_manual = False
     keeper = await repo.upsert_session_cost(keeper)
     for other in records[1:]:
         await repo.delete_session_cost(other.id)

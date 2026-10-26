@@ -42,11 +42,11 @@ from leapconnect.application.charging_costs import (
     plan_merge,
 )
 from leapconnect.application.settings_store import (
-    calculate_session_cost,
     load_preferences,
     load_user_timezone,
     price_session,
     recalculate_session,
+    recompute_session_energy,
     resolve_timezone,
 )
 from leapconnect.domain.charging.models import ChargingSessionCost, ChargingTimeBand
@@ -318,6 +318,8 @@ def _cost_response(
         energy_kwh=sc.energy_kwh,
         peak_power_kw=sc.peak_power_kw,
         cost=sc.cost,
+        cost_manual=sc.cost_manual,
+        energy_manual=sc.energy_manual,
         note=sc.note,
         zone_name=sc.zone_name,
     )
@@ -444,23 +446,22 @@ async def create_charging_cost(
     tiers = {t.id: t for t in await repo.get_price_tiers()}
     if body.tier_id not in tiers:
         raise HTTPException(status_code=422, detail=f"Unknown tier: {body.tier_id}")
-    # Calculate cost
-    cost = body.cost
-    if cost is None and body.energy_kwh is not None:
-        cost = await calculate_session_cost(
-            repo, body.tier_id, body.energy_kwh, start_ts, end_ts
-        )
+    # Energy and cost given are entered by hand; the missing ones are measured
+    # from the snapshots and priced with the tier.
     sc = ChargingSessionCost(
         vin=vin,
         start_ts=start_ts,
         end_ts=end_ts,
         tier_id=body.tier_id,
         energy_kwh=body.energy_kwh,
+        energy_manual=body.energy_kwh is not None,
         peak_power_kw=body.peak_power_kw,
-        cost=cost,
+        cost=body.cost,
+        cost_manual=body.cost is not None,
         note=body.note,
         zone_name=body.zone_name or None,
     )
+    await recalculate_session(repo, sc)
     sc = await repo.upsert_session_cost(sc)
     return _cost_response(sc, tiers, {})
 
@@ -636,8 +637,18 @@ async def update_charging_cost(
         sc.tier_id = body.tier_id
     if body.end_ts is not None:
         sc.end_ts = datetime.fromisoformat(body.end_ts)
-    if body.energy_kwh is not None:
-        sc.energy_kwh = body.energy_kwh
+    sent = body.model_fields_set
+    if "energy_kwh" in sent:
+        # A value is entered by hand; null goes back to the measured energy.
+        sc.energy_manual = body.energy_kwh is not None
+        if sc.energy_manual:
+            sc.energy_kwh = body.energy_kwh
+        else:
+            sc.energy_kwh = await recompute_session_energy(repo, sc)
+    if "cost" in sent:
+        # A value is entered by hand; null goes back to the tier's price.
+        sc.cost_manual = body.cost is not None
+        sc.cost = body.cost
     if body.peak_power_kw is not None:
         sc.peak_power_kw = body.peak_power_kw
     if body.note is not None:
@@ -645,10 +656,8 @@ async def update_charging_cost(
     if body.zone_name is not None:
         # Empty string clears the zone assignment.
         sc.zone_name = body.zone_name or None
-    # Recalculate cost
-    if body.cost is not None:
-        sc.cost = body.cost
-    else:
+    # Recalculate cost, unless entered by hand
+    if not sc.cost_manual and sc.energy_kwh is not None:
         sc.cost = await price_session(repo, sc)
     await repo.upsert_session_cost(sc)
     tiers = {t.id: t for t in await repo.get_price_tiers()}
@@ -665,12 +674,14 @@ async def recalculate_charging_cost(vin: str, cost_id: int, repo: RepoDep):
 
     Re-reads the session's energy from the stored snapshots and recomputes the
     cost with the tier's current price. Useful when the cost was first computed
-    mid-session, before the full energy and final pricing were known.
+    mid-session, before the full energy and final pricing were known. Energy
+    and cost entered by hand are replaced too.
     """
     costs = await repo.get_session_costs(vin)
     sc = next((c for c in costs if c.id == cost_id), None)
     if not sc:
         raise HTTPException(status_code=404, detail=f"Session cost {cost_id} not found")
+    sc.energy_manual = sc.cost_manual = False
     await recalculate_session(repo, sc)
     await repo.upsert_session_cost(sc)
     tiers = {t.id: t for t in await repo.get_price_tiers()}
