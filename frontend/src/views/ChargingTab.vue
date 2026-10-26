@@ -162,7 +162,10 @@
           </span>
           <span class="cell cell-time" data-label="Time">{{ formatTimeRange(s.start_ts, s.end_ts) }}</span>
           <span class="cell cell-soc" data-label="Battery">{{ formatSocRange(s) }}</span>
-          <span class="cell cell-energy" data-label="Energy">{{ s.energy_kwh != null ? s.energy_kwh.toFixed(1) + ' kWh' : '—' }}</span>
+          <span class="cell cell-energy" data-label="Energy">
+            {{ s.energy_kwh != null ? s.energy_kwh.toFixed(1) + ' kWh' : '—' }}
+            <span v-if="s.energy_manual" class="manual-badge" title="Entered by hand: kept by the automatic recalculations">manual</span>
+          </span>
           <span class="cell cell-peak" data-label="Peak">{{ s.peak_power_kw != null ? s.peak_power_kw.toFixed(1) + ' kW' : '—' }}</span>
           <span class="cell cell-tier" data-label="Tier">
             <span v-if="s.tier_label" class="tier-badge" :class="'tier-' + s.tier_id">{{ s.tier_label }}</span>
@@ -172,6 +175,7 @@
           <span class="cell cell-cost" data-label="Cost">
             <span v-if="s.cost != null">€{{ s.cost.toFixed(2) }}</span>
             <span v-else class="cost-none">—</span>
+            <span v-if="s.cost_manual" class="manual-badge" title="Entered by hand: kept by the automatic recalculations">manual</span>
           </span>
           <span class="cell cell-edit">
             <span v-if="mergeMode && mergeRowState(s)" class="merge-chip" :class="'merge-chip-' + mergeRowState(s)">
@@ -320,9 +324,9 @@
                 </select>
               </div>
               <div class="form-group">
-                <label>Energy (kWh)</label>
+                <label>Energy (kWh) — leave empty for measured</label>
                 <div class="input-with-action">
-                  <input v-model.number="editForm.energy_kwh" type="number" step="0.1" min="0" />
+                  <input v-model.number="editForm.energy_kwh" type="number" step="0.1" min="0" placeholder="Measured" />
                   <button
                     v-if="editingSession.id"
                     class="btn-recalc"
@@ -336,7 +340,7 @@
               </div>
               <div class="form-group">
                 <label>Cost override (€) — leave empty for auto</label>
-                <input v-model.number="editForm.cost" type="number" step="0.01" min="0" placeholder="Auto-calculate" />
+                <input v-model.number="editForm.cost" type="number" step="0.01" min="0" :placeholder="autoCostHint" />
               </div>
               <div class="form-group span-2">
                 <label>Note</label>
@@ -577,6 +581,11 @@ const homePricingMode = ref('flat')
 const hasSolarPanels = ref(false)
 const editingSession = ref(null)
 const editForm = ref({})
+// Cost field placeholder: the automatic cost the session has now
+const autoCostHint = computed(() => {
+  const s = editingSession.value
+  return s && s.cost != null && !s.cost_manual ? `Auto: €${s.cost.toFixed(2)}` : 'Auto-calculate'
+})
 const editError = ref('')
 const saving = ref(false)
 const recalculatingId = ref(null)
@@ -786,7 +795,8 @@ function editSession(session) {
     tier_id: session.tier_id || (availableTiers.value[0]?.id || 'home_grid'),
     zone_name: session.zone_name || '',
     energy_kwh: session.energy_kwh,
-    cost: session.cost,
+    // Only a cost entered by hand fills the field; empty = automatic
+    cost: session.cost_manual ? session.cost : '',
     note: session.note || '',
   }
   editError.value = ''
@@ -798,12 +808,19 @@ async function saveSession() {
   editError.value = ''
   try {
     const s = editingSession.value
+    const f = editForm.value
     const body = {
-      tier_id: editForm.value.tier_id,
-      zone_name: editForm.value.zone_name ?? '',
-      energy_kwh: editForm.value.energy_kwh || undefined,
+      tier_id: f.tier_id,
+      zone_name: f.zone_name ?? '',
+      // Empty = automatic (priced with the tier); a value is kept as entered
+      cost: f.cost === '' || f.cost == null ? null : f.cost,
       peak_power_kw: s.peak_power_kw ?? undefined,
-      note: editForm.value.note || undefined,
+      note: f.note || undefined,
+    }
+    // Energy is sent only when edited: a value is kept as entered, empty goes
+    // back to the measured one
+    if (f.energy_kwh !== s.energy_kwh) {
+      body.energy_kwh = f.energy_kwh === '' || f.energy_kwh == null ? null : f.energy_kwh
     }
     if (s.id) {
       // Update existing
@@ -1042,6 +1059,8 @@ async function deleteSession(session) {
 // Recalculate a stored session's total energy & cost from current data
 async function recalcSession(session) {
   if (!session.id || recalculatingId.value) return
+  if ((session.energy_manual || session.cost_manual)
+    && !confirm('This will replace the energy and cost entered by hand with the values measured from the car. Continue?')) return
   recalculatingId.value = session.id
   try {
     await api('POST', `/api/vehicles/${props.vin}/charging-costs/${session.id}/recalculate`)
@@ -1387,6 +1406,7 @@ watch(selectedMonth, loadData)
 .cell-cost { font-weight: 600; color: var(--amber); }
 .cell-edit { display: flex; justify-content: flex-end; }
 .cost-none { color: var(--muted); }
+.manual-badge { font-size: 9px; font-weight: 600; text-transform: uppercase; color: var(--muted); border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; margin-left: 4px; vertical-align: middle; }
 .tier-badge { font-size: 10px; padding: 2px 6px; border-radius: 4px; font-weight: 500; }
 .tier-home_grid { background: rgba(102,187,106,0.15); color: #66bb6a; }
 .tier-home_solar { background: rgba(253,216,53,0.15); color: #fdd835; }

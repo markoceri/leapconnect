@@ -232,6 +232,9 @@ class ChargingSessionCostRow(Base):
     cost = Column(Float, nullable=True)
     note = Column(String(256), nullable=True)
     zone_name = Column(String(128), nullable=True)
+    # Entered by hand: kept by the automatic recalculations
+    cost_manual = Column(Boolean, nullable=False, default=False, server_default="0")
+    energy_manual = Column(Boolean, nullable=False, default=False, server_default="0")
 
 
 # ---------------------------------------------------------------------------

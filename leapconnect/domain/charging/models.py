@@ -50,3 +50,6 @@ class ChargingSessionCost:
     cost: float | None = None
     note: str | None = None
     zone_name: str | None = None  # zone the charge happened in (analytics)
+    # Entered by hand: the automatic recalculations leave them alone
+    cost_manual: bool = False
+    energy_manual: bool = False

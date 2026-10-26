@@ -172,8 +172,9 @@ def run_alembic_upgrade(sync_conn) -> None:
                 )
             )
 
-    # Self-healing for charging_session_costs: 0014 adds zone_name. Add it
-    # idempotently when the create_all + "stamp to head" path skipped the ALTER.
+    # Self-healing for charging_session_costs: 0014 adds zone_name, 0015 the
+    # manual flags. Add them idempotently when the create_all + "stamp to head"
+    # path skipped the ALTER.
     sc_inspect = sqlalchemy.inspect(sync_conn)
     if sc_inspect.has_table("charging_session_costs"):
         sc_cols = {c["name"] for c in sc_inspect.get_columns("charging_session_costs")}
@@ -184,6 +185,15 @@ def run_alembic_upgrade(sync_conn) -> None:
                     "ADD COLUMN zone_name VARCHAR(128)"
                 )
             )
+        # 0015: cost_manual/energy_manual (values entered by hand in the UI).
+        for col in ("cost_manual", "energy_manual"):
+            if col not in sc_cols:
+                sync_conn.execute(
+                    text(
+                        "ALTER TABLE charging_session_costs "
+                        f"ADD COLUMN {col} BOOLEAN NOT NULL DEFAULT 0"
+                    )
+                )
 
     # Self-healing: seed default charging price tiers and time-of-use bands.
     # Migration 0007's upgrade() seeds these, but when Base.metadata.create_all

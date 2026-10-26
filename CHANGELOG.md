@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Charging cost and energy entered by hand are saved and kept** ([#36](https://github.com/markoceri/leapconnect/pull/36), thanks @nofkclue) — the *Cost override* of the session dialog was never saved: the session was always priced with its tier, even when the real bill (e.g. a public charger with a session fee) was different. Cost and energy entered by hand are now saved and marked *manual* in the session list, and the automatic recalculations (charge end, *Calculate missing costs*) leave them alone; an empty field goes back to the automatic value, and a tier or energy change still re-prices a session whose cost is automatic. *Recalculate* still re-measures everything, after a confirmation when manual values would be replaced; merging sessions starts from measured values. Stored in the new `cost_manual` / `energy_manual` columns of `charging_session_costs` (migration `0015`); the API rejects negative costs and energy.
 - **Trip summary energy shown in the right unit** ([#35](https://github.com/markoceri/leapconnect/pull/35), thanks @nofkclue) — the *Total energy* and *Regen energy* cards of the Trips tab got values in kWh but labelled them as Wh (e.g. 14 kWh shown as *14 Wh*); they now show kWh with one decimal.
 
 ## [0.13.0] - 2026-10-13

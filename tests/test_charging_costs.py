@@ -4,6 +4,8 @@ from datetime import datetime, timedelta
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
+import pytest
+
 from leapconnect.application.charging_costs import (
     SKIP_NO_ENERGY,
     SKIP_NO_TIER,
@@ -17,6 +19,7 @@ from leapconnect.application.scheduler import (
     MONTH_END_COSTS_SETTING,
     VehicleDataScheduler,
 )
+from leapconnect.application.settings_store import recalculate_session
 from leapconnect.domain.charging.location import resolve_charge_location
 from leapconnect.domain.charging.models import (
     ChargingPriceTier,
@@ -33,6 +36,7 @@ from leapconnect.domain.zones import Zone
 HOME = (45.0, 9.0)
 AWAY = (48.0, 2.0)
 T0 = datetime(2026, 9, 10, 20, 0)
+COSTS_URL = "/api/vehicles/V1/charging-costs"
 
 
 def _zone(tier="home_solar"):
@@ -235,6 +239,134 @@ async def test_detected_session_matching_stored_record_is_not_duplicated():
 
 
 # -- endpoint ---------------------------------------------------------------
+
+
+def _create_session_cost(client, **fields):
+    tier = client.put("/api/charging/tiers/public_ac", json={"price_kwh": 0.25})
+    assert tier.status_code == 200
+    response = client.post(
+        COSTS_URL,
+        json={
+            "start_ts": T0.isoformat(),
+            "end_ts": (T0 + timedelta(hours=1)).isoformat(),
+            "tier_id": "public_ac",
+            "energy_kwh": 10.0,
+            **fields,
+        },
+    )
+    assert response.status_code == 201
+    return response.json()
+
+
+def _assert_saved_cost(client, session, expected):
+    assert session["cost"] == expected
+    response = client.get(COSTS_URL)
+    assert response.status_code == 200
+    [stored] = response.json()
+    assert stored["id"] == session["id"]
+    assert stored["cost"] == expected
+
+
+@pytest.mark.parametrize("cost, energy", [(12.34, 10.0), (0.0, None)])
+def test_create_session_cost_override(auth_client, cost, energy):
+    session = _create_session_cost(auth_client, cost=cost, energy_kwh=energy)
+    _assert_saved_cost(auth_client, session, cost)
+
+
+@pytest.mark.parametrize("cost", [12.34, 0.0])
+def test_update_session_cost_override(auth_client, cost):
+    session = _create_session_cost(auth_client)
+    assert session["cost"] == 2.5
+    response = auth_client.put(f"{COSTS_URL}/{session['id']}", json={"cost": cost})
+    assert response.status_code == 200
+    _assert_saved_cost(auth_client, response.json(), cost)
+
+
+@pytest.mark.parametrize("energy, expected", [(10.0, 2.5), (None, None)])
+def test_clear_session_cost_override(auth_client, energy, expected):
+    session = _create_session_cost(auth_client, cost=12.34, energy_kwh=energy)
+    assert session["cost"] == 12.34
+    response = auth_client.put(f"{COSTS_URL}/{session['id']}", json={"cost": None})
+    assert response.status_code == 200
+    _assert_saved_cost(auth_client, response.json(), expected)
+
+
+def test_create_session_cost_without_override_uses_tariff(auth_client):
+    session = _create_session_cost(auth_client)
+    _assert_saved_cost(auth_client, session, 2.5)
+
+
+@pytest.mark.parametrize("cost_field", [{}, {"cost": None}])
+def test_tier_change_reprices_an_automatic_cost(auth_client, cost_field):
+    # The dialog sends cost null when the field is empty (automatic cost)
+    session = _create_session_cost(auth_client)
+    assert session["cost_manual"] is False
+    auth_client.put("/api/charging/tiers/public_dc", json={"price_kwh": 0.6})
+    response = auth_client.put(
+        f"{COSTS_URL}/{session['id']}", json={"tier_id": "public_dc", **cost_field}
+    )
+    assert response.status_code == 200
+    _assert_saved_cost(auth_client, response.json(), 6.0)
+
+
+@pytest.mark.parametrize(
+    "change", [{"note": "receipt"}, {"tier_id": "public_dc"}, {"energy_kwh": 30.0}]
+)
+def test_manual_cost_is_kept_by_later_edits(auth_client, change):
+    session = _create_session_cost(auth_client, cost=8.0)
+    response = auth_client.put(f"{COSTS_URL}/{session['id']}", json=change)
+    assert response.status_code == 200
+    assert response.json()["cost_manual"] is True
+    _assert_saved_cost(auth_client, response.json(), 8.0)
+
+
+def test_corrected_energy_and_cost_are_saved_as_manual(auth_client):
+    session = _create_session_cost(auth_client)
+    response = auth_client.put(
+        f"{COSTS_URL}/{session['id']}", json={"energy_kwh": 25.0, "cost": 14.9}
+    )
+    assert response.status_code == 200
+    [stored] = auth_client.get(COSTS_URL).json()
+    assert (stored["energy_kwh"], stored["cost"]) == (25.0, 14.9)
+    assert stored["energy_manual"] is stored["cost_manual"] is True
+
+
+def test_recalculate_endpoint_replaces_manual_values(auth_client):
+    session = _create_session_cost(auth_client, cost=8.0)
+    response = auth_client.post(f"{COSTS_URL}/{session['id']}/recalculate")
+    assert response.status_code == 200
+    body = response.json()
+    # No snapshots to re-measure: the energy stays, the cost is priced again
+    assert (body["energy_kwh"], body["cost"]) == (10.0, 2.5)
+    assert body["energy_manual"] is body["cost_manual"] is False
+
+
+@pytest.mark.parametrize("field", ["cost", "energy_kwh"])
+def test_negative_values_are_rejected(auth_client, field):
+    session = _create_session_cost(auth_client)
+    response = auth_client.put(f"{COSTS_URL}/{session['id']}", json={field: -1})
+    assert response.status_code == 422
+
+
+async def test_automatic_recalculation_keeps_manual_values():
+    # Measured from the snapshots: 10 kWh, priced at 0.25 €/kWh
+    end = T0 + timedelta(hours=1)
+    auto = ChargingSessionCost(vin="V1", start_ts=T0, end_ts=end, tier_id="public_ac")
+    manual = ChargingSessionCost(
+        vin="V1",
+        start_ts=T0,
+        end_ts=end,
+        tier_id="public_ac",
+        energy_kwh=12.0,
+        energy_manual=True,
+        cost=8.0,
+        cost_manual=True,
+    )
+    repo = _Repo(snaps=_snaps(AWAY))
+    await recalculate_session(repo, auto)
+    await recalculate_session(repo, manual)
+    assert (auto.energy_kwh, auto.cost) == (10.0, 2.5)
+    assert (manual.energy_kwh, manual.cost) == (12.0, 8.0)
 
 
 def test_endpoint_rejects_unknown_fallback_tier(auth_client):
