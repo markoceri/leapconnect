@@ -5,19 +5,25 @@ from __future__ import annotations
 import asyncio
 import base64
 import io
+import json
 import logging
 import zipfile
+from contextlib import AsyncExitStack
 from datetime import UTC, datetime
+from typing import Annotated
+from urllib.parse import quote
 
-from fastapi import APIRouter, HTTPException, Request, WebSocket
-from fastapi.responses import Response
-from leapmotor_api.models import VehicleStatus
+from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket
+from fastapi.responses import Response, StreamingResponse
+from leapmotor_api.models import SoftwareVersion, VehicleStatus
+from starlette.background import BackgroundTask
 from starlette.websockets import WebSocketDisconnect
 
 from leapconnect.api.deps import (
     SESSION_COOKIE_NAME,
     ClientDep,
     ContainerDep,
+    RepoDep,
     VehicleDep,
 )
 from leapconnect.api.schemas import (
@@ -26,6 +32,7 @@ from leapconnect.api.schemas import (
     ShareInvitationAnswerResponse,
     ShareInvitationListResponse,
     ShareInvitationSchema,
+    SoftwareInfoResponse,
     VehicleListResponse,
     VehicleSchema,
     VehicleStatusResponse,
@@ -35,11 +42,25 @@ from leapconnect.application.car_sharing import (
     InvitationNotFoundError,
     answer_share_invitation,
 )
+from leapconnect.application.settings_store import load_preferences, resolve_language
+from leapconnect.application.software_updates import (
+    archive_name,
+    download_manifest,
+    downloadable,
+    find_package,
+)
 from leapconnect.application.status_sanitizer import fetch_vehicle_status
 from leapconnect.asyncutils import spawn
 from leapconnect.config import IMAGE_MEDIA_TYPES, VEHICLE_IMAGE_DIR
 from leapconnect.container import AppContainer
 from leapconnect.domain.telemetry.models import VehicleSnapshot
+from leapconnect.infrastructure.ota_cdn import (
+    CHUNK_SIZE,
+    FORWARDED_HEADERS,
+    OtaCdnError,
+    open_package,
+    zip_packages,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -147,6 +168,127 @@ async def reject_share_invitation(
 ) -> ShareInvitationAnswerResponse:
     """Reject the invitation."""
     return await _answer_invitation(vin, container, accept=False)
+
+
+# ---------------------------------------------------------------------------
+# Software (OTA)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/api/vehicles/{vin}/software", response_model=SoftwareInfoResponse)
+async def get_software_info(
+    vin: str,
+    client: ClientDep,
+    vehicle: VehicleDep,
+    container: ContainerDep,
+    repo: RepoDep,
+    refresh: bool = False,
+) -> SoftwareInfoResponse:
+    """Installed software version and pending OTA update, with the release
+    notes in the ``language`` preference. Cached for hours; ``refresh=true``
+    asks the cloud again. Only the account that owns the car gets the data:
+    for a shared account ``status`` is ``owner_only``."""
+    lookup = await container.software_updates.get(client, vehicle, refresh=refresh)
+    language = resolve_language((await load_preferences(repo)).language)
+    return SoftwareInfoResponse.from_lookup(lookup, language)
+
+
+def _attachment(name: str) -> str:
+    """``Content-Disposition`` for a download, safe for any file name."""
+    ascii_name = name.encode("ascii", "replace").decode().replace('"', "_")
+    return f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{quote(name)}"
+
+
+async def _pending_update(
+    client: ClientDep, vehicle: VehicleDep, container: ContainerDep
+) -> SoftwareVersion:
+    """The update waiting to be installed, with fresh download links."""
+    lookup = await container.software_updates.for_download(client, vehicle)
+    if lookup.owner_only:
+        raise HTTPException(
+            status_code=403,
+            detail="Only the account that owns the car can download its software.",
+        )
+    if lookup.pending is None:
+        raise HTTPException(status_code=404, detail="No software update is pending.")
+    return lookup.pending
+
+
+PendingUpdateDep = Annotated[SoftwareVersion, Depends(_pending_update)]
+
+
+def _cdn_failure(exc: OtaCdnError) -> HTTPException:
+    if exc.status_code == 416:
+        return HTTPException(status_code=416, detail="Requested range not satisfiable.")
+    _LOGGER.warning("OTA package download failed: %s", exc)
+    return HTTPException(
+        status_code=502,
+        detail=f"Leapmotor's download server refused the package: {exc}.",
+    )
+
+
+@router.get("/api/vehicles/{vin}/software/packages/{seq}/download")
+async def download_software_package(
+    seq: int, request: Request, update: PendingUpdateDep
+) -> StreamingResponse:
+    """One package of the pending update, streamed from Leapmotor's CDN.
+
+    ``Range`` is forwarded, so browsers can resume. The file is served
+    encrypted (``.encrypt``), as Leapmotor stores it."""
+    package = find_package(update, seq)
+    if package is None:
+        raise HTTPException(status_code=404, detail="Package not found.")
+    stack = AsyncExitStack()
+    try:
+        cdn = await stack.enter_async_context(
+            open_package(
+                package.download_url,
+                range_header=request.headers.get("range"),
+                if_range=request.headers.get("if-range"),
+            )
+        )
+    except OtaCdnError as exc:
+        await stack.aclose()
+        raise _cdn_failure(exc) from None
+
+    async def body():
+        try:
+            async for chunk in cdn.aiter_raw(CHUNK_SIZE):
+                yield chunk
+        finally:
+            await stack.aclose()
+
+    headers = {k: cdn.headers[k] for k in FORWARDED_HEADERS if k in cdn.headers}
+    headers["Content-Disposition"] = _attachment(package.served_file_name)
+    return StreamingResponse(
+        body(),
+        status_code=cdn.status_code,
+        media_type="application/octet-stream",
+        headers=headers,
+        background=BackgroundTask(stack.aclose),
+    )
+
+
+@router.get("/api/vehicles/{vin}/software/download")
+async def download_software_update(
+    vehicle: VehicleDep, update: PendingUpdateDep, repo: RepoDep
+) -> StreamingResponse:
+    """Every package of the pending update in one ZIP, with a ``manifest.json``
+    describing them. Streamed: a CDN failure mid-way truncates the archive."""
+    packages = [p for p in update.packages if downloadable(p)]
+    if not packages:
+        raise HTTPException(status_code=404, detail="The update has no packages.")
+    language = resolve_language((await load_preferences(repo)).language)
+    manifest = download_manifest(vehicle, update, language)
+    archive = zip_packages(
+        [(p.served_file_name, p.download_url) for p in packages],
+        {"manifest.json": json.dumps(manifest, indent=2, ensure_ascii=False).encode()},
+    )
+    return StreamingResponse(
+        archive,
+        media_type="application/zip",
+        headers={"Content-Disposition": _attachment(archive_name(vehicle, update))},
+    )
 
 
 def snapshot_from_status(vin: str, status: VehicleStatus) -> VehicleSnapshot:

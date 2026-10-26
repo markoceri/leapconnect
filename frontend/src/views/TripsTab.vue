@@ -19,11 +19,11 @@
         <div class="summary-label">Total distance</div>
       </div>
       <div class="summary-card">
-        <div class="summary-value" style="color: #00e676">{{ formatEnergy(totals.total_energy) }}</div>
+        <div class="summary-value" style="color: #00e676">{{ (Number(totals.total_energy) || 0).toFixed(1) }} kWh</div>
         <div class="summary-label">Total energy</div>
       </div>
       <div class="summary-card">
-        <div class="summary-value" style="color: #42a5f5">{{ formatEnergy(totals.total_energy_recovered) }}</div>
+        <div class="summary-value" style="color: #42a5f5">{{ (Number(totals.total_energy_recovered) || 0).toFixed(1) }} kWh</div>
         <div class="summary-label">Regen energy</div>
       </div>
       <div class="summary-card">

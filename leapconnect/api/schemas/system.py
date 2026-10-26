@@ -96,6 +96,7 @@ class PreferencesResponse(BaseModel):
     auto_theme_from_vehicle: bool = False
     auto_calculate_monthly_costs: bool = True
     timezone: str = ""
+    language: str = ""
 
 
 class MqttStatusResponse(BaseModel):

@@ -24,6 +24,13 @@
           <span class="hero-loc-text">{{ vehicleAddress }}</span>
         </div>
       </div>
+      <div v-if="pendingUpdate" class="sw-pill-row">
+        <button class="sw-pill" title="Show in Details" @click="openSoftware">
+          <Download :size="14" />
+          <span>Software update {{ pendingUpdate }} available</span>
+          <span class="sw-pill-x" title="Hide for this version" @click.stop="dismissUpdate">&times;</span>
+        </button>
+      </div>
     </div>
 
     <!-- Stats grid -->
@@ -397,6 +404,7 @@ import DestinationModal from '../components/DestinationModal.vue'
 import SpeedLimitModal from '../components/SpeedLimitModal.vue'
 import MediaControlModal from '../components/MediaControlModal.vue'
 import FotaModal from '../components/FotaModal.vue'
+import { softwareState, loadSoftware } from '../composables/useSoftware'
 import ChargeScheduleModal from '../components/ChargeScheduleModal.vue'
 import ClimateScheduleModal from '../components/ClimateScheduleModal.vue'
 import LocationCard from '../components/LocationCard.vue'
@@ -455,6 +463,30 @@ const healthSub = computed(() => {
   if (h.soh_pct != null) return `${h.capacity_kwh} kWh at 100%`
   return `${h.samples}/${h.min_samples} full charges`
 })
+
+// --- Pending software update (OTA) pill ---
+// Hidden per version: dismissing it hides that version only, a newer one shows again.
+const softwareEntry = computed(() => softwareState(props.vehicle.vin))
+const dismissedUpdate = ref('')
+const pendingUpdate = computed(() => {
+  const version = softwareEntry.value.data?.update?.version
+  return version && version !== dismissedUpdate.value ? version : null
+})
+
+function dismissUpdate() {
+  localStorage.setItem(`sw-update-dismissed-${props.vehicle.vin}`, pendingUpdate.value)
+  dismissedUpdate.value = pendingUpdate.value
+}
+
+function openSoftware() {
+  store.activeTab = 'details'
+  nextTick(() => document.getElementById('software')?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
+}
+
+watch(() => props.vehicle.vin, vin => {
+  dismissedUpdate.value = localStorage.getItem(`sw-update-dismissed-${vin}`) || ''
+  loadSoftware(vin)
+}, { immediate: true })
 
 function openBatteryHealth() {
   store.activeTab = 'details'
@@ -942,6 +974,16 @@ async function doSetChargeLimit() {
 .badge-ac { background: rgba(var(--accent-rgb), 0.12); border: 1px solid rgba(var(--accent-rgb), 0.45); }
 .badge-lock { background: rgba(255,171,64,0.15); border: 1px solid rgba(255,171,64,0.5); }
 .badge-trunk { background: rgba(255,171,64,0.15); border: 1px solid rgba(255,171,64,0.5); }
+.sw-pill-row { display: flex; margin-top: 10px; }
+.sw-pill {
+  display: inline-flex; align-items: center; gap: 8px; max-width: 100%;
+  padding: 6px 6px 6px 12px; border-radius: 20px; cursor: pointer;
+  font-size: 12px; font-weight: 600; color: #ffab40;
+  background: rgba(255,171,64,.12); border: 1px solid rgba(255,171,64,.35);
+}
+.sw-pill > span:first-of-type { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sw-pill-x { opacity: .6; font-size: 15px; line-height: 1; padding: 0 4px; }
+.sw-pill-x:hover { opacity: 1; }
 .hero-bottom {
   display: flex; align-items: flex-end; justify-content: space-between;
   margin-top: 4px; gap: 12px;

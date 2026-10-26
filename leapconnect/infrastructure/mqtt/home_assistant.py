@@ -34,6 +34,7 @@ class HomeAssistantMqttService:
         self._task: asyncio.Task | None = None
         self._last_error: str | None = None
         self._discovery_sent: set[str] = set()
+        self._software_discovery_sent: set[str] = set()
         self._mqtt_interval_seconds: int = 60
 
     @property
@@ -622,15 +623,9 @@ class HomeAssistantMqttService:
                 retain=True,
             )
 
-    async def _publish_discovery(
-        self, vehicle: Vehicle, device_id: str, device_name: str
-    ) -> None:
-        """Publish Home Assistant MQTT discovery configs for all entities."""
-        vin = vehicle.vin
-        prefix = self._settings.topic_prefix
-        disc_prefix = self._settings.discovery_prefix
-
-        device_info = {
+    @staticmethod
+    def _device_info(vehicle: Vehicle, device_id: str, device_name: str) -> dict:
+        device_info: dict[str, Any] = {
             "identifiers": [device_id],
             "name": device_name,
             "manufacturer": "Leapmotor",
@@ -639,6 +634,17 @@ class HomeAssistantMqttService:
         }
         if vehicle.year:
             device_info["hw_version"] = str(vehicle.year)
+        return device_info
+
+    async def _publish_discovery(
+        self, vehicle: Vehicle, device_id: str, device_name: str
+    ) -> None:
+        """Publish Home Assistant MQTT discovery configs for all entities."""
+        vin = vehicle.vin
+        prefix = self._settings.topic_prefix
+        disc_prefix = self._settings.discovery_prefix
+
+        device_info = self._device_info(vehicle, device_id, device_name)
 
         # ── Sensors ────────────────────────────────────────────────────────
         sensors: list[dict[str, Any]] = [
@@ -1294,6 +1300,34 @@ class HomeAssistantMqttService:
             if value is not None:
                 await self._publish(f"{prefix}/cloud_{key}", _str(value), retain=True)
 
+    async def publish_software(self, vehicle: Vehicle, state: dict[str, Any]) -> None:
+        """Publish the read-only ``update`` entity for the vehicle software.
+
+        Kept out of the main discovery: it exists only for the account that
+        owns the car, so it is announced on the first state published. No
+        ``command_topic``: installing stays in the official app.
+        """
+        if not self._connected or not self._settings.enabled:
+            return
+        vin = vehicle.vin
+        device_id = f"leapconnect_{vin.lower()}"
+        topic = f"{self._settings.topic_prefix}/{vin}/software"
+        if vin not in self._software_discovery_sent:
+            device_name = vehicle.vehicle_nickname or f"Leapmotor {vehicle.car_type}"
+            await self._publish_config(
+                f"{self._settings.discovery_prefix}/update/{device_id}/software/config",
+                {
+                    "name": "Software",
+                    "unique_id": f"{device_id}_software",
+                    "state_topic": topic,
+                    "device_class": "firmware",
+                    "entity_category": "diagnostic",
+                    "device": self._device_info(vehicle, device_id, device_name),
+                },
+            )
+            self._software_discovery_sent.add(vin)
+        await self._publish(topic, json.dumps(state), retain=True)
+
     async def publish_battery_health(
         self, vin: str, soh_pct: float, capacity_kwh: float
     ) -> None:
@@ -1347,6 +1381,7 @@ class HomeAssistantMqttService:
     def _restart(self) -> None:
         """Stop and restart the connection."""
         self._discovery_sent.clear()
+        self._software_discovery_sent.clear()
         # Cancel the current connection task (if any) and start a fresh one.
         # Cancellation unwinds the old aiomqtt client cleanly; the new task
         # connects independently. We do NOT reuse a shared stop flag, which
@@ -1396,6 +1431,7 @@ class HomeAssistantMqttService:
                     # configs may have been lost (broker/HA restart), so clear
                     # the cache and let the next poll recreate the entities.
                     self._discovery_sent.clear()
+                    self._software_discovery_sent.clear()
                     _LOGGER.info(
                         "MQTT connected to %s:%d",
                         self._settings.broker,

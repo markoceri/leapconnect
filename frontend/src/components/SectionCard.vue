@@ -3,6 +3,7 @@
     <div v-if="title" class="section-header">
       <component v-if="icon" :is="icon" class="section-icon" :size="16" />
       <span class="section-title">{{ title }}</span>
+      <slot name="actions" />
     </div>
     <slot />
   </div>
@@ -36,6 +37,7 @@ defineProps({
 }
 .section-icon { color: var(--muted3); }
 .section-title {
+  flex: 1;
   font-size: 13px;
   font-weight: 700;
   color: var(--heading);

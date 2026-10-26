@@ -140,7 +140,19 @@
         </div>
         <InfoRow label="Distance unit" value="km" color="#e2e6f0" />
         <InfoRow label="Pressure unit" value="bar" color="#e2e6f0" />
-        <InfoRow label="Language" value="English" color="#e2e6f0" />
+        <InfoRow label="Interface language" value="English" color="#e2e6f0" />
+        <div class="pref-row">
+          <div class="pref-info">
+            <span class="pref-label">Release notes language</span>
+            <span class="pref-hint">
+              Language of the software update notes in the app, on Telegram and in Home Assistant, when Leapmotor
+              provides it (English otherwise). Set automatically from your browser
+            </span>
+          </div>
+          <select v-model="noteLanguage" class="log-level-select" @change="saveNoteLanguage">
+            <option v-for="[code, name] in noteLanguageOptions" :key="code" :value="code">{{ name }} ({{ code }})</option>
+          </select>
+        </div>
       </SectionCard>
 
       <SectionCard title="Car colour theme" :icon="Palette">
@@ -1386,6 +1398,7 @@ import ToggleSwitch from '../components/ToggleSwitch.vue'
 import LogViewer from '../components/LogViewer.vue'
 import ShareInvitationsCard from '../components/ShareInvitationsCard.vue'
 import { api } from '../composables/useApi'
+import { NOTE_LANGUAGES, resetSoftware } from '../composables/useSoftware'
 import { useAppStore } from '../stores/appStore'
 import { User, Car, Bell, SlidersHorizontal, BarChart3, Code, KeyRound, ShieldCheck, Wifi, Wrench, Settings, Github, Info, Star, AlertTriangle, ExternalLink, Moon, Sun, RefreshCw, Terminal, Navigation, Activity, Eye, EyeOff, Send, ChevronDown, ChevronRight, Search, Locate, Zap, CarFront, Lock, X, Trash2, Link2, Copy, Check, Home, Plug, Clock, Plus, Database, Palette, Sparkles, Calculator, Server, Map as MapIcon, Globe } from 'lucide-vue-next'
 import L from 'leaflet'
@@ -2066,6 +2079,15 @@ const electricitySuccess = ref('')
 const hasSolarPanels = ref(false)
 const autoCalculateMonthlyCosts = ref(true)
 const timeZone = ref('')
+const noteLanguage = ref('')
+// The browser's language may be one the cloud doesn't list (e.g. "it"): keep it selectable.
+const noteLanguageOptions = computed(() => {
+  const list = [...NOTE_LANGUAGES]
+  if (noteLanguage.value && !list.some(([code]) => code === noteLanguage.value)) {
+    list.unshift([noteLanguage.value, noteLanguage.value])
+  }
+  return list
+})
 const timeZoneOptions = computed(() => {
   const zones = typeof Intl.supportedValuesOf === 'function' ? Intl.supportedValuesOf('timeZone') : []
   const list = zones.includes('UTC') ? [...zones] : ['UTC', ...zones]
@@ -2099,6 +2121,7 @@ async function loadPreferences() {
     hasSolarPanels.value = data.has_solar_panels || false
     autoCalculateMonthlyCosts.value = data.auto_calculate_monthly_costs ?? true
     timeZone.value = data.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+    noteLanguage.value = data.language || navigator.language || 'en-US'
     homePricingMode.value = data.home_pricing_mode || 'flat'
   } catch { /* ignore */ }
 }
@@ -2130,6 +2153,14 @@ async function toggleAutoMonthlyCosts(newVal) {
   try {
     await api('PUT', '/api/preferences', { auto_calculate_monthly_costs: newVal })
     autoCalculateMonthlyCosts.value = newVal
+  } catch { /* ignore */ }
+}
+
+async function saveNoteLanguage() {
+  try {
+    const data = await api('PUT', '/api/preferences', { language: noteLanguage.value })
+    noteLanguage.value = data.language || noteLanguage.value
+    resetSoftware()
   } catch { /* ignore */ }
 }
 
