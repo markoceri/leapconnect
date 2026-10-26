@@ -109,6 +109,9 @@ class ChargeSessionRow:
     # Record (with charging runs) whose window this run-less record lies in:
     # most likely a duplicate of it
     duplicate_of: ChargingSessionCost | None = None
+    # Cable unplugged / car moved after the charge (time-based extra costs)
+    unplug_ts: datetime | None = None
+    departure_ts: datetime | None = None
 
     @property
     def location(self) -> tuple[float, float] | None:

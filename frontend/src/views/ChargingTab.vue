@@ -173,9 +173,10 @@
           </span>
           <span class="cell cell-zone" data-label="Zone">{{ s.zone_name || '—' }}</span>
           <span class="cell cell-cost" data-label="Cost">
-            <span v-if="s.cost != null">€{{ s.cost.toFixed(2) }}</span>
+            <span v-if="s.total_cost != null" :title="costBreakdown(s)">€{{ s.total_cost.toFixed(2) }}</span>
             <span v-else class="cost-none">—</span>
-            <span v-if="s.cost_manual" class="manual-badge" title="Entered by hand: kept by the automatic recalculations">manual</span>
+            <span v-if="s.extras?.length" class="extras-badge" :title="costBreakdown(s)">+{{ s.extras.length }}</span>
+            <span v-if="s.cost_manual || s.manual_price_kwh != null" class="manual-badge" :title="s.cost_manual ? 'Cost entered by hand: kept by the automatic recalculations' : `Priced at €${s.manual_price_kwh}/kWh, entered by hand`">manual</span>
           </span>
           <span class="cell cell-edit">
             <span v-if="mergeMode && mergeRowState(s)" class="merge-chip" :class="'merge-chip-' + mergeRowState(s)">
@@ -286,7 +287,7 @@
             </div>
             <div class="detail-stat">
               <span class="stat-label">Cost</span>
-              <span class="stat-value" style="color: #ffd54f">{{ editingSession.cost != null ? '€' + editingSession.cost.toFixed(2) : '—' }}</span>
+              <span class="stat-value" style="color: #ffd54f" :title="costBreakdown(editingSession)">{{ editingSession.total_cost != null ? '€' + editingSession.total_cost.toFixed(2) : '—' }}</span>
             </div>
             <div class="detail-stat">
               <span class="stat-label">Price</span>
@@ -339,12 +340,37 @@
                 </div>
               </div>
               <div class="form-group">
-                <label>Cost override (€) — leave empty for auto</label>
-                <input v-model.number="editForm.cost" type="number" step="0.01" min="0" :placeholder="autoCostHint" />
+                <label>Energy cost — leave empty for the tier's price</label>
+                <div class="input-with-action">
+                  <input
+                    v-model.number="editForm.cost"
+                    type="number"
+                    :step="editForm.costMode === 'per_kwh' ? 0.001 : 0.01"
+                    min="0"
+                    :placeholder="autoCostHint"
+                  />
+                  <select v-model="editForm.costMode" class="cost-mode" title="Enter the total or the price per kWh">
+                    <option value="total">€ total</option>
+                    <option value="per_kwh">€/kWh</option>
+                  </select>
+                </div>
+                <div class="field-hint">{{ costHint }}</div>
               </div>
               <div class="form-group span-2">
                 <label>Note</label>
                 <input v-model="editForm.note" type="text" placeholder="Optional note" />
+              </div>
+              <div class="form-group span-2">
+                <label>Extra costs</label>
+                <ChargingExtrasEditor v-model="editForm.extras" :context="extrasContext" />
+              </div>
+              <div class="session-total span-2">
+                <span>Total</span>
+                <strong>{{ liveTotal != null ? '€' + liveTotal.toFixed(2) : '—' }}</strong>
+                <span v-if="liveExtrasTotal != null" class="session-total-split">
+                  energy {{ liveEnergyCost != null ? '€' + liveEnergyCost.toFixed(2) : '—' }}
+                  + extras €{{ liveExtrasTotal.toFixed(2) }}
+                </span>
               </div>
             </div>
           </div>
@@ -561,6 +587,8 @@ import { api } from '../composables/useApi'
 import { addBaseLayer } from '../utils/mapTiles'
 import { accentHex } from '../utils/theme'
 import { parseUTC } from '../utils/maintenance'
+import { extraCost, extraPayload, sessionTotal } from '../utils/chargingExtras'
+import ChargingExtrasEditor from '../components/ChargingExtrasEditor.vue'
 import { Zap, TrendingUp, PieChart, Clock, CalendarDays, ChevronLeft, ChevronRight, List, Pencil, MapPin, RotateCw, Calculator, Trash2, Combine, Layers, CopyX, AlertTriangle } from 'lucide-vue-next'
 
 Chart.register(...registerables)
@@ -581,10 +609,57 @@ const homePricingMode = ref('flat')
 const hasSolarPanels = ref(false)
 const editingSession = ref(null)
 const editForm = ref({})
+// Live values of the session dialog: energy, energy cost (a total or a price
+// per kWh entered by hand, else the automatic cost as last saved), extras
+const numOrNull = v => (v === '' || v == null || Number.isNaN(Number(v)) ? null : Number(v))
+const isAutoCost = s => !s.cost_manual && s.manual_price_kwh == null
+const liveEnergy = computed(() => numOrNull(editForm.value.energy_kwh) ?? editingSession.value?.energy_kwh ?? null)
+const liveEnergyCost = computed(() => {
+  const s = editingSession.value
+  if (!s) return null
+  const value = numOrNull(editForm.value.cost)
+  if (value == null) return isAutoCost(s) ? s.cost ?? null : null
+  if (editForm.value.costMode === 'total') return value
+  return liveEnergy.value == null ? null : liveEnergy.value * value
+})
+const extrasContext = computed(() => {
+  const s = editingSession.value || {}
+  return {
+    energyKwh: liveEnergy.value,
+    energyCost: liveEnergyCost.value,
+    startTs: s.start_ts ? parseUTC(s.start_ts) : null,
+    endTs: s.end_ts ? parseUTC(s.end_ts) : null,
+    unplugTs: s.unplug_ts ? parseUTC(s.unplug_ts) : null,
+    departureTs: s.departure_ts ? parseUTC(s.departure_ts) : null,
+  }
+})
+const liveExtrasTotal = computed(() => {
+  const amounts = (editForm.value.extras || [])
+    .filter(e => e.included)
+    .map(e => extraCost(e, extrasContext.value))
+    .filter(v => v != null)
+  return amounts.length ? amounts.reduce((a, b) => a + b, 0) : null
+})
+const liveTotal = computed(() => {
+  if (liveEnergyCost.value == null && liveExtrasTotal.value == null) return null
+  return (liveEnergyCost.value || 0) + (liveExtrasTotal.value || 0)
+})
 // Cost field placeholder: the automatic cost the session has now
 const autoCostHint = computed(() => {
   const s = editingSession.value
-  return s && s.cost != null && !s.cost_manual ? `Auto: €${s.cost.toFixed(2)}` : 'Auto-calculate'
+  if (!s || s.cost == null || !isAutoCost(s)) return 'Auto'
+  if (editForm.value.costMode === 'total') return `Auto: €${s.cost.toFixed(2)}`
+  return s.energy_kwh ? `Auto: €${(s.cost / s.energy_kwh).toFixed(3)}` : 'Auto'
+})
+// Under the cost field: the total of a price per kWh, the price of a total
+const costHint = computed(() => {
+  const value = numOrNull(editForm.value.cost)
+  const energy = liveEnergy.value
+  if (value == null) return "Priced with the tier's price"
+  if (editForm.value.costMode === 'per_kwh') {
+    return energy == null ? 'Needs the energy' : `= €${(energy * value).toFixed(2)} (${energy.toFixed(1)} kWh × €${value.toFixed(3)})`
+  }
+  return energy ? `≈ €${(value / energy).toFixed(3)}/kWh` : ''
 })
 const editError = ref('')
 const saving = ref(false)
@@ -635,12 +710,13 @@ const kpiCards = computed(() => {
   if (!sessions.length) return []
 
   const totalEnergy = sessions.reduce((s, c) => s + (c.energy_kwh || 0), 0)
-  const totalCost = sessions.reduce((s, c) => s + (c.cost || 0), 0)
+  const totalCost = sessions.reduce((s, c) => s + sessionTotal(c), 0)
+  const extrasCost = sessions.reduce((s, c) => s + (c.extras_total || 0), 0)
   const homeGrid = sessions.filter(c => c.tier_id === 'home_grid').reduce((s, c) => s + (c.energy_kwh || 0), 0)
   const solar = sessions.filter(c => c.tier_id === 'home_solar').reduce((s, c) => s + (c.energy_kwh || 0), 0)
   const pub = sessions.filter(c => c.tier_id === 'public_ac' || c.tier_id === 'public_dc').reduce((s, c) => s + (c.energy_kwh || 0), 0)
-  const homeCost = sessions.filter(c => c.tier_id === 'home_grid' || c.tier_id === 'home_solar').reduce((s, c) => s + (c.cost || 0), 0)
-  const pubCost = sessions.filter(c => c.tier_id === 'public_ac' || c.tier_id === 'public_dc').reduce((s, c) => s + (c.cost || 0), 0)
+  const homeCost = sessions.filter(c => c.tier_id === 'home_grid' || c.tier_id === 'home_solar').reduce((s, c) => s + sessionTotal(c), 0)
+  const pubCost = sessions.filter(c => c.tier_id === 'public_ac' || c.tier_id === 'public_dc').reduce((s, c) => s + sessionTotal(c), 0)
 
   const cards = [
     { label: 'Sessions', value: sessions.length, color: '#7c6aff' },
@@ -656,6 +732,8 @@ const kpiCards = computed(() => {
     { label: 'Home cost', value: `€${homeCost.toFixed(2)}`, color: '#a5d6a7' },
     { label: 'Public cost', value: `€${pubCost.toFixed(2)}`, color: '#90caf9' },
   )
+  // Already in the costs above: the share of the extras (fees, parking, ...)
+  if (extrasCost) cards.push({ label: 'Of which extras', value: `€${extrasCost.toFixed(2)}`, color: '#ffb74d' })
   return cards
 })
 
@@ -671,7 +749,7 @@ const monthlySummary = computed(() => {
     if (!months[key]) months[key] = { month: key, sessions: 0, energy: 0, homeGrid: 0, solar: 0, public: 0, cost: 0 }
     months[key].sessions++
     months[key].energy += s.energy_kwh || 0
-    months[key].cost += s.cost || 0
+    months[key].cost += sessionTotal(s)
     if (s.tier_id === 'home_grid') months[key].homeGrid += s.energy_kwh || 0
     else if (s.tier_id === 'home_solar') months[key].solar += s.energy_kwh || 0
     else months[key].public += s.energy_kwh || 0
@@ -687,7 +765,7 @@ const costByLocation = computed(() => {
     if (!groups[key]) groups[key] = { zone: key, sessions: 0, energy: 0, cost: 0 }
     groups[key].sessions++
     groups[key].energy += s.energy_kwh || 0
-    groups[key].cost += s.cost || 0
+    groups[key].cost += sessionTotal(s)
   }
   return Object.values(groups).sort((a, b) => b.energy - a.energy)
 })
@@ -780,9 +858,20 @@ function sessionAvgPower(s) {
   if (s.energy_kwh == null || !s.end_ts || !h || h <= 0) return '—'
   return `${(s.energy_kwh / h).toFixed(1)} kW`
 }
+// Effective price: the total cost (extras included) per kWh
 function sessionUnitPrice(s) {
-  if (s.cost == null || !s.energy_kwh) return '—'
-  return `€${(s.cost / s.energy_kwh).toFixed(3)}/kWh`
+  if (s.total_cost == null || !s.energy_kwh) return '—'
+  return `€${(s.total_cost / s.energy_kwh).toFixed(3)}/kWh`
+}
+// Tooltip: energy cost + each extra
+function costBreakdown(s) {
+  if (!s?.extras?.length) return undefined
+  const fmt = v => (v == null ? '—' : `€${v.toFixed(2)}`)
+  const lines = [`Energy: ${fmt(s.cost)}`]
+  for (const e of s.extras) {
+    lines.push(`${e.label || 'Extra'}: ${e.cost == null ? 'pending' : fmt(e.cost)}${e.included ? '' : ' (not counted)'}`)
+  }
+  return lines.join('\n')
 }
 function mapsUrl(s) {
   return `https://www.google.com/maps/search/?api=1&query=${s.latitude},${s.longitude}`
@@ -796,7 +885,9 @@ function editSession(session) {
     zone_name: session.zone_name || '',
     energy_kwh: session.energy_kwh,
     // Only a cost entered by hand fills the field; empty = automatic
-    cost: session.cost_manual ? session.cost : '',
+    costMode: session.manual_price_kwh != null ? 'per_kwh' : 'total',
+    cost: session.manual_price_kwh ?? (session.cost_manual ? session.cost : ''),
+    extras: (session.extras || []).map(e => ({ ...e })),
     note: session.note || '',
   }
   editError.value = ''
@@ -809,11 +900,21 @@ async function saveSession() {
   try {
     const s = editingSession.value
     const f = editForm.value
+    const missing = f.extras.find(e => (e.kind === 'fixed' ? numOrNull(e.amount) : numOrNull(e.rate)) == null
+      || (e.kind === 'time' && e.end_ref === 'manual' && numOrNull(e.duration_min) == null))
+    if (missing) {
+      editError.value = `Extra cost "${missing.label || missing.kind}": fill in its ${missing.kind === 'fixed' ? 'amount' : 'rate and duration'}`
+      return
+    }
+    // Empty = automatic (priced with the tier); a value is kept as entered,
+    // as a total or as a price per kWh
+    const value = numOrNull(f.cost)
     const body = {
       tier_id: f.tier_id,
       zone_name: f.zone_name ?? '',
-      // Empty = automatic (priced with the tier); a value is kept as entered
-      cost: f.cost === '' || f.cost == null ? null : f.cost,
+      cost: f.costMode === 'total' ? value : null,
+      manual_price_kwh: f.costMode === 'per_kwh' ? value : null,
+      extras: f.extras.map(extraPayload),
       peak_power_kw: s.peak_power_kw ?? undefined,
       note: f.note || undefined,
     }
@@ -1040,7 +1141,7 @@ function timelineStyle(start, end) {
 async function deleteSession(session) {
   if (!session.id) return
   const message = session.parts > 1
-    ? `Delete this merged session? It will split back into its ${session.parts} charging runs, without costs.`
+    ? `Delete this merged session? It will split back into its ${session.parts} charging runs, without costs${session.extras?.length ? `, extra costs (${session.extras.length})` : ''} and notes.`
     : 'Delete this charging session record? Its cost and notes will be lost.'
   if (!confirm(message)) return
   saving.value = true
@@ -1227,7 +1328,7 @@ function renderCharts() {
     const daily = {}
     for (const s of sessions) {
       const day = parseUTC(s.start_ts).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })
-      daily[day] = (daily[day] || 0) + (s.cost || 0)
+      daily[day] = (daily[day] || 0) + sessionTotal(s)
     }
     const labels = Object.keys(daily)
     const data = labels.map(l => daily[l])
@@ -1406,6 +1507,7 @@ watch(selectedMonth, loadData)
 .cell-cost { font-weight: 600; color: var(--amber); }
 .cell-edit { display: flex; justify-content: flex-end; }
 .cost-none { color: var(--muted); }
+.extras-badge { font-size: 9px; font-weight: 600; color: #ffb74d; border: 1px solid color-mix(in srgb, #ffb74d 50%, transparent); border-radius: 4px; padding: 0 4px; margin-left: 4px; vertical-align: middle; cursor: help; }
 .manual-badge { font-size: 9px; font-weight: 600; text-transform: uppercase; color: var(--muted); border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; margin-left: 4px; vertical-align: middle; }
 .tier-badge { font-size: 10px; padding: 2px 6px; border-radius: 4px; font-weight: 500; }
 .tier-home_grid { background: rgba(102,187,106,0.15); color: #66bb6a; }
@@ -1528,6 +1630,11 @@ watch(selectedMonth, loadData)
 .modal-actions { display: flex; gap: 8px; align-items: center; margin-top: 16px; }
 .modal-actions-spacer { flex: 1; }
 .input-with-action { display: flex; gap: 8px; }
+.input-with-action .cost-mode { width: auto; flex: 0 0 auto; }
+.field-hint { font-size: 11px; color: var(--muted); margin-top: 4px; min-height: 14px; }
+.session-total { display: flex; align-items: baseline; gap: 8px; font-size: 13px; padding: 8px 2px 0; border-top: 1px solid var(--border); margin-bottom: 4px; }
+.session-total strong { color: #ffd54f; font-size: 16px; }
+.session-total-split { font-size: 11px; color: var(--muted); }
 .input-with-action input { flex: 1; min-width: 0; }
 .btn-recalc { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; background: var(--btn-bg); border: 1px solid var(--btn-border); border-radius: 8px; padding: 0 10px; color: var(--text); cursor: pointer; }
 .btn-recalc:hover:not(:disabled) { border-color: var(--text); }

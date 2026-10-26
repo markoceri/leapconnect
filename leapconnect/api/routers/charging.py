@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import asdict
 from datetime import date, datetime, timedelta
 
 from fastapi import APIRouter, HTTPException
@@ -16,6 +17,7 @@ from leapconnect.api.schemas import (
     ChargingSessionCostCreate,
     ChargingSessionCostResponse,
     ChargingSessionCostUpdate,
+    ChargingSessionExtraResponse,
     ChargingSessionRowSchema,
     ChargingSessionsResponse,
     ChargingTiersFullResponse,
@@ -45,11 +47,16 @@ from leapconnect.application.settings_store import (
     load_preferences,
     load_user_timezone,
     price_session,
+    price_session_extras,
     recalculate_session,
     recompute_session_energy,
     resolve_timezone,
 )
-from leapconnect.domain.charging.models import ChargingSessionCost, ChargingTimeBand
+from leapconnect.domain.charging.models import (
+    ChargingSessionCost,
+    ChargingSessionExtra,
+    ChargingTimeBand,
+)
 from leapconnect.domain.charging.sessions import (
     MERGE_MAX_GAP_LIMITS,
     MERGE_REASON_LABELS,
@@ -320,9 +327,37 @@ def _cost_response(
         cost=sc.cost,
         cost_manual=sc.cost_manual,
         energy_manual=sc.energy_manual,
+        manual_price_kwh=sc.manual_price_kwh,
+        extras=[ChargingSessionExtraResponse(**asdict(e)) for e in sc.extras],
+        extras_total=sc.extras_total,
+        total_cost=sc.total_cost,
         note=sc.note,
         zone_name=sc.zone_name,
     )
+
+
+def _apply_cost_fields(
+    sc: ChargingSessionCost,
+    body: ChargingSessionCostCreate | ChargingSessionCostUpdate,
+) -> None:
+    """Apply the cost entered by hand (a total or a price per kWh; null goes
+    back to the tier's price) and the extra costs, when sent."""
+    sent = body.model_fields_set
+    if body.cost is not None and body.manual_price_kwh is not None:
+        raise HTTPException(
+            status_code=422, detail="Send either 'cost' or 'manual_price_kwh'"
+        )
+    if "cost" in sent:
+        sc.cost_manual = body.cost is not None
+        sc.cost = body.cost
+        if sc.cost_manual:
+            sc.manual_price_kwh = None
+    if "manual_price_kwh" in sent:
+        sc.manual_price_kwh = body.manual_price_kwh
+        if sc.manual_price_kwh is not None:
+            sc.cost_manual = False
+    if body.extras is not None:
+        sc.extras = [ChargingSessionExtra(**e.model_dump()) for e in body.extras]
 
 
 @router.get(
@@ -419,6 +454,8 @@ async def get_charging_sessions(
                     "longitude": lon,
                     "is_dc": row.is_dc,
                     "parts": len(row.parts),
+                    "unplug_ts": _iso(row.unplug_ts),
+                    "departure_ts": _iso(row.departure_ts),
                     **_duplicate_fields(row.duplicate_of),
                 }
             )
@@ -447,7 +484,7 @@ async def create_charging_cost(
     if body.tier_id not in tiers:
         raise HTTPException(status_code=422, detail=f"Unknown tier: {body.tier_id}")
     # Energy and cost given are entered by hand; the missing ones are measured
-    # from the snapshots and priced with the tier.
+    # from the snapshots and priced (with the tier, or the price per kWh given).
     sc = ChargingSessionCost(
         vin=vin,
         start_ts=start_ts,
@@ -456,11 +493,10 @@ async def create_charging_cost(
         energy_kwh=body.energy_kwh,
         energy_manual=body.energy_kwh is not None,
         peak_power_kw=body.peak_power_kw,
-        cost=body.cost,
-        cost_manual=body.cost is not None,
         note=body.note,
         zone_name=body.zone_name or None,
     )
+    _apply_cost_fields(sc, body)
     await recalculate_session(repo, sc)
     sc = await repo.upsert_session_cost(sc)
     return _cost_response(sc, tiers, {})
@@ -645,10 +681,7 @@ async def update_charging_cost(
             sc.energy_kwh = body.energy_kwh
         else:
             sc.energy_kwh = await recompute_session_energy(repo, sc)
-    if "cost" in sent:
-        # A value is entered by hand; null goes back to the tier's price.
-        sc.cost_manual = body.cost is not None
-        sc.cost = body.cost
+    _apply_cost_fields(sc, body)
     if body.peak_power_kw is not None:
         sc.peak_power_kw = body.peak_power_kw
     if body.note is not None:
@@ -656,9 +689,10 @@ async def update_charging_cost(
     if body.zone_name is not None:
         # Empty string clears the zone assignment.
         sc.zone_name = body.zone_name or None
-    # Recalculate cost, unless entered by hand
+    # Recalculate cost, unless entered by hand, then the extras
     if not sc.cost_manual and sc.energy_kwh is not None:
         sc.cost = await price_session(repo, sc)
+    await price_session_extras(repo, sc)
     await repo.upsert_session_cost(sc)
     tiers = {t.id: t for t in await repo.get_price_tiers()}
     bands = {b.id: b for b in await repo.get_time_bands("home_grid")}

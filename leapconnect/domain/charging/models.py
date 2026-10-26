@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 
 
@@ -53,3 +53,51 @@ class ChargingSessionCost:
     # Entered by hand: the automatic recalculations leave them alone
     cost_manual: bool = False
     energy_manual: bool = False
+    # Price per kWh entered by hand: the cost follows the energy
+    manual_price_kwh: float | None = None
+    # Extra costs (session fee, idle fee, parking, ...), in display order
+    extras: list[ChargingSessionExtra] = field(default_factory=list)
+
+    @property
+    def extras_total(self) -> float | None:
+        """Extras counted in the session cost; ``None`` when there are none."""
+        amounts = [e.cost for e in self.extras if e.included and e.cost is not None]
+        return round(sum(amounts), 4) if amounts else None
+
+    @property
+    def total_cost(self) -> float | None:
+        """Energy cost plus the extras counted in it."""
+        if self.cost is None and self.extras_total is None:
+            return None
+        return round((self.cost or 0) + (self.extras_total or 0), 4)
+
+
+@dataclass
+class ChargingSessionExtra:
+    """An extra cost of a charging session, on top of the energy.
+
+    ``kind`` picks how ``cost`` is computed (see ``domain.charging.extras``):
+    a fixed ``amount`` (negative for a discount), a ``rate`` per time unit over
+    a span of the session, a ``rate`` per kWh, or a percentage of the energy
+    cost. ``minutes`` and ``cost`` are the computed result; ``cost`` is
+    ``None`` while it can't be computed yet (e.g. the car is still plugged in).
+    """
+
+    id: int | None = None
+    kind: str = "fixed"
+    label: str = ""
+    included: bool = True  # counted in the session cost
+    amount: float | None = None
+    rate: float | None = None
+    # Time-based: rate per time unit, billed exactly or per started unit,
+    # from a start point (+ offset, e.g. a grace period) to an end point or for
+    # a duration entered by hand, up to an optional cap
+    time_unit: str = "hour"
+    billing: str = "exact"
+    start_ref: str = "charge_end"
+    start_offset_min: int = 0
+    end_ref: str = "unplug"
+    duration_min: int | None = None
+    cap: float | None = None
+    minutes: int | None = None
+    cost: float | None = None

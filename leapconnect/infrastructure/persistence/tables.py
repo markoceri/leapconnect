@@ -235,6 +235,33 @@ class ChargingSessionCostRow(Base):
     # Entered by hand: kept by the automatic recalculations
     cost_manual = Column(Boolean, nullable=False, default=False, server_default="0")
     energy_manual = Column(Boolean, nullable=False, default=False, server_default="0")
+    # Price per kWh entered by hand: the cost follows the energy
+    manual_price_kwh = Column(Float, nullable=True)
+
+
+class ChargingSessionExtraRow(Base):
+    """An extra cost of a charging session (session fee, idle fee, ...)."""
+
+    __tablename__ = "charging_session_extras"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    session_cost_id = Column(Integer, nullable=False, index=True)
+    position = Column(Integer, nullable=False, default=0)
+    kind = Column(String(16), nullable=False)
+    label = Column(String(64), nullable=False, default="")
+    included = Column(Boolean, nullable=False, default=True)
+    amount = Column(Float, nullable=True)
+    rate = Column(Float, nullable=True)
+    time_unit = Column(String(8), nullable=False, default="hour")
+    billing = Column(String(8), nullable=False, default="exact")
+    start_ref = Column(String(16), nullable=False, default="charge_end")
+    start_offset_min = Column(Integer, nullable=False, default=0)
+    end_ref = Column(String(16), nullable=False, default="unplug")
+    duration_min = Column(Integer, nullable=True)
+    cap = Column(Float, nullable=True)
+    # Computed when the session is priced
+    minutes = Column(Integer, nullable=True)
+    cost = Column(Float, nullable=True)
 
 
 # ---------------------------------------------------------------------------

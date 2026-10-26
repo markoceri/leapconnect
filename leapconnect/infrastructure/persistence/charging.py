@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from leapconnect.application.ports.repositories import (
     ChargingRepository,
@@ -13,12 +13,14 @@ from leapconnect.application.ports.repositories import (
 from leapconnect.domain.charging.models import (
     ChargingPriceTier,
     ChargingSessionCost,
+    ChargingSessionExtra,
     ChargingTimeBand,
 )
 from leapconnect.infrastructure.persistence.base import SqlRepositoryBase
 from leapconnect.infrastructure.persistence.tables import (
     ChargingPriceTierRow,
     ChargingSessionCostRow,
+    ChargingSessionExtraRow,
     ChargingTimeBandRow,
 )
 
@@ -149,6 +151,21 @@ class SqlChargingRepository(SqlRepositoryBase, ChargingRepository):
         async with self._session_factory() as session:
             result = await session.execute(stmt)
             rows = result.scalars().all()
+            extras: dict[int, list[ChargingSessionExtra]] = {}
+            if rows:
+                result = await session.execute(
+                    select(ChargingSessionExtraRow)
+                    .where(
+                        ChargingSessionExtraRow.session_cost_id.in_(
+                            [r.id for r in rows]
+                        )
+                    )
+                    .order_by(
+                        ChargingSessionExtraRow.position, ChargingSessionExtraRow.id
+                    )
+                )
+                for e in result.scalars().all():
+                    extras.setdefault(e.session_cost_id, []).append(_extra(e))
         return [
             ChargingSessionCost(
                 id=r.id,
@@ -164,56 +181,93 @@ class SqlChargingRepository(SqlRepositoryBase, ChargingRepository):
                 zone_name=r.zone_name,
                 cost_manual=bool(r.cost_manual),
                 energy_manual=bool(r.energy_manual),
+                manual_price_kwh=r.manual_price_kwh,
+                extras=extras.get(r.id, []),
             )
             for r in rows
         ]
 
     async def upsert_session_cost(self, sc: ChargingSessionCost) -> ChargingSessionCost:
-        """Create or update a session cost record."""
+        """Create or update a session cost record and its extras."""
         async with self._session_factory() as session:
-            if sc.id:
-                row = await session.get(ChargingSessionCostRow, sc.id)
-                if row:
-                    row.vin = sc.vin
-                    row.start_ts = sc.start_ts
-                    row.end_ts = sc.end_ts
-                    row.tier_id = sc.tier_id
-                    row.time_band_id = sc.time_band_id
-                    row.energy_kwh = sc.energy_kwh
-                    row.peak_power_kw = sc.peak_power_kw
-                    row.cost = sc.cost
-                    row.note = sc.note
-                    row.zone_name = sc.zone_name
-                    row.cost_manual = sc.cost_manual
-                    row.energy_manual = sc.energy_manual
-                    await session.commit()
-                    return sc
-            # Create new
-            row = ChargingSessionCostRow(
-                vin=sc.vin,
-                start_ts=sc.start_ts,
-                end_ts=sc.end_ts,
-                tier_id=sc.tier_id,
-                time_band_id=sc.time_band_id,
-                energy_kwh=sc.energy_kwh,
-                peak_power_kw=sc.peak_power_kw,
-                cost=sc.cost,
-                note=sc.note,
-                zone_name=sc.zone_name,
-                cost_manual=sc.cost_manual,
-                energy_manual=sc.energy_manual,
-            )
-            session.add(row)
-            await session.commit()
+            row = await session.get(ChargingSessionCostRow, sc.id) if sc.id else None
+            if row is None:
+                row = ChargingSessionCostRow()
+                session.add(row)
+            row.vin = sc.vin
+            row.start_ts = sc.start_ts
+            row.end_ts = sc.end_ts
+            row.tier_id = sc.tier_id
+            row.time_band_id = sc.time_band_id
+            row.energy_kwh = sc.energy_kwh
+            row.peak_power_kw = sc.peak_power_kw
+            row.cost = sc.cost
+            row.note = sc.note
+            row.zone_name = sc.zone_name
+            row.cost_manual = sc.cost_manual
+            row.energy_manual = sc.energy_manual
+            row.manual_price_kwh = sc.manual_price_kwh
+            await session.flush()
             sc.id = row.id
+            # The extras are part of the record: replaced as a whole
+            await session.execute(
+                delete(ChargingSessionExtraRow).where(
+                    ChargingSessionExtraRow.session_cost_id == sc.id
+                )
+            )
+            extra_rows = [_extra_row(sc.id, i, e) for i, e in enumerate(sc.extras)]
+            session.add_all(extra_rows)
+            await session.flush()
+            for extra, extra_row in zip(sc.extras, extra_rows, strict=True):
+                extra.id = extra_row.id
+            await session.commit()
             return sc
 
     async def delete_session_cost(self, cost_id: int) -> bool:
-        """Delete a session cost record."""
+        """Delete a session cost record and its extras."""
         async with self._session_factory() as session:
             row = await session.get(ChargingSessionCostRow, cost_id)
             if not row:
                 return False
+            await session.execute(
+                delete(ChargingSessionExtraRow).where(
+                    ChargingSessionExtraRow.session_cost_id == cost_id
+                )
+            )
             await session.delete(row)
             await session.commit()
             return True
+
+
+_EXTRA_FIELDS = (
+    "kind",
+    "label",
+    "included",
+    "amount",
+    "rate",
+    "time_unit",
+    "billing",
+    "start_ref",
+    "start_offset_min",
+    "end_ref",
+    "duration_min",
+    "cap",
+    "minutes",
+    "cost",
+)
+
+
+def _extra(row: ChargingSessionExtraRow) -> ChargingSessionExtra:
+    return ChargingSessionExtra(
+        id=row.id, **{f: getattr(row, f) for f in _EXTRA_FIELDS}
+    )
+
+
+def _extra_row(
+    session_cost_id: int, position: int, extra: ChargingSessionExtra
+) -> ChargingSessionExtraRow:
+    return ChargingSessionExtraRow(
+        session_cost_id=session_cost_id,
+        position=position,
+        **{f: getattr(extra, f) for f in _EXTRA_FIELDS},
+    )

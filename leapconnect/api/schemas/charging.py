@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import date
+from typing import Literal
 
 from leapmotor_api.models import (
     ChargeRecord,
@@ -12,7 +13,7 @@ from leapmotor_api.models import (
     MileageEnergyHistory,
     WeeklyConsumption,
 )
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class ChargeRecordSchema(BaseModel):
@@ -120,6 +121,46 @@ class ChargingTiersFullResponse(BaseModel):
     home_pricing_mode: str = "flat"
 
 
+class _ChargingSessionExtraFields(BaseModel):
+    """An extra cost of a session; see ``domain.charging.extras``."""
+
+    kind: Literal["fixed", "time", "per_kwh", "percent"]
+    label: str = Field(default="", max_length=64)
+    included: bool = True  # counted in the session cost
+    amount: float | None = None  # fixed: € (negative for a discount)
+    # time: €/time_unit; per_kwh: €/kWh; percent: % of the energy cost
+    rate: float | None = Field(default=None, ge=0)
+    time_unit: Literal["minute", "hour"] = "hour"
+    billing: Literal["exact", "started"] = "exact"
+    start_ref: Literal["charge_start", "charge_end"] = "charge_end"
+    start_offset_min: int = Field(default=0, ge=0)
+    end_ref: Literal["charge_end", "unplug", "departure", "manual"] = "unplug"
+    duration_min: int | None = Field(default=None, ge=0)  # end_ref "manual"
+    cap: float | None = Field(default=None, ge=0)
+
+
+class ChargingSessionExtraIn(_ChargingSessionExtraFields):
+    @model_validator(mode="after")
+    def _check_kind(self):
+        if self.kind == "fixed" and self.amount is None:
+            raise ValueError("a fixed extra needs an amount")
+        if self.kind != "fixed" and self.rate is None:
+            raise ValueError(f"a {self.kind} extra needs a rate")
+        if (
+            self.kind == "time"
+            and self.end_ref == "manual"
+            and self.duration_min is None
+        ):
+            raise ValueError("a time extra with a manual end needs a duration")
+        return self
+
+
+class ChargingSessionExtraResponse(_ChargingSessionExtraFields):
+    id: int | None = None
+    minutes: int | None = None  # billable minutes (time-based)
+    cost: float | None = None  # None = can't be computed yet
+
+
 class ChargingSessionCostResponse(BaseModel):
     id: int
     vin: str
@@ -131,9 +172,13 @@ class ChargingSessionCostResponse(BaseModel):
     time_band_name: str | None = None
     energy_kwh: float | None = None
     peak_power_kw: float | None = None
-    cost: float | None = None
+    cost: float | None = None  # energy cost
     cost_manual: bool = False  # entered by hand, kept by recalculations
     energy_manual: bool = False
+    manual_price_kwh: float | None = None  # cost = energy × this price
+    extras: list[ChargingSessionExtraResponse] = []
+    extras_total: float | None = None  # extras counted in the session cost
+    total_cost: float | None = None  # energy cost + extras_total
     note: str | None = None
     zone_name: str | None = None
 
@@ -153,8 +198,15 @@ class ChargingSessionRowSchema(BaseModel):
     cost: float | None = None
     cost_manual: bool = False
     energy_manual: bool = False
+    manual_price_kwh: float | None = None
+    extras: list[ChargingSessionExtraResponse] = []
+    extras_total: float | None = None
+    total_cost: float | None = None
     note: str | None = None
     zone_name: str | None = None
+    # Cable unplugged / car moved after the charge (time-based extras)
+    unplug_ts: str | None = None
+    departure_ts: str | None = None
     # End seen in the history, for an open record whose charge stop was missed
     detected_end_ts: str | None = None
     start_soc: int | None = None
@@ -188,6 +240,10 @@ class ChargingSessionCostCreate(BaseModel):
     energy_kwh: float | None = Field(default=None, ge=0)
     peak_power_kw: float | None = None
     cost: float | None = Field(default=None, ge=0)
+    # Price per kWh entered by hand instead of the cost (cost = energy × price)
+    manual_price_kwh: float | None = Field(default=None, ge=0)
+    # Replaces the session's extra costs; omitted = unchanged
+    extras: list[ChargingSessionExtraIn] | None = Field(default=None, max_length=20)
     note: str | None = None
     zone_name: str | None = None
 
@@ -200,6 +256,10 @@ class ChargingSessionCostUpdate(BaseModel):
     energy_kwh: float | None = Field(default=None, ge=0)
     peak_power_kw: float | None = None
     cost: float | None = Field(default=None, ge=0)
+    # Price per kWh entered by hand instead of the cost (cost = energy × price)
+    manual_price_kwh: float | None = Field(default=None, ge=0)
+    # Replaces the session's extra costs; omitted = unchanged
+    extras: list[ChargingSessionExtraIn] | None = Field(default=None, max_length=20)
     note: str | None = None
     zone_name: str | None = None
 

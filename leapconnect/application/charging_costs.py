@@ -15,14 +15,20 @@ for the previous month, finding the sessions server-side.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta, tzinfo
 from typing import TYPE_CHECKING
 
 from leapconnect.application.settings_store import (
     calculate_session_cost,
     load_user_timezone,
+    price_session_extras,
     recalculate_session,
+)
+from leapconnect.domain.charging.extras import (
+    EXTRA_TIME,
+    find_departure,
+    find_unplug,
 )
 from leapconnect.domain.charging.location import (
     DC_CHARGE_STATE,
@@ -190,7 +196,8 @@ async def list_sessions(
     """Charging sessions starting in ``[start, end)`` (naive UTC), newest first.
 
     Sessions are detected from the full (not downsampled) snapshots and paired
-    with the stored cost records.
+    with the stored cost records. Each row gets the unplug and departure times
+    after the charge; extra costs still waiting for them are priced and saved.
     """
     # Repository dates are UTC days (whole days, end inclusive).
     history = await repo.get_history(
@@ -199,12 +206,29 @@ async def list_sessions(
         to_date=(end + HISTORY_MARGIN).date().isoformat(),
         max_points=None,
     )
-    return pair_sessions(
+    rows = pair_sessions(
         detect_charge_sessions(history),
         await repo.get_session_costs(vin),
         start,
         end,
     )
+    result = []
+    for row in rows:
+        row = replace(
+            row,
+            unplug_ts=find_unplug(history, row.end_ts),
+            departure_ts=find_departure(history, row.end_ts),
+        )
+        sc = row.record
+        if sc is not None and any(
+            e.kind == EXTRA_TIME and e.cost is None for e in sc.extras
+        ):
+            before = [(e.minutes, e.cost) for e in sc.extras]
+            await price_session_extras(repo, sc, history)
+            if [(e.minutes, e.cost) for e in sc.extras] != before:
+                await repo.upsert_session_cost(sc)
+        result.append(row)
+    return result
 
 
 async def list_month_sessions(
@@ -408,10 +432,13 @@ async def merge_charge_sessions(
     keeper.peak_power_kw = max(peaks) if peaks else keeper.peak_power_kw
     notes = [r.note for r in records if r.note]
     keeper.note = " · ".join(dict.fromkeys(notes)) or None
-    # A new session: values entered by hand on one of its parts don't apply
+    # A new session: values entered by hand on one of its parts don't apply,
+    # but the extra costs of every part are kept (priced on the whole session)
     keeper.energy_kwh = None
     keeper.cost = None
     keeper.energy_manual = keeper.cost_manual = False
+    keeper.manual_price_kwh = None
+    keeper.extras = [e for r in records for e in r.extras]
     keeper = await repo.upsert_session_cost(keeper)
     for other in records[1:]:
         await repo.delete_session_cost(other.id)

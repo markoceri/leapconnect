@@ -315,6 +315,7 @@
 <script setup>
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { accentHex, accentRgba } from '../utils/theme'
+import { sessionTotal } from '../utils/chargingExtras'
 import { Chart, registerables } from 'chart.js'
 import { api } from '../composables/useApi'
 import { Battery, Map, Zap, Route, Thermometer, BarChart3, Table2, Gauge, Clock, CircleDot, MapPin, Circle, BatteryWarning, CalendarDays, ChevronLeft, ChevronRight, MoreVertical, Download, Maximize2, Minimize2, HardDrive, Cloud, Activity } from 'lucide-vue-next'
@@ -913,7 +914,7 @@ const kpiCards = computed(() => {
 
   const costPerKwh = electricityPriceKwh.value
   // Use the displayed sessions' costs if available, otherwise flat rate
-  const sessionCostTotal = rangeSessions.value.reduce((sum, sc) => sum + (sc.cost || 0), 0)
+  const sessionCostTotal = rangeSessions.value.reduce((sum, sc) => sum + sessionTotal(sc), 0)
   const cost = sessionCostTotal > 0 ? sessionCostTotal : energyCharged * costPerKwh
 
   const co2Saved = totalKm * 0.12
@@ -983,7 +984,7 @@ const chargeSessionsData = computed(() => {
       startSoc: s.start_soc,
       endSoc: s.end_soc,
       tierLabel: s.tier_label || null,
-      cost: s.cost ?? null,
+      cost: s.total_cost ?? null,
     }))
 })
 
