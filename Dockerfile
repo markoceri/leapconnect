@@ -1,5 +1,5 @@
 # ---- Stage 1: Build Vue.js frontend ----
-FROM node:22-alpine AS frontend-build
+FROM --platform=$BUILDPLATFORM node:22-alpine AS frontend-build
 
 WORKDIR /app/frontend
 COPY frontend/package.json frontend/package-lock.json* ./
