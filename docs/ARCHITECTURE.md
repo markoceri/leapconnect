@@ -118,7 +118,9 @@ Enforced by `tests/test_architecture.py`.
   `evdc-network-api`: read-only (login, charging history, receipts, charging
   points with a short search cache); the account is connected once and a
   device key is enrolled, so the password is never stored (device key and
-  tokens are the account's encrypted credentials).
+  tokens are the account's encrypted credentials). `evdc/live.py`
+  (`EvdcLiveFeed`): live progress of the sessions in progress over
+  socket.io, opened on demand and closed when idle.
 - `community.py` — GitHub fetcher for community maintenance packs.
 - `logbuffer.py` — in-memory ring buffer behind the log viewer.
 

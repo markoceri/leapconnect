@@ -9,10 +9,19 @@
       </div>
       <div class="ongoing-facts">
         <span v-if="o.price_kwh != null">€{{ o.price_kwh.toFixed(2) }}/kWh</span>
-        <span v-if="o.estimated_cost != null" :title="`${o.energy_kwh?.toFixed(1)} kWh so far × the tariff; fees and the final bill come when the session ends`">
+        <span v-if="o.estimated_cost != null" :title="estimateTitle(o)">
           ≈ <b>€{{ o.estimated_cost.toFixed(2) }}</b> so far
         </span>
         <span v-if="o.pre_auth_amount" class="sub">€{{ o.pre_auth_amount.toFixed(0) }} held</span>
+      </div>
+      <!-- The charger's live reading (stations that send it, every few minutes) -->
+      <div v-if="o.charger_energy_kwh != null || o.power_kw != null" class="ongoing-facts live">
+        <span class="live-dot" />
+        <span v-if="o.charger_energy_kwh != null">Charger: <b>{{ o.charger_energy_kwh.toFixed(2) }} kWh</b></span>
+        <span v-if="o.energy_kwh != null && o.charger_energy_kwh != null" class="sub">car {{ o.energy_kwh.toFixed(2) }} kWh ({{ efficiency(o) }})</span>
+        <span v-if="o.power_kw != null">{{ o.power_kw.toFixed(1) }} kW<template v-if="o.max_power_kw"> / {{ o.max_power_kw.toFixed(0) }}</template></span>
+        <span v-if="o.current_a != null">{{ o.current_a.toFixed(0) }} A</span>
+        <span v-if="o.live_updated_at" class="sub">{{ ago(o.live_updated_at) }}</span>
       </div>
       <div v-if="o.station?.address" class="sub">{{ o.station.address }}</div>
       <div v-for="p in o.problems" :key="p" class="warning">⚠ {{ p }} — maybe another vehicle's charge</div>
@@ -36,6 +45,20 @@ const props = defineProps({
 
 const sessions = ref([])
 let timer = null
+
+function estimateTitle(o) {
+  const basis = o.estimate_on_charger
+    ? `${o.charger_energy_kwh.toFixed(2)} kWh delivered by the charger`
+    : `${o.energy_kwh?.toFixed(1)} kWh taken by the car`
+  return `${basis} × the tariff; fees and the final bill come when the session ends`
+}
+// Battery ÷ charger: the charging losses
+const efficiency = o => (o.charger_energy_kwh ? `${Math.round((o.energy_kwh / o.charger_energy_kwh) * 100)}%` : '—')
+function ago(iso) {
+  const ts = new Date(iso.endsWith('Z') || iso.includes('+') ? iso : `${iso}Z`)
+  const min = Math.max(0, Math.round((Date.now() - ts) / 60000))
+  return min < 1 ? 'just now' : `${min} min ago`
+}
 
 // One that fits the car's charge hides the ones that don't
 const shown = computed(() => {
@@ -69,4 +92,6 @@ watch(() => props.vin, load)
 .provider-chip { font-size: 10px; font-weight: 600; border-radius: 4px; padding: 1px 6px; border: 1px solid var(--accent); color: var(--accent); }
 .sub { color: var(--muted); overflow-wrap: anywhere; }
 .warning { color: #ffb74d; }
+.live { align-items: center; }
+.live-dot { width: 7px; height: 7px; border-radius: 50%; background: #22c55e; box-shadow: 0 0 6px #22c55e; }
 </style>

@@ -332,6 +332,19 @@ def unlink_provider_session(
 
 
 @dataclass(frozen=True)
+class ProviderLiveProgress:
+    """The charger's live reading of a session in progress (pushed by the
+    provider every few minutes, by the stations that send it). Times are
+    naive UTC; ``None``: not reported."""
+
+    energy_kwh: float | None = None  # delivered so far: what gets billed
+    power_kw: float | None = None
+    max_power_kw: float | None = None
+    current_a: float | None = None
+    updated_at: datetime | None = None
+
+
+@dataclass(frozen=True)
 class ProviderOngoingSession:
     """A provider session in progress: no energy or cost yet (billed when it
     ends, under the same ``external_id``), but the charging point and the
@@ -347,6 +360,7 @@ class ProviderOngoingSession:
     evse_id: str | None = None
     operator: str | None = None
     station: ChargingStation | None = None
+    live: ProviderLiveProgress | None = None  # the charger's reading
 
     @property
     def key(self) -> tuple[str, str]:

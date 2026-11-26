@@ -926,3 +926,83 @@ def test_ongoing_endpoint(auth_client, provider):
     assert item["price_kwh"] == 0.59 and item["station"]["name"] == "Ewiva Milano"
     # No open charge of the car: not plausible
     assert item["plausible"] is False and item["problems"] == ["the car isn't charging"]
+
+
+# -- live progress ------------------------------------------------------------------
+
+
+class _FakeLiveClient:
+    """Stands in for EvdcLiveClient: connect/disconnect, progress pushed by
+    the test."""
+
+    instances: list = []
+
+    def __init__(self, client, on_progress):
+        self.on_progress = on_progress
+        self.connected = False
+        _FakeLiveClient.instances.append(self)
+
+    def connect(self):
+        self.connected = True
+
+    def disconnect(self):
+        self.connected = False
+
+
+def _progress(session_id="S9", kwh=12.5):
+    from evdc_network_api import SessionProgress
+
+    return SessionProgress.from_dict(
+        {
+            "SessionID": session_id,
+            "EvseID": "IT*EWI*E1",
+            "ConsumedEnergyProgress": kwh,
+            "Power": 48.0,
+            "Time": "2026-11-26T10:30:00Z",
+        }
+    )
+
+
+async def test_live_feed_opens_on_demand_and_keeps_progress():
+    from leapconnect.infrastructure.evdc.live import EvdcLiveFeed
+
+    _FakeLiveClient.instances = []
+    feed = EvdcLiveFeed(lambda: object(), factory=_FakeLiveClient)
+    await feed.want({"S9"})
+    [live] = _FakeLiveClient.instances
+    assert feed.running and live.connected
+    live.on_progress(_progress())
+    p = feed.progress("S9")
+    assert (p.energy_kwh, p.power_kw) == (12.5, 48.0)
+    assert p.updated_at == datetime(2026, 11, 26, 10, 30)
+    # Asked again: same socket; an ended session's progress is forgotten
+    await feed.want(set())
+    assert len(_FakeLiveClient.instances) == 1 and feed.progress("S9") is None
+    await feed.stop()
+    assert not feed.running and not live.connected
+
+
+async def test_live_feed_waits_after_a_failed_connection():
+    from leapconnect.infrastructure.evdc.live import EvdcLiveFeed
+
+    attempts = []
+
+    def failing(client, on_progress):
+        attempts.append(1)
+        raise ValueError("Connection refused")
+
+    feed = EvdcLiveFeed(lambda: object(), factory=failing)
+    await feed.want({"S9"})
+    await feed.want({"S9"})
+    assert not feed.running and len(attempts) == 1  # no retry storm
+
+
+async def test_estimate_uses_the_charger_reading():
+    from leapconnect.application.charging_providers import OngoingItem
+    from leapconnect.domain.charging.providers import ProviderLiveProgress
+
+    row = ChargeSessionRow(start_ts=T0, end_ts=None, energy_kwh=10.0)
+    car_only = OngoingItem(_ongoing(), row)
+    assert car_only.estimated_cost == 5.9
+    with_live = OngoingItem(_ongoing(live=ProviderLiveProgress(energy_kwh=12.0)), row)
+    assert with_live.estimated_cost == 7.08

@@ -545,9 +545,18 @@ class OngoingItem:
         return not self.problems and self.linked_to is None
 
     @property
+    def estimate_energy_kwh(self) -> float | None:
+        """The energy the cost so far is estimated on: the charger's live
+        reading (what gets billed), else what the car took so far."""
+        live = self.session.live
+        if live is not None and live.energy_kwh is not None:
+            return live.energy_kwh
+        return self.row.energy_kwh if self.row else None
+
+    @property
     def estimated_cost(self) -> float | None:
-        """The tariff × the energy the car took so far."""
-        energy = self.row.energy_kwh if self.row else None
+        """The tariff × the energy so far."""
+        energy = self.estimate_energy_kwh
         if self.session.price_kwh is None or energy is None:
             return None
         return round(self.session.price_kwh * energy, 2)

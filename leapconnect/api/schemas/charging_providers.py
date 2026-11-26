@@ -211,7 +211,15 @@ class ProviderOngoingSchema(BaseModel):
     # The vehicle's open charge it matches
     row_start_ts: str | None = None
     energy_kwh: float | None = None  # taken by the car so far
-    estimated_cost: float | None = None  # tariff × energy so far
+    # The charger's live reading (stations that send it, every few minutes)
+    charger_energy_kwh: float | None = None  # delivered so far: what's billed
+    power_kw: float | None = None
+    max_power_kw: float | None = None
+    current_a: float | None = None
+    live_updated_at: str | None = None
+    # tariff × energy so far (the charger's when known, else the car's)
+    estimated_cost: float | None = None
+    estimate_on_charger: bool = False
     problems: list[str] = []  # why it may be another vehicle's charge
     plausible: bool = False
     linked_vin: str | None = None

@@ -734,6 +734,8 @@ class AppContainer:
             await self.disk_monitor.stop()
         if self.abrp_service:
             await self.abrp_service.stop()
+        if self.charging_providers:
+            await self.charging_providers.close()
         if self.mqtt_service:
             await self.mqtt_service.stop()
         if self.scheduler:

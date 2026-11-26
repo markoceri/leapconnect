@@ -508,6 +508,7 @@ async def get_ongoing_sessions(
     sessions = []
     for item in result.items:
         o = item.session
+        live = o.live
         account = registry.get(o.account_id) if o.account_id is not None else None
         sessions.append(
             ProviderOngoingSchema(
@@ -527,7 +528,15 @@ async def get_ongoing_sessions(
                 station=_station_schema(o.station) if o.station else None,
                 row_start_ts=item.row.start_ts.isoformat() if item.row else None,
                 energy_kwh=item.row.energy_kwh if item.row else None,
+                charger_energy_kwh=live.energy_kwh if live else None,
+                power_kw=live.power_kw if live else None,
+                max_power_kw=live.max_power_kw if live else None,
+                current_a=live.current_a if live else None,
+                live_updated_at=live.updated_at.isoformat()
+                if live and live.updated_at
+                else None,
                 estimated_cost=item.estimated_cost,
+                estimate_on_charger=bool(live and live.energy_kwh is not None),
                 problems=list(item.problems),
                 plausible=item.plausible,
                 linked_vin=item.linked_to[0] if item.linked_to else None,

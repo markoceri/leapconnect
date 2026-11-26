@@ -192,6 +192,13 @@ class ChargingProviderRegistry:
         ]:
             del self._pending[pid]
 
+    async def close(self) -> None:
+        """Close what the accounts keep open (the live sockets)."""
+        for service in self._services.values():
+            live = getattr(service, "live", None)
+            if live is not None:
+                await live.stop()
+
     async def remove(self, account_id: int) -> bool:
         """Disconnect an account (its device key and session are revoked) and
         forget it; the sessions imported with it keep their values."""

@@ -38,6 +38,7 @@ from leapconnect.domain.charging.providers import (
     ProviderSession,
 )
 from leapconnect.domain.charging.stations import ChargingStation
+from leapconnect.infrastructure.evdc.live import EvdcLiveFeed
 
 if TYPE_CHECKING:
     from evdc_network_api import ChargingSession, OngoingSession
@@ -213,6 +214,10 @@ class EvdcService(ChargingProvider):
         self._lock = asyncio.Lock()
         self._stations_cache: dict[tuple, tuple[float, list[ChargingStation]]] = {}
         self._ongoing_cache: tuple[float, list[ProviderOngoingSession]] | None = None
+        # Live progress of the sessions in progress (socket opened on demand)
+        self.live = EvdcLiveFeed(
+            lambda: self._client.client if self._client is not None else None
+        )
         c = self.account.credentials
         if self.account.username and c.get("device_key") and c.get("user_id"):
             self._client = AsyncEvdcApiClient(
@@ -310,6 +315,7 @@ class EvdcService(ChargingProvider):
 
     async def disconnect(self) -> None:
         """Revoke the device key and this client's session."""
+        await self.live.stop()
         async with self._lock:
             client, self._client, self._pending = self._client, None, None
             if client is None:
@@ -379,6 +385,16 @@ class EvdcService(ChargingProvider):
             return sorted(sessions, key=lambda s: s.started_at)
 
     async def get_ongoing_sessions(self) -> list[ProviderOngoingSession]:
+        """The sessions in progress, with the charger's live progress: asking
+        for them keeps the live socket open while any is in progress."""
+        sessions = await self._read_ongoing()
+        if sessions:
+            await self.live.want({o.external_id for o in sessions})
+        elif self.live.running:
+            await self.live.stop()
+        return [replace(o, live=self.live.progress(o.external_id)) for o in sessions]
+
+    async def _read_ongoing(self) -> list[ProviderOngoingSession]:
         now = time.monotonic()
         if self._ongoing_cache and now - self._ongoing_cache[0] < ONGOING_CACHE_TTL:
             return self._ongoing_cache[1]
