@@ -180,6 +180,10 @@ class ChargingSessionCostResponse(BaseModel):
     # Imported from a charging provider: energy and cost are the billed ones
     external_source: str | None = None
     external_id: str | None = None
+    provider_account_id: int | None = None
+    evse_id: str | None = None  # the charging point (see /api/charging/stations)
+    latitude: float | None = None  # where the car charged
+    longitude: float | None = None
     auto_link_disabled: bool = False
     extras: list[ChargingSessionExtraResponse] = []
     extras_total: float | None = None  # extras counted in the session cost
@@ -206,6 +210,8 @@ class ChargingSessionRowSchema(BaseModel):
     manual_price_kwh: float | None = None
     external_source: str | None = None
     external_id: str | None = None
+    provider_account_id: int | None = None
+    evse_id: str | None = None
     auto_link_disabled: bool = False
     extras: list[ChargingSessionExtraResponse] = []
     extras_total: float | None = None
@@ -219,8 +225,9 @@ class ChargingSessionRowSchema(BaseModel):
     detected_end_ts: str | None = None
     start_soc: int | None = None
     end_soc: int | None = None
-    # Where the car charged (last GPS fix of the session), and whether any of
-    # its runs was a DC charge
+    # Where the car charged (last GPS fix of the session, else the stored
+    # position, e.g. the charger's), and whether any of its runs was a DC
+    # charge
     latitude: float | None = None
     longitude: float | None = None
     is_dc: bool = False

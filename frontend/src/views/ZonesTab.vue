@@ -83,12 +83,38 @@
         <Loader2 v-if="overlayLoading" :size="13" class="spin" />
       </button>
       <div v-show="layersOpen" class="layers-body">
-        <label v-for="o in OVERLAY_DEFS" :key="o.key" class="layer-row">
-          <input type="checkbox" :checked="overlays[o.key]" @change="toggleOverlay(o.key)" />
-          <span class="layer-swatch" :style="{ background: o.color }">{{ o.emoji }}</span>
-          <span class="layer-label">{{ o.label }}</span>
+        <template v-for="o in OVERLAY_DEFS" :key="o.key">
+          <label class="layer-row">
+            <input type="checkbox" :checked="overlays[o.key]" @change="toggleOverlay(o.key)" />
+            <span class="layer-swatch" :style="{ background: o.color }">{{ o.emoji }}</span>
+            <span class="layer-label">{{ o.label }}</span>
+          </label>
+          <!-- EV chargers: the sources (OpenStreetMap and each charging provider) and the search range -->
+          <div v-if="o.key === 'charging' && overlays.charging" class="layer-sub">
+            <label class="layer-row small">
+              <input v-model="chargerSources.osm" type="checkbox" @change="onChargerSourcesChanged" />
+              <span class="layer-label">OpenStreetMap</span>
+            </label>
+            <label v-for="p in stationProviders" :key="p.id" class="layer-row small">
+              <input v-model="chargerSources[p.id]" type="checkbox" @change="onChargerSourcesChanged" />
+              <span class="layer-label">{{ p.label }} <small>· live status &amp; price</small></span>
+            </label>
+            <label v-if="stationProviders.length" class="layer-row small">
+              <span class="layer-label">Range</span>
+              <select v-model.number="stationRadiusKm" class="layer-select" @change="onChargerSourcesChanged">
+                <option v-for="km in RADIUS_OPTIONS_KM" :key="km" :value="km">{{ km }} km from the map centre</option>
+              </select>
+            </label>
+            <p v-for="(msg, name) in stationErrors" :key="name" class="layer-note">{{ msg }}</p>
+          </div>
+        </template>
+        <label class="layer-row">
+          <input type="checkbox" :checked="showChargeSites" @change="toggleChargeSites" />
+          <span class="layer-swatch" :style="{ background: SITES_COLOR }">🔌</span>
+          <span class="layer-label">Where I charged</span>
         </label>
-        <p v-if="anyOverlayOn && zoomTooLow" class="layer-note">Zoom in to load points.</p>
+        <p v-if="showChargeSites && chargeSitesNote" class="layer-note">{{ chargeSitesNote }}</p>
+        <p v-if="anyOverlayOn && zoomTooLow" class="layer-note">Zoom in to load the OpenStreetMap points.</p>
         <p class="layer-attrib">POI data © OpenStreetMap</p>
       </div>
     </div>
@@ -184,6 +210,8 @@ import { accentHex } from '../utils/theme'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { addBaseLayer } from '../utils/mapTiles'
+import { STATUS_COLORS, groupByPlace, placeStatus, stationPopupHtml } from '../utils/chargingStations'
+import { parseUTC } from '../utils/maintenance'
 import '@geoman-io/leaflet-geoman-free'
 import '@geoman-io/leaflet-geoman-free/dist/leaflet-geoman.css'
 import { api } from '../composables/useApi'
@@ -253,6 +281,17 @@ const form = reactive({
 let pendingGeometry = null
 
 const overlays = reactive({ charging: false, parking: false, shopping: false, fuel: false })
+// EV chargers sources: OpenStreetMap and each charging provider type with a
+// connected account (several accounts of one provider: searched once)
+const stationProviders = ref([])
+const chargerSources = reactive({ osm: true })
+const RADIUS_OPTIONS_KM = [1, 2, 5, 10]
+const stationRadiusKm = ref(readStoredRadius())
+const stationErrors = ref({})
+// Places where the selected vehicle charged
+const SITES_COLOR = '#a855f7'
+const showChargeSites = ref(false)
+const chargeSitesNote = ref('')
 const overlayLoading = ref(false)
 const currentZoom = ref(13)
 const locatingDevice = ref(false)
@@ -276,6 +315,11 @@ const vehicleMarkers = new Map() // vin -> leaflet marker
 const zoneLayers = new Map() // zone id -> leaflet layer
 const overlayGroups = {} // key -> L.layerGroup
 let overpassTimer = null
+const stationsGroup = L.layerGroup() // charging providers' charging points
+const sitesGroup = L.layerGroup() // where the vehicle charged
+let rangeCircle = null
+let stationsTimer = null
+let lastStationsQuery = null // { lat, lon, radius, sources } of the shown points
 
 const deviceIcon = L.divIcon({
   className: 'locate-marker',
@@ -472,6 +516,7 @@ function initMap() {
   map.on('click', () => disableShapeEdit())
   map.on('zoomend', () => { currentZoom.value = map.getZoom() })
   map.on('moveend', scheduleOverpass)
+  map.on('moveend', scheduleStations)
 
   for (const o of OVERLAY_DEFS) overlayGroups[o.key] = L.layerGroup()
 
@@ -692,6 +737,10 @@ function toggleOverlay(key) {
     group.clearLayers()
     map.removeLayer(group)
   }
+  if (key === 'charging') {
+    if (overlays.charging) fetchStations()
+    else clearStations()
+  }
 }
 
 function scheduleOverpass() {
@@ -702,7 +751,8 @@ function scheduleOverpass() {
 
 async function fetchOverpass() {
   if (!map) return
-  const active = OVERLAY_DEFS.filter(o => overlays[o.key])
+  // EV chargers from OpenStreetMap only when that source is on
+  const active = OVERLAY_DEFS.filter(o => overlays[o.key] && (o.key !== 'charging' || chargerSources.osm))
   if (!active.length || map.getZoom() < OVERPASS_MIN_ZOOM) return
 
   const b = map.getBounds()
@@ -750,6 +800,165 @@ function poiIcon(def) {
   return icon
 }
 
+// ── Charging providers' charging points ────────────────────────────────────
+function readStoredRadius() {
+  try {
+    const km = Number(localStorage.getItem('zones.stationRadiusKm'))
+    return RADIUS_OPTIONS_KM.includes(km) ? km : 2
+  } catch {
+    return 2
+  }
+}
+
+async function loadStationProviders() {
+  try {
+    const data = await api('GET', '/api/charging/providers')
+    const connected = new Set(data.accounts.filter(a => a.connected).map(a => a.provider))
+    stationProviders.value = data.types.filter(t => t.has_stations && connected.has(t.id))
+    for (const p of stationProviders.value) if (!(p.id in chargerSources)) chargerSources[p.id] = true
+  } catch {
+    stationProviders.value = []
+  }
+}
+
+const activeStationProviders = () => stationProviders.value.filter(p => chargerSources[p.id]).map(p => p.id)
+
+function onChargerSourcesChanged() {
+  try { localStorage.setItem('zones.stationRadiusKm', String(stationRadiusKm.value)) } catch { /* private mode */ }
+  if (!chargerSources.osm) overlayGroups.charging.clearLayers()
+  fetchOverpass()
+  fetchStations(true)
+}
+
+function scheduleStations() {
+  if (!overlays.charging || !activeStationProviders().length) return
+  clearTimeout(stationsTimer)
+  stationsTimer = setTimeout(() => fetchStations(), 700)
+}
+
+function clearStations() {
+  stationsGroup.clearLayers()
+  if (map) map.removeLayer(stationsGroup)
+  if (rangeCircle && map) map.removeLayer(rangeCircle)
+  rangeCircle = null
+  lastStationsQuery = null
+  stationErrors.value = {}
+}
+
+function drawRange(center, radius) {
+  if (rangeCircle) map.removeLayer(rangeCircle)
+  rangeCircle = L.circle(center, {
+    radius, color: '#22c55e', weight: 1, dashArray: '4 6', fill: false, interactive: false, pmIgnore: true,
+  }).addTo(map)
+}
+
+async function fetchStations(force = false) {
+  if (!map) return
+  const sources = activeStationProviders()
+  if (!overlays.charging || !sources.length) {
+    clearStations()
+    return
+  }
+  const c = map.getCenter()
+  const radius = stationRadiusKm.value * 1000
+  const key = sources.join(',')
+  const last = lastStationsQuery
+  // A small pan inside the searched area doesn't need a new search
+  if (!force && last && last.radius === radius && last.sources === key
+    && map.distance(c, [last.lat, last.lon]) < radius * 0.25) return
+  lastStationsQuery = { lat: c.lat, lon: c.lng, radius, sources: key }
+  overlayLoading.value = true
+  try {
+    const params = new URLSearchParams({ lat: c.lat.toFixed(5), lon: c.lng.toFixed(5), radius_m: radius, providers: key })
+    const data = await api('GET', `/api/charging/stations?${params}`)
+    stationErrors.value = data.errors || {}
+    stationsGroup.clearLayers()
+    stationsGroup.addTo(map)
+    drawRange(c, radius)
+    for (const place of groupByPlace(data.stations)) {
+      const color = STATUS_COLORS[placeStatus(place.connectors)]
+      L.marker(place.pos, {
+        icon: L.divIcon({
+          className: 'station-pin-wrap',
+          html: `<span class="station-pin" style="width:22px;height:22px;background:${color}">⚡</span>`,
+          iconSize: [22, 22],
+          iconAnchor: [11, 11],
+        }),
+        pmIgnore: true,
+      })
+        .bindPopup(stationPopupHtml(place.connectors))
+        .addTo(stationsGroup)
+    }
+  } catch (e) {
+    stationErrors.value = { search: e.message || 'Charging points search failed' }
+    lastStationsQuery = null
+  } finally {
+    overlayLoading.value = false
+  }
+}
+
+// ── Where the vehicle charged ─────────────────────────────────────────────
+const fmtDate = ts => (ts ? parseUTC(ts).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—')
+
+function sitePopupHtml(site) {
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]))
+  const name = site.stations[0]?.name || site.zone_name || 'Charging place'
+  const lines = [
+    `<strong>${esc(name)}</strong>`,
+    `<div>Last charge: <b>${fmtDate(site.last_ts)}</b></div>`,
+    `<div>${site.sessions} charge${site.sessions === 1 ? '' : 's'} · ${site.energy_kwh.toFixed(1)} kWh · €${site.cost.toFixed(2)}</div>`,
+  ]
+  if (site.sessions > 1) lines.push(`<div style="opacity:.75">Since ${fmtDate(site.first_ts)}</div>`)
+  const html = `<div class="station-popup">${lines.join('')}</div>`
+  if (!site.stations.length) return html
+  // The charging points billed there
+  return html + groupByPlace(site.stations).map(p => stationPopupHtml(p.connectors)).join('')
+}
+
+async function renderChargeSites() {
+  sitesGroup.clearLayers()
+  chargeSitesNote.value = ''
+  const vin = store.selectedVin
+  if (!map || !showChargeSites.value || !vin) return
+  overlayLoading.value = true
+  try {
+    const { sites } = await api('GET', `/api/vehicles/${vin}/charge-sites`)
+    if (!sites.length) chargeSitesNote.value = 'No charging place recorded yet.'
+    for (const site of sites) {
+      const label = site.sessions > 99 ? '99+' : site.sessions
+      L.marker([site.latitude, site.longitude], {
+        icon: L.divIcon({
+          className: 'site-pin-wrap',
+          html: `<span class="site-pin" style="background:${SITES_COLOR}">${label}</span>`,
+          iconSize: [24, 24],
+          iconAnchor: [12, 12],
+        }),
+        pmIgnore: true,
+        zIndexOffset: 500,
+      })
+        .bindTooltip(`Last charge: ${fmtDate(site.last_ts)}`, { direction: 'top', offset: [0, -12] })
+        .bindPopup(sitePopupHtml(site))
+        .addTo(sitesGroup)
+    }
+    sitesGroup.addTo(map)
+  } catch (e) {
+    chargeSitesNote.value = e.message || 'Failed to load the charging places'
+  } finally {
+    overlayLoading.value = false
+  }
+}
+
+function toggleChargeSites() {
+  showChargeSites.value = !showChargeSites.value
+  if (showChargeSites.value) renderChargeSites()
+  else if (map) {
+    sitesGroup.clearLayers()
+    map.removeLayer(sitesGroup)
+  }
+}
+
+watch(() => store.selectedVin, () => { if (showChargeSites.value) renderChargeSites() })
+
 // Keep the currently-selected vehicle's marker live from the websocket feed.
 watch(() => props.status?.location, (loc) => {
   const vin = store.selectedVin
@@ -765,9 +974,13 @@ watch(() => props.status?.location, (loc) => {
   renderVehicleMarkers()
 }, { deep: true })
 
-onMounted(load)
+onMounted(() => {
+  load()
+  loadStationProviders()
+})
 onBeforeUnmount(() => {
   clearTimeout(overpassTimer)
+  clearTimeout(stationsTimer)
   if (map) { map.remove(); map = null }
 })
 </script>
@@ -981,7 +1194,8 @@ onBeforeUnmount(() => {
   cursor: pointer;
   width: 100%;
 }
-.layers-body { padding: 4px 12px 10px; display: flex; flex-direction: column; gap: 6px; }
+.layers-control.open { width: 270px; max-width: calc(100vw - 24px); }
+.layers-body { padding: 4px 12px 10px; display: flex; flex-direction: column; gap: 6px; max-height: 60vh; overflow-y: auto; }
 .layer-row {
   display: flex;
   align-items: center;
@@ -1002,6 +1216,10 @@ onBeforeUnmount(() => {
 }
 .layer-label { flex: 1; }
 .layer-note { font-size: 11px; color: var(--muted); margin: 2px 0 0; }
+.layer-sub { display: flex; flex-direction: column; gap: 5px; margin: -2px 0 2px 28px; padding-left: 8px; border-left: 1px solid var(--border); }
+.layer-row.small { font-size: 11px; }
+.layer-row.small small { color: var(--muted); }
+.layer-select { flex: 1; min-width: 0; background: var(--input); border: 1px solid var(--border); border-radius: 6px; padding: 2px 4px; color: var(--text); font-size: 11px; }
 .layer-attrib { font-size: 10px; color: var(--muted2); margin: 4px 0 0; }
 .spin { animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }

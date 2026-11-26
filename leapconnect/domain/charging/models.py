@@ -50,6 +50,9 @@ class ChargingSessionCost:
     cost: float | None = None
     note: str | None = None
     zone_name: str | None = None  # zone the charge happened in (analytics)
+    # Where the car charged (its GPS, else the charger's): the charge sites map
+    latitude: float | None = None
+    longitude: float | None = None
     # Entered by hand: the automatic recalculations leave them alone
     cost_manual: bool = False
     energy_manual: bool = False
@@ -59,6 +62,10 @@ class ChargingSessionCost:
     # the billed ones, kept by the automatic recalculations
     external_source: str | None = None
     external_id: str | None = None
+    # The provider account it was imported with, and the charging point used
+    # (its details are in the stations cache, see ``domain.charging.stations``)
+    provider_account_id: int | None = None
+    evse_id: str | None = None
     # Unlinked from a provider session by the user: not linked again by the
     # automatic import (can still be linked by hand)
     auto_link_disabled: bool = False
@@ -122,3 +129,22 @@ class ChargingSessionExtra:
     # Provider it comes from (e.g. "evdc"), replaced at each import; None =
     # entered by the user
     source: str | None = None
+
+
+@dataclass
+class ChargingProviderAccount:
+    """An account of a charging provider (an e-mobility service provider such
+    as EVDC) connected to import its billed sessions.
+
+    ``credentials`` is what the provider's adapter needs to log in again
+    (device keys, tokens, ...): opaque here, encrypted at rest; never a
+    password.
+    """
+
+    id: int | None = None
+    provider: str = ""  # its type, e.g. "evdc"
+    username: str = ""  # the account it logs in as, shown in the UI
+    credentials: dict[str, str] = field(default_factory=dict)
+    auto_sync: bool = True
+    last_sync: str | None = None  # ISO timestamp
+    last_error: str | None = None

@@ -203,12 +203,17 @@ def run_alembic_upgrade(sync_conn) -> None:
                     "ADD COLUMN manual_price_kwh FLOAT"
                 )
             )
-        # 0017: external_source/external_id/auto_link_disabled (imported from
-        # a provider).
+        # 0017: external_source/external_id/auto_link_disabled/
+        # provider_account_id/evse_id (imported from a provider) and
+        # latitude/longitude (where the car charged).
         for col, sql_type in (
             ("external_source", "VARCHAR(16)"),
             ("external_id", "VARCHAR(64)"),
             ("auto_link_disabled", "BOOLEAN NOT NULL DEFAULT 0"),
+            ("provider_account_id", "INTEGER"),
+            ("evse_id", "VARCHAR(64)"),
+            ("latitude", "FLOAT"),
+            ("longitude", "FLOAT"),
         ):
             if col not in sc_cols:
                 sync_conn.execute(

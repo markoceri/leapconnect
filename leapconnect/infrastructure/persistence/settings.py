@@ -19,6 +19,8 @@ SECRET_SETTING_KEYS: frozenset[str] = frozenset(
         "mqtt_password",
         "abrp_user_token",
         "mqtt_vehicle_pin",
+        # Legacy single EVDC account: moved to charging_provider_accounts at
+        # startup (ChargingProviderRegistry.load), read once to do so
         "evdc_device_key",
         "evdc_access_token",
         "evdc_refresh_token",

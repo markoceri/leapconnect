@@ -21,6 +21,8 @@ from leapconnect.domain.telemetry.models import VehicleSnapshot
 from leapconnect.domain.telemetry.transitions import TransitionDetector
 
 if TYPE_CHECKING:
+    from collections.abc import Callable, Sequence
+
     from leapmotor_api.async_client import AsyncLeapmotorApiClient
     from leapmotor_api.models import Vehicle
 
@@ -82,9 +84,10 @@ class VehicleDataScheduler:
             min_event_interval_seconds=self._settings.transition_min_event_interval_seconds,
         )
 
-        # Charging provider (e.g. EVDC) whose billed sessions are imported
-        self._provider: ChargingProvider | None = None
-        self._provider_last_sync: datetime | None = None
+        # Charging provider accounts (EVDC, ...) whose billed sessions are
+        # imported: a callable, as accounts come and go
+        self._providers: Callable[[], Sequence[ChargingProvider]] = list
+        self._provider_last_sync: dict[int, datetime] = {}
         self._provider_followup_until: datetime | None = None
 
         # Injected at runtime by main.py when the user logs in
@@ -145,9 +148,12 @@ class VehicleDataScheduler:
         """Set a callback invoked with (vehicle, status) after each MQTT poll."""
         self._on_status_callback = callback
 
-    def set_charging_provider(self, provider: ChargingProvider | None) -> None:
-        """Set the charging provider whose billed sessions are auto-imported."""
-        self._provider = provider
+    def set_charging_providers(
+        self, providers: Callable[[], Sequence[ChargingProvider]]
+    ) -> None:
+        """Set the charging provider accounts whose billed sessions are
+        auto-imported (a callable returning the current accounts)."""
+        self._providers = providers
 
     def set_after_history_poll_callback(self, callback) -> None:
         """Set a callback (no arguments) awaited after each history poll."""
@@ -659,41 +665,57 @@ class VehicleDataScheduler:
             await self._repo.save_setting(MONTH_END_COSTS_SETTING, target)
 
     async def _maybe_sync_charging_provider(self, now: datetime | None = None) -> None:
-        """Import the charging provider's recent billed sessions, when due.
+        """Import the charging provider accounts' recent billed sessions,
+        each when due.
 
         Due once a day, and every ``PROVIDER_FOLLOWUP_EVERY`` for
         ``PROVIDER_FOLLOWUP`` after a public charge ends. Only sessions that
         match a listed one are imported; nothing is created.
         """
         from leapconnect.application.charging_providers import auto_sync_provider
+        from leapconnect.application.ports.charging_provider import (
+            ChargingProviderError,
+        )
 
-        provider = self._provider
-        if not provider or not provider.connected or not provider.auto_sync:
-            return
         if not self._vehicles:
             return
         now = now or datetime.now(UTC).replace(tzinfo=None)
-        last = self._provider_last_sync
         following = (
             self._provider_followup_until is not None
             and now <= self._provider_followup_until
         )
-        due = (
-            last is None
-            or now - last >= PROVIDER_SYNC_DAILY
-            or (following and now - last >= PROVIDER_FOLLOWUP_EVERY)
-        )
-        if not due:
-            return
-        self._provider_last_sync = now
-        for vehicle in self._vehicles:
-            result = await auto_sync_provider(self._repo, provider, vehicle.vin, now)
-            _LOGGER.info(
-                "%s import for %s: %d session(s) updated",
-                provider.label,
-                vehicle.vin,
-                result.applied,
+        for provider in self._providers():
+            if not provider.connected or not provider.auto_sync:
+                continue
+            last = self._provider_last_sync.get(provider.account_id or 0)
+            due = (
+                last is None
+                or now - last >= PROVIDER_SYNC_DAILY
+                or (following and now - last >= PROVIDER_FOLLOWUP_EVERY)
             )
+            if not due:
+                continue
+            self._provider_last_sync[provider.account_id or 0] = now
+            for vehicle in self._vehicles:
+                try:
+                    result = await auto_sync_provider(
+                        self._repo, provider, vehicle.vin, now
+                    )
+                except ChargingProviderError as exc:
+                    _LOGGER.warning(
+                        "%s import (%s) failed: %s",
+                        provider.label,
+                        provider.username,
+                        exc,
+                    )
+                    break
+                _LOGGER.info(
+                    "%s import (%s) for %s: %d session(s) updated",
+                    provider.label,
+                    provider.username,
+                    vehicle.vin,
+                    result.applied,
+                )
 
     async def _notify_month_end_costs(
         self, vehicle, month: datetime, result, tz: tzinfo

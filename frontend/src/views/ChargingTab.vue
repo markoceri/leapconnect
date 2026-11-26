@@ -107,12 +107,12 @@
           <Calculator :size="14" /> Calculate missing costs ({{ missingCosts.total }})
         </button>
         <button
-          v-if="evdcConnected"
+          v-if="connectedProviders.length"
           class="btn-bulk"
-          @click="evdcImportOpen = true"
-          title="Import the billed energy, cost and fees of this month's charges paid with the EVDC app"
+          @click="providerImportOpen = true"
+          :title="`Import the billed energy, cost and fees of this month's charges paid with ${providerNames}`"
         >
-          <Receipt :size="14" /> Import from EVDC
+          <Receipt :size="14" /> Import from charging providers
         </button>
         <button
           v-if="filteredSessions.length > 1"
@@ -309,20 +309,23 @@
             </div>
           </div>
 
-          <template v-if="editingSession.latitude != null && editingSession.longitude != null">
+          <template v-if="(editingSession.latitude != null && editingSession.longitude != null) || sessionStationPos">
             <div ref="sessionMapEl" class="session-map" />
-            <a class="map-link" :href="mapsUrl(editingSession)" target="_blank" rel="noopener">
+            <a v-if="editingSession.latitude != null" class="map-link" :href="mapsUrl(editingSession)" target="_blank" rel="noopener">
               <MapPin :size="13" /> Open in Google Maps
             </a>
           </template>
           <div v-else class="map-empty">No GPS position recorded for this session</div>
 
-          <EvdcLinkPanel
-            v-if="evdcConnected || editingSession.external_source === 'evdc'"
+          <ProviderLinkPanel
+            v-if="connectedProviders.length || editingSession.external_source"
             :key="`${editingSession.id}-${editingSession.start_ts}-${editingSession.external_id}`"
             :vin="vin"
             :session="editingSession"
-            @changed="onEvdcLinkChanged"
+            :accounts="providerAccounts"
+            :provider-labels="providerLabels"
+            @changed="onProviderLinkChanged"
+            @station="onSessionStation"
           />
 
           <div class="session-edit">
@@ -524,13 +527,14 @@
       </div>
     </Teleport>
 
-    <EvdcImportDialog
-      v-if="evdcImportOpen"
+    <ProviderImportDialog
+      v-if="providerImportOpen"
       :vin="vin"
       :year="selectedMonth.getFullYear()"
       :month="selectedMonth.getMonth() + 1"
       :month-label="monthLabel"
-      @close="evdcImportOpen = false"
+      :accounts="connectedProviders"
+      @close="providerImportOpen = false"
       @imported="loadData"
     />
 
@@ -624,8 +628,9 @@ import { accentHex } from '../utils/theme'
 import { parseUTC } from '../utils/maintenance'
 import { extraCost, extraPayload, sessionTotal } from '../utils/chargingExtras'
 import ChargingExtrasEditor from '../components/ChargingExtrasEditor.vue'
-import EvdcImportDialog from '../components/EvdcImportDialog.vue'
-import EvdcLinkPanel from '../components/EvdcLinkPanel.vue'
+import ProviderImportDialog from '../components/ProviderImportDialog.vue'
+import ProviderLinkPanel from '../components/ProviderLinkPanel.vue'
+import { stationLatLng, stationPopupHtml } from '../utils/chargingStations'
 import { Zap, TrendingUp, PieChart, Clock, CalendarDays, ChevronLeft, ChevronRight, List, Pencil, MapPin, RotateCw, Calculator, Trash2, Combine, Layers, CopyX, AlertTriangle, Receipt } from 'lucide-vue-next'
 
 Chart.register(...registerables)
@@ -706,23 +711,27 @@ const costHint = computed(() => {
 const editError = ref('')
 const saving = ref(false)
 const recalculatingId = ref(null)
-// Charging provider (EVDC): connected account and import dialog
-const evdcConnected = ref(false)
-const evdcImportOpen = ref(false)
-const PROVIDER_LABELS = { evdc: 'EVDC' }
-const providerLabel = s => PROVIDER_LABELS[s?.external_source] || s?.external_source || ''
+// Charging providers (EVDC, ...): the accounts and the import dialog
+const providerAccounts = ref([])
+const providerLabels = ref({})
+const providerImportOpen = ref(false)
+const connectedProviders = computed(() => providerAccounts.value.filter(a => a.connected))
+const providerNames = computed(() => [...new Set(connectedProviders.value.map(a => a.label))].join(' / '))
+const providerLabel = s => providerLabels.value[s?.external_source] || s?.external_source?.toUpperCase() || ''
 // Linked or unlinked in the session dialog: reload and show the fresh session
-async function onEvdcLinkChanged(sc) {
+async function onProviderLinkChanged(sc) {
   await loadData()
   const fresh = monthSessions.value.find(s => s.id === sc.id)
   if (fresh) editSession(fresh)
   else closeSession()
 }
-async function loadEvdcStatus() {
+async function loadProviders() {
   try {
-    evdcConnected.value = (await api('GET', '/api/charging/providers/evdc')).connected
+    const data = await api('GET', '/api/charging/providers')
+    providerAccounts.value = data.accounts
+    providerLabels.value = Object.fromEntries(data.types.map(t => [t.id, t.label]))
   } catch {
-    evdcConnected.value = false
+    providerAccounts.value = []
   }
 }
 const loading = ref(true)
@@ -875,21 +884,46 @@ function destroySessionMap() {
   sessionMap = null
 }
 
+// The charging point the session was billed on (from the provider panel)
+const sessionStation = ref(null)
+const sessionStationPos = computed(() => {
+  const s = editingSession.value
+  const near = s?.latitude != null ? [s.latitude, s.longitude] : null
+  return sessionStation.value ? stationLatLng(sessionStation.value, near) : null
+})
+
 async function renderSessionMap(session) {
   destroySessionMap()
-  if (session.latitude == null || session.longitude == null) return
+  const pos = session.latitude != null && session.longitude != null ? [session.latitude, session.longitude] : null
+  const stationPos = sessionStationPos.value
+  if (!pos && !stationPos) return
   await nextTick()
   if (!sessionMapEl.value) return
-  const pos = [session.latitude, session.longitude]
-  sessionMap = L.map(sessionMapEl.value, { zoomControl: true, attributionControl: false }).setView(pos, 16)
+  sessionMap = L.map(sessionMapEl.value, { zoomControl: true, attributionControl: false }).setView(pos || stationPos, 16)
   addBaseLayer(sessionMap)
-  L.circleMarker(pos, { radius: 9, color: '#fff', fillColor: accentHex(), fillOpacity: 1, weight: 2 })
-    .bindTooltip(session.zone_name || 'Charging location')
-    .addTo(sessionMap)
+  if (pos) {
+    L.circleMarker(pos, { radius: 9, color: '#fff', fillColor: accentHex(), fillOpacity: 1, weight: 2 })
+      .bindTooltip(session.zone_name || 'Where the car charged')
+      .addTo(sessionMap)
+  }
+  if (stationPos) {
+    L.marker(stationPos, {
+      icon: L.divIcon({ className: 'station-pin', html: '⚡', iconSize: [26, 26], iconAnchor: [13, 13] }),
+    })
+      .bindPopup(stationPopupHtml([sessionStation.value]))
+      .addTo(sessionMap)
+    if (pos) sessionMap.fitBounds(L.latLngBounds([pos, stationPos]).pad(0.6), { maxZoom: 17 })
+  }
+}
+
+function onSessionStation(station) {
+  sessionStation.value = station
+  if (editingSession.value) renderSessionMap(editingSession.value)
 }
 
 function closeSession() {
   destroySessionMap()
+  sessionStation.value = null
   editingSession.value = null
 }
 
@@ -940,6 +974,7 @@ function mapsUrl(s) {
 
 // Edit session
 function editSession(session) {
+  sessionStation.value = null
   editingSession.value = session
   editForm.value = {
     tier_id: session.tier_id || (availableTiers.value[0]?.id || 'home_grid'),
@@ -1303,7 +1338,7 @@ function skipReasonLabel(reason) {
 // Data loading
 async function loadData() {
   loading.value = true
-  loadEvdcStatus()
+  loadProviders()
   try {
     const y = selectedMonth.value.getFullYear()
     const m = selectedMonth.value.getMonth()

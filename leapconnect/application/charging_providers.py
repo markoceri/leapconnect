@@ -1,20 +1,25 @@
-"""Import the sessions a charging provider billed into the cost records.
+"""Import the sessions the charging providers billed into the cost records.
 
-The provider's sessions are matched with the period's session list (the one
-the Charging tab shows); a preview shows what would change, and applying it
-sets the billed energy, cost and fees on the matched records — values entered
-by hand are kept. Provider sessions the vehicle history doesn't show are only
-created on request.
+The sessions of the chosen provider accounts are matched with the period's
+session list (the one the Charging tab shows); a preview shows what would
+change, and applying it sets the billed energy, cost and fees on the matched
+records — values entered by hand are kept. Provider sessions the vehicle
+history doesn't show are only created on request.
 """
 
 from __future__ import annotations
 
 import copy
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
 from leapconnect.application.charging_costs import list_sessions
+from leapconnect.application.ports.charging_provider import (
+    ChargingProvider,
+    ChargingProviderError,
+)
 from leapconnect.application.settings_store import (
     price_session_extras,
     recalculate_session,
@@ -39,9 +44,14 @@ from leapconnect.domain.charging.providers import (
     unlink_provider_session,
 )
 from leapconnect.domain.charging.sessions import ChargeSessionRow, naive_utc
+from leapconnect.domain.charging.stations import (
+    ChargeSite,
+    ChargingStation,
+    group_charge_sites,
+    unique_by_evse,
+)
 
 if TYPE_CHECKING:
-    from leapconnect.application.ports.charging_provider import ChargingProvider
     from leapconnect.application.ports.repositories import AppRepository
 
 # Provider sessions are fetched a little before the period: a charge started
@@ -90,31 +100,56 @@ def _record_for_row(vin: str, row: ChargeSessionRow) -> ChargingSessionCost:
 
 
 async def _external_links(
-    repo: AppRepository, provider: ChargingProvider
-) -> dict[str, tuple[str, int]]:
-    return await repo.get_external_links(provider.name)
+    repo: AppRepository, providers: Sequence[ChargingProvider]
+) -> dict[tuple[str, str], tuple[str, int]]:
+    """Records imported from the providers' types, any vehicle:
+    ``{(provider, external_id): (vin, record id)}``."""
+    links = {}
+    for name in dict.fromkeys(p.provider for p in providers):
+        for eid, link in (await repo.get_external_links(name)).items():
+            links[(name, eid)] = link
+    return links
 
 
 def _linked_elsewhere(
-    links: dict[str, tuple[str, int]], rows: list[ChargeSessionRow]
-) -> set[str]:
+    links: dict[tuple[str, str], tuple[str, int]], rows: list[ChargeSessionRow]
+) -> set[tuple[str, str]]:
     """Provider sessions linked to a record not among ``rows`` (another
     vehicle's, or outside the period): not to be linked again."""
     here = {r.record.id for r in rows if r.record is not None}
-    return {eid for eid, (_vin, cid) in links.items() if cid not in here}
+    return {key for key, (_vin, cid) in links.items() if cid not in here}
+
+
+async def _fetch(
+    providers: Sequence[ChargingProvider], since: datetime
+) -> list[ProviderSession]:
+    """The sessions of every account, oldest first; one session read
+    through two accounts counts once."""
+    sessions: dict[tuple[str, str], ProviderSession] = {}
+    for provider in providers:
+        for s in await provider.fetch_sessions(since):
+            sessions.setdefault(s.key, s)
+    return sorted(sessions.values(), key=lambda s: s.started_at or datetime.min)
+
+
+async def _save_stations(repo: AppRepository, sessions: list[ProviderSession]) -> None:
+    """Cache the charging points the sessions were billed on."""
+    await repo.upsert_charging_stations(
+        unique_by_evse([s.station for s in sessions if s.station is not None])
+    )
 
 
 async def _matches(
     repo: AppRepository,
-    provider: ChargingProvider,
+    providers: Sequence[ChargingProvider],
     vin: str,
     start: datetime,
     end: datetime,
 ) -> list[ProviderMatch]:
-    sessions = await provider.fetch_sessions(start - FETCH_MARGIN)
+    sessions = await _fetch(providers, start - FETCH_MARGIN)
     sessions = [s for s in sessions if s.started_at is not None and s.started_at < end]
     rows = await list_sessions(repo, vin, start - FETCH_MARGIN, end)
-    elsewhere = _linked_elsewhere(await _external_links(repo, provider), rows)
+    elsewhere = _linked_elsewhere(await _external_links(repo, providers), rows)
     matches = match_provider_sessions(sessions, rows, elsewhere)
     # Only the period's sessions: the margin is for matching, not listing
     return [
@@ -144,18 +179,18 @@ def _preview(vin: str, m: ProviderMatch) -> ImportPreviewItem:
 
 async def preview_provider_import(
     repo: AppRepository,
-    provider: ChargingProvider,
+    providers: Sequence[ChargingProvider],
     vin: str,
     start: datetime,
     end: datetime,
 ) -> list[ImportPreviewItem]:
-    """What importing the provider's sessions of ``[start, end)`` would do."""
-    return [_preview(vin, m) for m in await _matches(repo, provider, vin, start, end)]
+    """What importing the providers' sessions of ``[start, end)`` would do."""
+    return [_preview(vin, m) for m in await _matches(repo, providers, vin, start, end)]
 
 
 async def apply_provider_import(
     repo: AppRepository,
-    provider: ChargingProvider,
+    providers: Sequence[ChargingProvider],
     vin: str,
     start: datetime,
     end: datetime,
@@ -163,7 +198,7 @@ async def apply_provider_import(
     external_ids: set[str] | None = None,
     create_ids: set[str] | frozenset[str] = frozenset(),
 ) -> ImportResult:
-    """Import the provider's sessions of ``[start, end)``.
+    """Import the providers' sessions of ``[start, end)``.
 
     Matched (and already imported) sessions update their record — all of them
     when ``external_ids`` is ``None``, else the ones in it. Uncertain matches
@@ -173,7 +208,8 @@ async def apply_provider_import(
     record are never touched.
     """
     result = ImportResult()
-    for m in await _matches(repo, provider, vin, start, end):
+    imported = []
+    for m in await _matches(repo, providers, vin, start, end):
         ps = m.session
         chosen = external_ids is not None and ps.external_id in external_ids
         if m.status == UNMATCHED and ps.external_id in create_ids:
@@ -190,6 +226,8 @@ async def apply_provider_import(
             continue
         await price_session_extras(repo, sc)
         await repo.upsert_session_cost(sc)
+        imported.append(ps)
+    await _save_stations(repo, imported)
     return result
 
 
@@ -199,7 +237,7 @@ async def auto_sync_provider(
     """Automatic import of the recent sessions: plausible matches only
     (overlapping, with place and energy fitting); nothing is created."""
     return await apply_provider_import(
-        repo, provider, vin, now - AUTO_SYNC_WINDOW, now + timedelta(minutes=1)
+        repo, [provider], vin, now - AUTO_SYNC_WINDOW, now + timedelta(minutes=1)
     )
 
 
@@ -249,10 +287,10 @@ async def _row_for(
 
 
 async def _sessions_around(
-    provider: ChargingProvider, row: ChargeSessionRow
+    providers: Sequence[ChargingProvider], row: ChargeSessionRow
 ) -> list[ProviderSession]:
     start = naive_utc(row.start_ts)
-    sessions = await provider.fetch_sessions(start - CANDIDATE_WINDOW)
+    sessions = await _fetch(providers, start - CANDIDATE_WINDOW)
     return [
         s for s in sessions if s.started_at and s.started_at <= start + CANDIDATE_WINDOW
     ]
@@ -260,22 +298,23 @@ async def _sessions_around(
 
 async def find_link_candidates(
     repo: AppRepository,
-    provider: ChargingProvider,
+    providers: Sequence[ChargingProvider],
     vin: str,
     *,
     cost_id: int | None = None,
     start_ts: datetime | None = None,
 ) -> list[LinkCandidate]:
-    """Provider sessions around a session picked by hand, best first; the
-    first one is ``best`` when it overlaps, fits and isn't linked elsewhere."""
+    """The accounts' sessions around a session picked by hand, best first;
+    the first one is ``best`` when it overlaps, fits and isn't linked
+    elsewhere."""
     row = await _row_for(repo, vin, cost_id=cost_id, start_ts=start_ts)
-    links = await _external_links(repo, provider)
+    links = await _external_links(repo, providers)
     own = row.record.id if row.record else None
     result = []
-    for c in rank_candidates(await _sessions_around(provider, row), row):
+    for c in rank_candidates(await _sessions_around(providers, row), row):
         proposed = copy.deepcopy(_record_for_row(vin, row))
         apply_provider_session(proposed, c.session, vehicle_dc=_vehicle_dc(row))
-        link = links.get(c.session.external_id)
+        link = links.get(c.session.key)
         result.append(
             LinkCandidate(c, proposed, link if link and link[1] != own else None)
         )
@@ -305,7 +344,7 @@ async def link_provider_session(
     ps = next(
         (
             s
-            for s in await _sessions_around(provider, row)
+            for s in await _sessions_around([provider], row)
             if s.external_id == external_id
         ),
         None,
@@ -313,7 +352,9 @@ async def link_provider_session(
     if ps is None:
         raise LookupError(f"{provider.label} session {external_id} not found")
     sc = _record_for_row(vin, row)
-    link = (await _external_links(repo, provider)).get(external_id)
+    link = (await _external_links(repo, [provider])).get(
+        (provider.provider, external_id)
+    )
     if link is not None and link[1] != sc.id:
         other_vin, other_id = link
         other = next(
@@ -326,6 +367,7 @@ async def link_provider_session(
             await repo.upsert_session_cost(other)
     apply_provider_session(sc, ps, vehicle_dc=_vehicle_dc(row))
     await price_session_extras(repo, sc)
+    await _save_stations(repo, [ps])
     return await repo.upsert_session_cost(sc)
 
 
@@ -335,9 +377,150 @@ async def unlink_provider_record(
     """Unlink a record from its provider session: energy and cost go back to
     the measured / tier-priced ones (unless entered by hand), and the
     automatic import won't link it again."""
-    sc = next((c for c in await repo.get_session_costs(vin) if c.id == cost_id), None)
-    if sc is None:
-        raise LookupError(f"Session cost {cost_id} not found")
+    sc = await _record(repo, vin, cost_id)
     unlink_provider_session(sc)
     await recalculate_session(repo, sc)
     return await repo.upsert_session_cost(sc)
+
+
+async def _record(repo: AppRepository, vin: str, cost_id: int) -> ChargingSessionCost:
+    sc = next((c for c in await repo.get_session_costs(vin) if c.id == cost_id), None)
+    if sc is None:
+        raise LookupError(f"Session cost {cost_id} not found")
+    return sc
+
+
+def _account_for(
+    providers: Sequence[ChargingProvider], sc: ChargingSessionCost
+) -> ChargingProvider:
+    """The account a record was imported with, else a connected one of the
+    same provider (removed and connected again, it has a new id)."""
+    if not sc.external_source or not sc.external_id:
+        raise LookupError("Session not imported from a charging provider")
+    same = [p for p in providers if p.provider == sc.external_source and p.connected]
+    own = next((p for p in same if p.account_id == sc.provider_account_id), None)
+    if own is None and not same:
+        raise ChargingProviderError(
+            f"No {sc.external_source.upper()} account connected", auth=True
+        )
+    return own or same[0]
+
+
+async def get_session_receipt(
+    repo: AppRepository, providers: Sequence[ChargingProvider], vin: str, cost_id: int
+) -> tuple[ChargingSessionCost, str | None, bytes]:
+    """The PDF receipt of an imported session: ``(record, filename, PDF)``."""
+    sc = await _record(repo, vin, cost_id)
+    filename, content = await _account_for(providers, sc).get_receipt(sc.external_id)
+    return sc, filename, content
+
+
+# -- charging points -----------------------------------------------------------
+
+
+def _one_per_type(providers: Sequence[ChargingProvider]) -> list[ChargingProvider]:
+    """One connected account per provider type: the network is the same."""
+    by_type: dict[str, ChargingProvider] = {}
+    for p in providers:
+        if p.connected:
+            by_type.setdefault(p.provider, p)
+    return list(by_type.values())
+
+
+@dataclass
+class StationsResult:
+    stations: list[ChargingStation] = field(default_factory=list)
+    errors: dict[str, str] = field(default_factory=dict)  # provider -> message
+
+
+async def find_stations(
+    providers: Sequence[ChargingProvider],
+    latitude: float,
+    longitude: float,
+    radius_m: float,
+    types: set[str] | None = None,
+) -> StationsResult:
+    """The charging points within ``radius_m`` of a point, of each provider
+    type (``types``: only those), with their live status and price. A
+    provider failing doesn't hide the others."""
+    result = StationsResult()
+    for p in _one_per_type(providers):
+        if types is not None and p.provider not in types:
+            continue
+        try:
+            result.stations += await p.find_stations(latitude, longitude, radius_m)
+        except ChargingProviderError as exc:
+            result.errors[p.provider] = str(exc)
+    result.stations = unique_by_evse(result.stations)
+    return result
+
+
+async def get_station(
+    repo: AppRepository,
+    providers: Sequence[ChargingProvider],
+    provider: str,
+    evse_id: str,
+) -> ChargingStation | None:
+    """A charging point: live from its provider when an account is
+    connected (and its details cached), else as cached."""
+    live = next((p for p in _one_per_type(providers) if p.provider == provider), None)
+    if live is not None:
+        try:
+            station = await live.get_station(evse_id)
+        except ChargingProviderError:
+            station = None
+        if station is not None:
+            await repo.upsert_charging_stations([station])
+            return station
+    return (await repo.get_charging_stations([(provider, evse_id)])).get(
+        (provider, evse_id)
+    )
+
+
+# -- charge sites ----------------------------------------------------------------
+
+
+async def locate_sessions(
+    repo: AppRepository, vin: str, checked: set[int] | None = None
+) -> None:
+    """Find where the closed sessions without a position charged (from the
+    vehicle history); ``checked``: record ids already looked for, skipped
+    and updated (a session without GPS stays without)."""
+    checked = checked if checked is not None else set()
+    missing = [
+        sc
+        for sc in await repo.get_session_costs(vin)
+        if sc.latitude is None
+        and sc.start_ts is not None
+        and sc.end_ts is not None
+        and sc.id not in checked
+    ]
+    if not missing:
+        return
+    # One look at the history per month with sessions to locate
+    months: dict[tuple[int, int], list[ChargingSessionCost]] = {}
+    for sc in missing:
+        months.setdefault((sc.start_ts.year, sc.start_ts.month), []).append(sc)
+    for group in months.values():
+        start = min(naive_utc(sc.start_ts) for sc in group)
+        end = max(naive_utc(sc.start_ts) for sc in group)
+        # list_sessions stores the position of the records it pairs
+        await list_sessions(
+            repo, vin, start - timedelta(minutes=1), end + timedelta(minutes=1)
+        )
+        checked.update(sc.id for sc in group)
+
+
+async def charge_sites(repo: AppRepository, vin: str) -> list[ChargeSite]:
+    """The places where the vehicle charged, latest first, with the charging
+    points known there."""
+    records = await repo.get_session_costs(vin)
+    keys = list(
+        {
+            (r.external_source, r.evse_id)
+            for r in records
+            if r.external_source and r.evse_id
+        }
+    )
+    stations = await repo.get_charging_stations(keys) if keys else {}
+    return group_charge_sites(records, stations)

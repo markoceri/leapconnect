@@ -17,6 +17,7 @@ from leapconnect.domain.charging.models import (
     ChargingSessionExtra,
 )
 from leapconnect.domain.charging.sessions import ChargeSessionRow, naive_utc
+from leapconnect.domain.charging.stations import ChargingStation
 from leapconnect.domain.zones.geometry import haversine_distance_m
 
 # The provider's clock (the charger's) and the vehicle's snapshots don't agree
@@ -72,6 +73,13 @@ class ProviderSession:
     is_dc: bool | None = None  # the charger's power type; None = unknown
     latitude: float | None = None  # the charger's position
     longitude: float | None = None
+    account_id: int | None = None  # the provider account it was read with
+    station: ChargingStation | None = None  # the charging point, when known
+
+    @property
+    def key(self) -> tuple[str, str]:
+        """Unique across providers: ``(provider, external_id)``."""
+        return self.provider, self.external_id
 
     @property
     def energy_cost(self) -> float | None:
@@ -144,17 +152,18 @@ def match_problems(ps: ProviderSession, row: ChargeSessionRow) -> tuple[str, ...
 def match_provider_sessions(
     sessions: Sequence[ProviderSession],
     rows: Sequence[ChargeSessionRow],
-    linked_elsewhere: Collection[str] = (),
+    linked_elsewhere: Collection[tuple[str, str]] = (),
 ) -> list[ProviderMatch]:
     """Match provider sessions with listed sessions, oldest first.
 
     A session already imported (a record holding its ``external_id``) stays
     with that record, and one linked to another vehicle's record
-    (``linked_elsewhere``) is left alone. The others go to the row they
-    overlap the most, one provider session per row (a merged session spans
-    all its runs); a match where the place or the energy doesn't fit is
-    ``UNCERTAIN`` (the account may have paid for another vehicle), one with a
-    record the user unlinked ``DISMISSED``: neither is imported unless chosen.
+    (``linked_elsewhere``, by ``ProviderSession.key``) is left alone. The
+    others go to the row they overlap the most, one provider session per row (a
+    merged session spans all its runs); a match where the place or the energy
+    doesn't fit is ``UNCERTAIN`` (the account may have paid for another
+    vehicle), one with a record the user unlinked ``DISMISSED``: neither is
+    imported unless chosen.
     """
     by_external = {
         (r.record.external_source, r.record.external_id): r
@@ -170,7 +179,7 @@ def match_provider_sessions(
             results[i] = ProviderMatch(ps, row, IMPORTED)
             taken.add(id(row))
             continue
-        if ps.external_id in linked_elsewhere:
+        if ps.key in linked_elsewhere:
             results[i] = ProviderMatch(ps, None, ELSEWHERE)
             continue
         for row in rows:
@@ -238,7 +247,11 @@ def apply_provider_session(
     sc.tier_id = public_tier(ps, vehicle_dc, sc.tier_id)
     sc.external_source = ps.provider
     sc.external_id = ps.external_id
+    sc.provider_account_id = ps.account_id
+    sc.evse_id = ps.evse_id
     sc.auto_link_disabled = False
+    if sc.latitude is None and ps.latitude is not None and ps.longitude is not None:
+        sc.latitude, sc.longitude = ps.latitude, ps.longitude
 
 
 def new_record_for(vin: str, ps: ProviderSession) -> ChargingSessionCost:
@@ -302,5 +315,6 @@ def unlink_provider_session(
     automatic import won't link it again."""
     source = sc.external_source
     sc.extras = [e for e in sc.extras if not e.source or e.source != source]
-    sc.external_source = sc.external_id = None
+    sc.external_source = sc.external_id = sc.evse_id = None
+    sc.provider_account_id = None
     sc.auto_link_disabled = disable_auto_link

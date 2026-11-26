@@ -179,11 +179,15 @@ class SqlChargingRepository(SqlRepositoryBase, ChargingRepository):
                 cost=r.cost,
                 note=r.note,
                 zone_name=r.zone_name,
+                latitude=r.latitude,
+                longitude=r.longitude,
                 cost_manual=bool(r.cost_manual),
                 energy_manual=bool(r.energy_manual),
                 manual_price_kwh=r.manual_price_kwh,
                 external_source=r.external_source,
                 external_id=r.external_id,
+                provider_account_id=r.provider_account_id,
+                evse_id=r.evse_id,
                 auto_link_disabled=bool(r.auto_link_disabled),
                 extras=extras.get(r.id, []),
             )
@@ -207,11 +211,15 @@ class SqlChargingRepository(SqlRepositoryBase, ChargingRepository):
             row.cost = sc.cost
             row.note = sc.note
             row.zone_name = sc.zone_name
+            row.latitude = sc.latitude
+            row.longitude = sc.longitude
             row.cost_manual = sc.cost_manual
             row.energy_manual = sc.energy_manual
             row.manual_price_kwh = sc.manual_price_kwh
             row.external_source = sc.external_source
             row.external_id = sc.external_id
+            row.provider_account_id = sc.provider_account_id
+            row.evse_id = sc.evse_id
             row.auto_link_disabled = sc.auto_link_disabled
             await session.flush()
             sc.id = row.id

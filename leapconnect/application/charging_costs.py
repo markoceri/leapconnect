@@ -220,13 +220,19 @@ async def list_sessions(
             departure_ts=find_departure(history, row.end_ts),
         )
         sc = row.record
+        changed = False
+        if sc is not None and sc.latitude is None and row.location is not None:
+            # Where it charged, for the charge sites map
+            sc.latitude, sc.longitude = row.location
+            changed = True
         if sc is not None and any(
             e.kind == EXTRA_TIME and e.cost is None for e in sc.extras
         ):
             before = [(e.minutes, e.cost) for e in sc.extras]
             await price_session_extras(repo, sc, history)
-            if [(e.minutes, e.cost) for e in sc.extras] != before:
-                await repo.upsert_session_cost(sc)
+            changed = changed or [(e.minutes, e.cost) for e in sc.extras] != before
+        if changed:
+            await repo.upsert_session_cost(sc)
         result.append(row)
     return result
 
@@ -439,7 +445,8 @@ async def merge_charge_sessions(
     keeper.energy_manual = keeper.cost_manual = False
     keeper.manual_price_kwh = None
     # A provider's import is for one part: the next import matches the whole
-    keeper.external_source = keeper.external_id = None
+    keeper.external_source = keeper.external_id = keeper.evse_id = None
+    keeper.provider_account_id = None
     keeper.extras = [e for r in records for e in r.extras if not e.source]
     keeper = await repo.upsert_session_cost(keeper)
     for other in records[1:]:

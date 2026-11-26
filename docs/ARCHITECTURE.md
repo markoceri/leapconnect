@@ -39,7 +39,7 @@ One subpackage per **bounded context**:
 |-----------------|----------|
 | `telemetry`     | `VehicleSnapshot`, `VehicleEvent`, `TransitionDetector` (state-change rules), battery SOH estimate from full-charge readings (`battery_health.py`) |
 | `trips`         | trip segmentation/merging, similarity scoring, charge-session detection (`analysis.py`) — trips are derived on the fly, there is no persistent Trip aggregate |
-| `charging`      | price tiers, time-of-use bands, session costs, TOU cost calculation (`costing.py`) |
+| `charging`      | price tiers, time-of-use bands, session costs, TOU cost calculation (`costing.py`), charging provider sessions and their matching (`providers.py`), charging points and the charge sites grouping (`stations.py`) |
 | `maintenance`   | plan items/records/alerts, the due/overdue engine (`engine.py`), pack normalization (`packs.py`), model resolver (`resolver.py`) |
 | `notifications` | channels/preferences/Telegram users, the event catalog + message templates (`event_catalog.py`) |
 | `zones`         | `Zone` model, zone geometry (`geometry.py`), pure enter/exit transition detection (`detection.py`) — a reusable location concept consumed by notifications (alerts) and charging (tier-by-zone) |
@@ -56,8 +56,9 @@ Enforced by `tests/test_architecture.py`.
 - `ports/` — interfaces implemented by infrastructure:
   `repositories.py` (segregated per context, combined as `AppRepository`),
   `notifier.py` (`BaseNotifier`) and `charging_provider.py`
-  (`ChargingProvider`: read-only access to the sessions a charging provider
-  such as EVDC billed).
+  (`ChargingProvider`: read-only access to one connected account of a
+  charging provider — an eMSP such as EVDC — its billed sessions, receipts and
+  charging points; `ChargingProviderError` for its failures).
 - `scheduler.py` — background polling loops (history, MQTT, transitions).
 - `notifications/` — event → notification pipeline: `dispatcher.py`
   (orchestrator: channels, preferences, cooldowns, mute; also owns the
@@ -82,10 +83,13 @@ Enforced by `tests/test_architecture.py`.
 - `battery_health.py` — estimated battery SOH for a vehicle (full-charge
   samples from the repository + the per-vehicle reference capacity stored
   in the settings table).
-- `charging_providers.py` — import of a charging provider's billed sessions:
-  preview, apply (matched records updated, unmatched ones created on request)
-  and the automatic import the scheduler runs; matching and the precedence
-  rules (values entered by hand are kept) are `domain.charging.providers`.
+- `charging_providers.py` — use cases over the connected charging provider
+  accounts (a list: one, or all of them): import of their billed sessions
+  (preview, apply — matched records updated, unmatched ones created on
+  request — and the per-account automatic import the scheduler runs), manual
+  link/unlink, receipts, the charging points search (one account per provider
+  type) and the charge sites; matching and the precedence rules (values
+  entered by hand are kept) are `domain.charging.providers`.
 
 ### `leapconnect.infrastructure` — driven adapters
 
@@ -94,11 +98,11 @@ Enforced by `tests/test_architecture.py`.
   `migration.py` (startup Alembic upgrade + self-healing ALTER fallbacks),
   one repository class per context (`telemetry.py`, `settings.py`,
   `account.py`, `notifications.py`, `zones.py`, `charging.py`,
-  `maintenance.py`) sharing a
+  `charging_providers.py`, `maintenance.py`) sharing a
   session factory via `base.py`, and `sqlite_adapter.py` — the thin
   `SqlAlchemyRepository` facade composing them into `AppRepository` and owning
   the engine lifecycle. Secret fields (cloud/MQTT passwords, ABRP token,
-  vehicle PIN, Telegram bot token, EVDC device key and tokens) are encrypted at rest via `secrets.py`
+  vehicle PIN, Telegram bot token, charging provider credentials) are encrypted at rest via `secrets.py`
   (`SecretCipher`); the repos that touch them encrypt on write / decrypt on
   read, tolerating legacy plaintext.
 - `secrets.py` — Fernet `SecretCipher` + key file management
@@ -106,10 +110,15 @@ Enforced by `tests/test_architecture.py`.
 - `mqtt/home_assistant.py` — Home Assistant MQTT discovery bridge.
 - `telegram/` — bot polling (`bot.py`), notifier (`notifier.py`), config.
 - `abrp/service.py` — A Better Route Planner telemetry.
-- `evdc/service.py` — the EVDC charging provider (`ChargingProvider`) over
-  `evdc-network-api`: read-only (login, charging history, receipts); the
-  account is connected once and a device key is enrolled, so the password is
-  never stored (device key and tokens are encrypted settings).
+- `charging_providers.py` — `ChargingProviderRegistry`: the connected
+  accounts of every supported provider type (`PROVIDER_TYPES`), built from the
+  `charging_provider_accounts` table, and the logins waiting for a two-factor
+  code.
+- `evdc/service.py` — one EVDC account (`ChargingProvider`) over
+  `evdc-network-api`: read-only (login, charging history, receipts, charging
+  points with a short search cache); the account is connected once and a
+  device key is enrolled, so the password is never stored (device key and
+  tokens are the account's encrypted credentials).
 - `community.py` — GitHub fetcher for community maintenance packs.
 - `logbuffer.py` — in-memory ring buffer behind the log viewer.
 

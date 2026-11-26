@@ -232,6 +232,9 @@ class ChargingSessionCostRow(Base):
     cost = Column(Float, nullable=True)
     note = Column(String(256), nullable=True)
     zone_name = Column(String(128), nullable=True)
+    # Where the car charged (its GPS, else the charger's)
+    latitude = Column(Float, nullable=True)
+    longitude = Column(Float, nullable=True)
     # Entered by hand: kept by the automatic recalculations
     cost_manual = Column(Boolean, nullable=False, default=False, server_default="0")
     energy_manual = Column(Boolean, nullable=False, default=False, server_default="0")
@@ -240,6 +243,9 @@ class ChargingSessionCostRow(Base):
     # Imported from a charging provider (e.g. "evdc") and its session id there
     external_source = Column(String(16), nullable=True)
     external_id = Column(String(64), nullable=True, index=True)
+    # The provider account it was imported with, and the charging point used
+    provider_account_id = Column(Integer, nullable=True)
+    evse_id = Column(String(64), nullable=True)
     # Unlinked by the user: the automatic import doesn't link it again
     auto_link_disabled = Column(
         Boolean, nullable=False, default=False, server_default="0"
@@ -271,6 +277,48 @@ class ChargingSessionExtraRow(Base):
     cost = Column(Float, nullable=True)
     # Provider it comes from (e.g. "evdc"); NULL = entered by the user
     source = Column(String(16), nullable=True)
+
+
+class ChargingProviderAccountRow(Base):
+    """A connected charging provider account (EVDC, ...).
+
+    Brand-new table: created by ``Base.metadata.create_all`` at startup,
+    so no Alembic migration (and no self-healing ALTER fallback) is needed.
+    """
+
+    __tablename__ = "charging_provider_accounts"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    provider = Column(String(16), nullable=False)
+    username = Column(String(256), nullable=False, default="")
+    # JSON, encrypted at rest (device keys, tokens: never a password)
+    credentials = Column(Text, nullable=False, default="")
+    auto_sync = Column(Boolean, nullable=False, default=True)
+    last_sync = Column(String(40), nullable=True)
+    last_error = Column(Text, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(UTC))
+
+
+class ChargingStationRow(Base):
+    """A provider's charging point a session was billed on (cached details).
+
+    Brand-new table: created by ``Base.metadata.create_all`` at startup.
+    """
+
+    __tablename__ = "charging_stations"
+
+    provider = Column(String(16), primary_key=True)
+    evse_id = Column(String(64), primary_key=True)
+    name = Column(String(256), nullable=True)
+    operator = Column(String(256), nullable=True)
+    address = Column(String(512), nullable=True)
+    latitude = Column(Float, nullable=True)
+    longitude = Column(Float, nullable=True)
+    max_power_kw = Column(Float, nullable=True)
+    is_dc = Column(Boolean, nullable=True)
+    plugs_json = Column(Text, nullable=True)
+    is_open_24h = Column(Boolean, nullable=True)
+    updated_at = Column(DateTime, nullable=False, default=lambda: datetime.now(UTC))
 
 
 # ---------------------------------------------------------------------------

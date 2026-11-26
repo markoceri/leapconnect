@@ -329,6 +329,10 @@ def _cost_response(
         energy_manual=sc.energy_manual,
         external_source=sc.external_source,
         external_id=sc.external_id,
+        provider_account_id=sc.provider_account_id,
+        evse_id=sc.evse_id,
+        latitude=sc.latitude,
+        longitude=sc.longitude,
         auto_link_disabled=sc.auto_link_disabled,
         manual_price_kwh=sc.manual_price_kwh,
         extras=[ChargingSessionExtraResponse(**asdict(e)) for e in sc.extras],
@@ -443,7 +447,8 @@ async def get_charging_sessions(
             _cost_response(row.record, tiers, bands).model_dump() if row.record else {}
         )
         base.pop("vin", None)
-        lat, lon = row.location or (None, None)
+        stored = (row.record.latitude, row.record.longitude) if row.record else None
+        lat, lon = row.location or stored or (None, None)
         sessions.append(
             ChargingSessionRowSchema(
                 **{

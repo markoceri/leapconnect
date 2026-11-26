@@ -1,18 +1,23 @@
-"""Charging providers: connect an EVDC account and import its billed sessions."""
+"""Charging providers: connect eMSP accounts (EVDC, ...), import their billed
+sessions, browse their charging points and the places the vehicle charged."""
 
 from __future__ import annotations
 
 from datetime import datetime
 from typing import Annotated
 
-from evdc_network_api import EvdcApiError, EvdcAuthError
-from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 
 from leapconnect.api.deps import ContainerDep, RepoDep
 from leapconnect.api.routers.charging import _cost_response
 from leapconnect.api.schemas.charging import ChargingSessionCostResponse
 from leapconnect.api.schemas.charging_providers import (
+    ChargeSiteSchema,
+    ChargeSitesResponse,
+    ChargingStationSchema,
+    ChargingStationsResponse,
+    ProviderAccountResponse,
+    ProviderAccountUpdate,
     ProviderFeeSchema,
     ProviderImportApplyRequest,
     ProviderImportApplyResponse,
@@ -23,115 +28,263 @@ from leapconnect.api.schemas.charging_providers import (
     ProviderLinkCandidatesResponse,
     ProviderLinkRequest,
     ProviderLoginRequest,
+    ProviderLoginResponse,
     ProviderSessionSchema,
-    ProviderSettingsUpdate,
-    ProviderStatusResponse,
+    ProvidersResponse,
+    ProviderTypeSchema,
     ProviderVerifyRequest,
 )
 from leapconnect.application.charging_providers import (
     apply_provider_import,
+    charge_sites,
     find_link_candidates,
+    find_stations,
+    get_session_receipt,
+    get_station,
     link_provider_session,
+    locate_sessions,
     preview_provider_import,
     unlink_provider_record,
+)
+from leapconnect.application.ports.charging_provider import (
+    ChargingProvider,
+    ChargingProviderError,
 )
 from leapconnect.application.settings_store import load_preferences, resolve_timezone
 from leapconnect.domain.charging.providers import ProviderSession
 from leapconnect.domain.charging.sessions import month_bounds
-from leapconnect.infrastructure.evdc.service import EvdcService
+from leapconnect.domain.charging.stations import ChargingStation
+from leapconnect.infrastructure.charging_providers import (
+    PROVIDER_TYPES,
+    ChargingProviderRegistry,
+)
 
 router = APIRouter(tags=["charging-providers"])
 
-
-def get_evdc(c: ContainerDep) -> EvdcService:
-    if not c.evdc_service:
-        raise HTTPException(status_code=503, detail="EVDC provider not ready")
-    return c.evdc_service
+# Charging points search radius (the provider pages its points nearest first)
+MAX_STATIONS_RADIUS_M = 10_000
 
 
-EvdcDep = Annotated[EvdcService, Depends(get_evdc)]
+def get_registry(c: ContainerDep) -> ChargingProviderRegistry:
+    if not c.charging_providers:
+        raise HTTPException(status_code=503, detail="Charging providers not ready")
+    return c.charging_providers
 
 
-def _connected(evdc: EvdcService) -> EvdcService:
-    if not evdc.connected:
-        raise HTTPException(status_code=409, detail="No EVDC account connected")
-    return evdc
+RegistryDep = Annotated[ChargingProviderRegistry, Depends(get_registry)]
 
 
-def _status(evdc: EvdcService) -> ProviderStatusResponse:
-    return ProviderStatusResponse(
-        provider=evdc.name, label=evdc.label, **evdc.status_dict()
+def _provider_error(exc: ChargingProviderError) -> HTTPException:
+    # Not 401: the frontend treats a 401 as an expired LeapConnect session
+    return HTTPException(status_code=400 if exc.auth else 502, detail=str(exc))
+
+
+def _label(provider: str) -> str:
+    t = PROVIDER_TYPES.get(provider)
+    return t.label if t else provider.upper()
+
+
+def _account(p: ChargingProvider) -> ProviderAccountResponse:
+    account = getattr(p, "account", None)
+    return ProviderAccountResponse(
+        id=p.account_id or 0,
+        provider=p.provider,
+        label=p.label,
+        username=p.username or "",
+        connected=p.connected,
+        auto_sync=p.auto_sync,
+        last_sync=account.last_sync if account else None,
+        last_error=account.last_error if account else None,
     )
 
 
-def _provider_error(exc: EvdcApiError) -> HTTPException:
-    # Not 401: the frontend treats a 401 as an expired LeapConnect session
-    status = 400 if isinstance(exc, EvdcAuthError) else 502
-    return HTTPException(status_code=status, detail=f"EVDC: {exc}")
+def _connected(
+    registry: ChargingProviderRegistry, account_id: int | None = None
+) -> list[ChargingProvider]:
+    """The connected accounts (or the one asked for)."""
+    if account_id is not None:
+        p = registry.get(account_id)
+        if p is None:
+            raise HTTPException(status_code=404, detail="Charging provider not found")
+        if not p.connected:
+            raise HTTPException(
+                status_code=409, detail=f"{p.label} account not connected"
+            )
+        return [p]
+    providers = registry.connected()
+    if not providers:
+        raise HTTPException(status_code=409, detail="No charging provider connected")
+    return providers
 
 
-@router.get("/api/charging/providers/evdc", response_model=ProviderStatusResponse)
-async def get_evdc_status(evdc: EvdcDep) -> ProviderStatusResponse:
-    """Whether an EVDC account is connected, and the automatic import."""
-    return _status(evdc)
+# -- accounts -------------------------------------------------------------------
 
 
-@router.put("/api/charging/providers/evdc", response_model=ProviderStatusResponse)
-async def update_evdc_settings(
-    body: ProviderSettingsUpdate, evdc: EvdcDep
-) -> ProviderStatusResponse:
-    """Turn the automatic import of the billed sessions on or off."""
-    await evdc.set_auto_sync(body.auto_sync)
-    return _status(evdc)
+@router.get("/api/charging/providers", response_model=ProvidersResponse)
+async def list_providers(registry: RegistryDep) -> ProvidersResponse:
+    """The supported charging providers and the connected accounts."""
+    return ProvidersResponse(
+        types=[ProviderTypeSchema(**t.__dict__) for t in PROVIDER_TYPES.values()],
+        accounts=[_account(p) for p in registry.all()],
+    )
 
 
-@router.post(
-    "/api/charging/providers/evdc/session", response_model=ProviderStatusResponse
-)
-async def connect_evdc(
-    body: ProviderLoginRequest, evdc: EvdcDep
-) -> ProviderStatusResponse:
-    """Connect an EVDC account (the password is not stored).
+@router.post("/api/charging/providers", response_model=ProviderLoginResponse)
+async def connect_provider(
+    body: ProviderLoginRequest, registry: RegistryDep
+) -> ProviderLoginResponse:
+    """Connect a charging provider account (the password is not stored).
 
-    When the account has two-factor authentication, ``two_factor_pending``
-    tells which code to send to ``/session/verify``.
+    When the account has two-factor authentication, the login waits for the
+    code under ``pending_id`` (``/api/charging/providers/pending/{id}/verify``).
     """
     try:
-        await evdc.login(body.email, body.password)
-    except EvdcApiError as exc:
+        account, pending_id, method = await registry.login(
+            body.provider, body.username, body.password
+        )
+    except ChargingProviderError as exc:
         raise _provider_error(exc) from exc
-    return _status(evdc)
+    return ProviderLoginResponse(
+        account=_account(account) if account else None,
+        pending_id=pending_id,
+        two_factor_method=method,
+    )
 
 
 @router.post(
-    "/api/charging/providers/evdc/session/verify",
-    response_model=ProviderStatusResponse,
+    "/api/charging/providers/pending/{pending_id}/verify",
+    response_model=ProviderAccountResponse,
 )
-async def verify_evdc(
-    body: ProviderVerifyRequest, evdc: EvdcDep
-) -> ProviderStatusResponse:
-    """Complete the login with the two-factor code."""
+async def verify_provider(
+    pending_id: str, body: ProviderVerifyRequest, registry: RegistryDep
+) -> ProviderAccountResponse:
+    """Complete a login with its two-factor code."""
     try:
-        await evdc.verify(body.code.strip())
-    except EvdcApiError as exc:
+        return _account(await registry.verify(pending_id, body.code.strip()))
+    except ChargingProviderError as exc:
         raise _provider_error(exc) from exc
-    return _status(evdc)
 
 
-@router.delete(
-    "/api/charging/providers/evdc/session", response_model=ProviderStatusResponse
+@router.put(
+    "/api/charging/providers/{account_id}", response_model=ProviderAccountResponse
 )
-async def disconnect_evdc(evdc: EvdcDep) -> ProviderStatusResponse:
-    """Disconnect the account: its device key and session are revoked."""
-    await evdc.disconnect()
-    return _status(evdc)
+async def update_provider(
+    account_id: int, body: ProviderAccountUpdate, registry: RegistryDep
+) -> ProviderAccountResponse:
+    """Turn an account's automatic import on or off."""
+    p = registry.get(account_id)
+    if p is None:
+        raise HTTPException(status_code=404, detail="Charging provider not found")
+    await p.set_auto_sync(body.auto_sync)
+    return _account(p)
+
+
+@router.delete("/api/charging/providers/{account_id}", status_code=204)
+async def remove_provider(account_id: int, registry: RegistryDep) -> Response:
+    """Disconnect an account (its device key and session are revoked); the
+    sessions imported with it keep their values."""
+    if not await registry.remove(account_id):
+        raise HTTPException(status_code=404, detail="Charging provider not found")
+    return Response(status_code=204)
+
+
+# -- charging points ---------------------------------------------------------------
+
+
+def _station_schema(s: ChargingStation) -> ChargingStationSchema:
+    return ChargingStationSchema(
+        provider=s.provider,
+        provider_label=_label(s.provider),
+        evse_id=s.evse_id,
+        name=s.name,
+        operator=s.operator,
+        address=s.address,
+        latitude=s.latitude,
+        longitude=s.longitude,
+        max_power_kw=s.max_power_kw,
+        is_dc=s.is_dc,
+        plugs=list(s.plugs),
+        is_open_24h=s.is_open_24h,
+        status=s.status,
+        price=s.price,
+        price_unit=s.price_unit,
+        currency=s.currency,
+        distance_m=s.distance_m,
+    )
+
+
+@router.get("/api/charging/stations", response_model=ChargingStationsResponse)
+async def search_stations(
+    registry: RegistryDep,
+    lat: Annotated[float, Query(ge=-90, le=90)],
+    lon: Annotated[float, Query(ge=-180, le=180)],
+    radius_m: Annotated[float, Query(gt=0, le=MAX_STATIONS_RADIUS_M)] = 2000,
+    providers: str | None = None,
+) -> ChargingStationsResponse:
+    """The charging points of the connected providers around a point, with
+    their live status and price; ``providers``: comma-separated types (all
+    when omitted). Several accounts of one provider are searched once."""
+    types = {p for p in providers.split(",") if p} if providers else None
+    result = await find_stations(registry.connected(), lat, lon, radius_m, types)
+    return ChargingStationsResponse(
+        stations=[_station_schema(s) for s in result.stations],
+        errors={_label(k): v for k, v in result.errors.items()},
+    )
+
+
+@router.get(
+    "/api/charging/stations/{provider}/{evse_id}",
+    response_model=ChargingStationSchema,
+)
+async def get_station_details(
+    provider: str, evse_id: str, repo: RepoDep, registry: RegistryDep
+) -> ChargingStationSchema:
+    """A charging point: live from its provider (status, price) when an
+    account is connected, else its cached details."""
+    station = await get_station(repo, registry.connected(), provider, evse_id)
+    if station is None:
+        raise HTTPException(status_code=404, detail="Charging point not found")
+    return _station_schema(station)
+
+
+@router.get("/api/vehicles/{vin}/charge-sites", response_model=ChargeSitesResponse)
+async def get_charge_sites(
+    vin: str, repo: RepoDep, c: ContainerDep
+) -> ChargeSitesResponse:
+    """The places where the vehicle charged, latest first: sessions, last
+    charge, energy, cost and the charging points known there."""
+    await locate_sessions(repo, vin, c.located_sessions)
+    return ChargeSitesResponse(
+        sites=[
+            ChargeSiteSchema(
+                latitude=s.latitude,
+                longitude=s.longitude,
+                sessions=s.sessions,
+                first_ts=s.first_ts.isoformat() if s.first_ts else None,
+                last_ts=s.last_ts.isoformat() if s.last_ts else None,
+                energy_kwh=s.energy_kwh,
+                cost=s.cost,
+                zone_name=s.zone_name,
+                tier_id=s.tier_id,
+                stations=[_station_schema(st) for st in s.stations],
+            )
+            for s in await charge_sites(repo, vin)
+        ]
+    )
 
 
 # -- import -------------------------------------------------------------------
 
 
-def _session_schema(ps: ProviderSession) -> ProviderSessionSchema:
+def _session_schema(
+    ps: ProviderSession, registry: ChargingProviderRegistry
+) -> ProviderSessionSchema:
+    account = registry.get(ps.account_id) if ps.account_id is not None else None
     return ProviderSessionSchema(
+        provider=ps.provider,
+        provider_label=_label(ps.provider),
+        account_id=ps.account_id,
+        account_username=account.username if account else None,
         external_id=ps.external_id,
         started_at=ps.started_at.isoformat() if ps.started_at else None,
         ended_at=ps.ended_at.isoformat() if ps.ended_at else None,
@@ -144,6 +297,7 @@ def _session_schema(ps: ProviderSession) -> ProviderSessionSchema:
         evse_id=ps.evse_id,
         operator=ps.operator,
         location=ps.location,
+        station=_station_schema(ps.station) if ps.station else None,
     )
 
 
@@ -153,26 +307,27 @@ async def _period(repo, body: ProviderImportPeriod):
 
 
 @router.post(
-    "/api/vehicles/{vin}/charging-costs/import/evdc/preview",
+    "/api/vehicles/{vin}/charging-costs/import/preview",
     response_model=ProviderImportPreviewResponse,
 )
-async def preview_evdc_import(
-    vin: str, body: ProviderImportPeriod, repo: RepoDep, evdc: EvdcDep
+async def preview_import(
+    vin: str, body: ProviderImportPeriod, repo: RepoDep, registry: RegistryDep
 ) -> ProviderImportPreviewResponse:
-    """The month's EVDC sessions, matched with the session list, and what
-    importing them would change (nothing is saved)."""
+    """The month's billed sessions of one account (or of every connected
+    one), matched with the session list, and what importing them would
+    change (nothing is saved)."""
+    providers = _connected(registry, body.account_id)
     start, end = await _period(repo, body)
     try:
-        items = await preview_provider_import(repo, _connected(evdc), vin, start, end)
-    except EvdcApiError as exc:
+        items = await preview_provider_import(repo, providers, vin, start, end)
+    except ChargingProviderError as exc:
         raise _provider_error(exc) from exc
     tiers = {t.id: t for t in await repo.get_price_tiers()}
     return ProviderImportPreviewResponse(
-        provider=evdc.name,
         items=[
             ProviderImportItem(
                 status=i.match.status,
-                session=_session_schema(i.match.session),
+                session=_session_schema(i.match.session, registry),
                 row_start_ts=i.match.row.start_ts.isoformat() if i.match.row else None,
                 row_end_ts=i.match.row.end_ts.isoformat()
                 if i.match.row and i.match.row.end_ts
@@ -191,20 +346,21 @@ async def preview_evdc_import(
 
 
 @router.post(
-    "/api/vehicles/{vin}/charging-costs/import/evdc/apply",
+    "/api/vehicles/{vin}/charging-costs/import/apply",
     response_model=ProviderImportApplyResponse,
 )
-async def apply_evdc_import(
-    vin: str, body: ProviderImportApplyRequest, repo: RepoDep, evdc: EvdcDep
+async def apply_import(
+    vin: str, body: ProviderImportApplyRequest, repo: RepoDep, registry: RegistryDep
 ) -> ProviderImportApplyResponse:
-    """Import the month's EVDC sessions: the matched ones (or those in
+    """Import the month's billed sessions: the matched ones (or those in
     ``external_ids``) update their record, the unmatched ones in
     ``create_ids`` are created."""
+    providers = _connected(registry, body.account_id)
     start, end = await _period(repo, body)
     try:
         result = await apply_provider_import(
             repo,
-            _connected(evdc),
+            providers,
             vin,
             start,
             end,
@@ -213,7 +369,7 @@ async def apply_evdc_import(
             else None,
             create_ids=set(body.create_ids),
         )
-    except EvdcApiError as exc:
+    except ChargingProviderError as exc:
         raise _provider_error(exc) from exc
     return ProviderImportApplyResponse(
         applied=result.applied, created=result.created, skipped=len(result.skipped)
@@ -230,32 +386,32 @@ async def _cost_out(repo, sc):
 
 
 @router.get(
-    "/api/vehicles/{vin}/charging-costs/link/evdc/candidates",
+    "/api/vehicles/{vin}/charging-costs/link/candidates",
     response_model=ProviderLinkCandidatesResponse,
 )
-async def get_evdc_link_candidates(
+async def get_link_candidates(
     vin: str,
     repo: RepoDep,
-    evdc: EvdcDep,
+    registry: RegistryDep,
     cost_id: int | None = None,
     start_ts: datetime | None = None,
 ) -> ProviderLinkCandidatesResponse:
-    """EVDC sessions around a session (its record, or its start when seen
-    only in the history), best first, with what linking each would change."""
+    """The connected accounts' billed sessions around a session (its record,
+    or its start when seen only in the history), best first, with what
+    linking each would change."""
     try:
         found = await find_link_candidates(
-            repo, _connected(evdc), vin, cost_id=cost_id, start_ts=start_ts
+            repo, _connected(registry), vin, cost_id=cost_id, start_ts=start_ts
         )
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except EvdcApiError as exc:
+    except ChargingProviderError as exc:
         raise _provider_error(exc) from exc
     tiers = {t.id: t for t in await repo.get_price_tiers()}
     return ProviderLinkCandidatesResponse(
-        provider=evdc.name,
         candidates=[
             ProviderLinkCandidate(
-                session=_session_schema(c.candidate.session),
+                session=_session_schema(c.candidate.session, registry),
                 overlap_minutes=int(c.candidate.overlap.total_seconds() // 60)
                 if c.candidate.overlap is not None
                 else None,
@@ -271,18 +427,19 @@ async def get_evdc_link_candidates(
 
 
 @router.post(
-    "/api/vehicles/{vin}/charging-costs/link/evdc",
+    "/api/vehicles/{vin}/charging-costs/link",
     response_model=ChargingSessionCostResponse,
 )
-async def link_evdc_session(
-    vin: str, body: ProviderLinkRequest, repo: RepoDep, evdc: EvdcDep
+async def link_session(
+    vin: str, body: ProviderLinkRequest, repo: RepoDep, registry: RegistryDep
 ) -> ChargingSessionCostResponse:
-    """Link a session to the EVDC session the user picked: its billed values
-    are applied (values entered by hand are kept)."""
+    """Link a session to the billed session the user picked: its billed
+    values are applied (values entered by hand are kept)."""
+    [provider] = _connected(registry, body.account_id)
     try:
         sc = await link_provider_session(
             repo,
-            _connected(evdc),
+            provider,
             vin,
             body.external_id,
             cost_id=body.cost_id,
@@ -290,7 +447,7 @@ async def link_evdc_session(
         )
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except EvdcApiError as exc:
+    except ChargingProviderError as exc:
         raise _provider_error(exc) from exc
     return await _cost_out(repo, sc)
 
@@ -302,7 +459,7 @@ async def link_evdc_session(
 async def unlink_session(
     vin: str, cost_id: int, repo: RepoDep
 ) -> ChargingSessionCostResponse:
-    """Unlink a session from its provider session: energy and cost go back to
+    """Unlink a session from its billed session: energy and cost go back to
     the automatic ones (unless entered by hand), and the automatic import
     won't link it again."""
     try:
@@ -313,20 +470,19 @@ async def unlink_session(
 
 
 @router.get("/api/vehicles/{vin}/charging-costs/{cost_id}/receipt")
-async def get_session_receipt(
-    vin: str, cost_id: int, repo: RepoDep, evdc: EvdcDep
+async def get_receipt(
+    vin: str, cost_id: int, repo: RepoDep, registry: RegistryDep
 ) -> Response:
-    """The PDF receipt of a session imported from EVDC."""
-    sc = next((c for c in await repo.get_session_costs(vin) if c.id == cost_id), None)
-    if sc is None:
-        raise HTTPException(status_code=404, detail=f"Session cost {cost_id} not found")
-    if sc.external_source != evdc.name or not sc.external_id:
-        raise HTTPException(status_code=404, detail="Session not imported from EVDC")
+    """The PDF receipt of a session imported from a charging provider."""
     try:
-        filename, content = await _connected(evdc).get_receipt(sc.external_id)
-    except EvdcApiError as exc:
+        sc, filename, content = await get_session_receipt(
+            repo, registry.all(), vin, cost_id
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ChargingProviderError as exc:
         raise _provider_error(exc) from exc
-    name = filename or f"evdc-receipt-{sc.external_id}.pdf"
+    name = filename or f"{sc.external_source}-receipt-{sc.external_id}.pdf"
     return Response(
         content=content,
         media_type="application/pdf",

@@ -784,7 +784,7 @@
         </div>
       </SectionCard>
 
-      <EvdcProviderCard />
+      <ChargingProvidersCard />
 
       <SectionCard title="Telegram Bot" :icon="Send">
         <p class="rate-limit-hint" style="margin-bottom:12px">Connect a Telegram bot to receive notifications and interact with your vehicle remotely.</p>
@@ -1394,7 +1394,7 @@
 <script setup>
 import { ref, reactive, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import SectionCard from '../components/SectionCard.vue'
-import EvdcProviderCard from '../components/EvdcProviderCard.vue'
+import ChargingProvidersCard from '../components/ChargingProvidersCard.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import InfoRow from '../components/InfoRow.vue'
 import ToggleSwitch from '../components/ToggleSwitch.vue'

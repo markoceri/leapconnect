@@ -105,6 +105,15 @@ class _Repo:
             if c.external_source == source and c.external_id
         }
 
+    async def upsert_charging_stations(self, stations):
+        stored = self.__dict__.setdefault("stations", {})
+        for st in stations:
+            stored[(st.provider, st.evse_id)] = st
+
+    async def get_charging_stations(self, keys=None):
+        stored = self.__dict__.get("stations", {})
+        return {k: v for k, v in stored.items() if keys is None or k in keys}
+
     async def delete_session_cost(self, cost_id):
         before = len(self.costs)
         self.costs = [c for c in self.costs if c.id != cost_id]

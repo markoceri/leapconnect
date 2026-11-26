@@ -191,3 +191,31 @@ button { font-family: inherit; }
 [data-theme="light"] .leaflet-container .leaflet-control-attribution {
   background: rgba(255, 255, 255, 0.75);
 }
+
+/* Charging point marker (charging providers) on the Leaflet maps */
+.station-pin {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  background: #22c55e;
+  color: #fff;
+  font-size: 13px;
+  line-height: 1;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+}
+.station-popup { font-size: 12px; line-height: 1.4; max-width: 260px; }
+.site-pin {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
+}
