@@ -83,8 +83,11 @@ class ImportResult:
 
 
 def _vehicle_dc(row: ChargeSessionRow) -> bool | None:
-    """Whether the vehicle saw a DC charge; ``None`` without charging data."""
-    return row.is_dc if row.parts else None
+    """Whether the vehicle saw a DC charge. ``False`` only when it saw the AC
+    gun; ``None`` when it can't tell (then the charger's power type decides)."""
+    if row.is_dc:
+        return True
+    return False if any(p.is_ac for p in row.parts) else None
 
 
 def _record_for_row(vin: str, row: ChargeSessionRow) -> ChargingSessionCost:

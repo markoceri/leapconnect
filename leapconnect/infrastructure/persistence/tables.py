@@ -53,6 +53,8 @@ class VehicleSnapshotRow(Base):
     tire_rl_pressure = Column(Float, nullable=True)
     tire_rr_pressure = Column(Float, nullable=True)
     is_regening = Column(Boolean, nullable=True)
+    dc_input_fast_charge = Column(Integer, nullable=True)
+    ac_input_slow_charge = Column(Integer, nullable=True)
 
 
 class VehicleEventRow(Base):

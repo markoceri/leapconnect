@@ -17,7 +17,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime, time, timedelta, tzinfo
 
-from leapconnect.domain.charging.location import DC_CHARGE_STATE
+from leapconnect.domain.charging.location import is_dc_charge
 from leapconnect.domain.charging.models import ChargingSessionCost
 from leapconnect.domain.telemetry.models import VehicleSnapshot
 
@@ -85,6 +85,8 @@ class DetectedChargeSession:
     latitude: float | None = None
     longitude: float | None = None
     is_dc: bool = False
+    # The slow (AC) gun was detected: a direct confirmation it was not DC
+    is_ac: bool = False
 
 
 @dataclass(frozen=True)
@@ -179,7 +181,11 @@ def _session(
         end_odometer=odometers[-1] if odometers else None,
         latitude=fix.vehicle_latitude if fix else None,
         longitude=fix.vehicle_longitude if fix else None,
-        is_dc=any(s.battery_charge_state == DC_CHARGE_STATE for s in run),
+        is_dc=any(
+            is_dc_charge(s.battery_dc_input_fast_charge, s.battery_charging_power_kw)
+            for s in run
+        ),
+        is_ac=any(s.battery_ac_input_slow_charge == 1 for s in run),
     )
 
 

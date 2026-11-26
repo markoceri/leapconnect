@@ -375,6 +375,12 @@ class VehicleDataScheduler:
                     battery_charge_state=_enum_val(status.battery.charge_state)
                     if status.battery
                     else None,
+                    battery_dc_input_fast_charge=status.battery.dc_input_fast_charge
+                    if status.battery
+                    else None,
+                    battery_ac_input_slow_charge=status.battery.ac_input_slow_charge
+                    if status.battery
+                    else None,
                     drive_is_parked=status.driving.is_parked
                     if status.driving
                     else None,
@@ -755,7 +761,7 @@ class VehicleDataScheduler:
 
         from leapconnect.application.notifications.policies import StatusReading
         from leapconnect.domain.charging.location import (
-            DC_CHARGE_STATE,
+            is_dc_charge,
             resolve_charge_location,
         )
         from leapconnect.domain.charging.models import ChargingSessionCost
@@ -766,10 +772,10 @@ class VehicleDataScheduler:
             # the home_grid default.
             is_dc = False
             if hasattr(status, "battery") and status.battery:
-                charge_state = getattr(status.battery, "charge_state", None)
-                if hasattr(charge_state, "value"):
-                    charge_state = charge_state.value
-                is_dc = charge_state == DC_CHARGE_STATE
+                is_dc = is_dc_charge(
+                    getattr(status.battery, "dc_input_fast_charge", None),
+                    getattr(status.battery, "charging_power_kw", None),
+                )
             reading = StatusReading.from_status(status)
             location = resolve_charge_location(
                 await self._repo.get_zones(event.vin),

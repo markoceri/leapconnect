@@ -31,7 +31,7 @@ from leapconnect.domain.charging.extras import (
     find_unplug,
 )
 from leapconnect.domain.charging.location import (
-    DC_CHARGE_STATE,
+    is_dc_charge,
     resolve_charge_location,
 )
 from leapconnect.domain.charging.models import ChargingSessionCost
@@ -106,7 +106,11 @@ async def _locate_from_snapshots(
     positioned = next(
         (s for s in window if s.vehicle_latitude and s.vehicle_longitude), None
     )
-    is_dc = any(s.battery_charge_state == DC_CHARGE_STATE for s in window)
+    is_dc = any(
+        is_dc_charge(s.battery_dc_input_fast_charge, s.battery_charging_power_kw)
+        for s in window
+        if s.battery_is_charging
+    )
     return resolve_charge_location(
         await repo.get_zones(vin),
         positioned.vehicle_latitude if positioned else None,

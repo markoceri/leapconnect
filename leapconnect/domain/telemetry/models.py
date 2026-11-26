@@ -24,6 +24,9 @@ class VehicleSnapshot:
     battery_dump_energy: float | None = None
     battery_expected_mileage: int | None = None
     battery_charge_state: int | None = None
+    # Charging gun detected: fast (DC) / slow (AC); 1 = inserted, 0 = not
+    battery_dc_input_fast_charge: int | None = None
+    battery_ac_input_slow_charge: int | None = None
 
     # Drive
     drive_is_parked: bool | None = None

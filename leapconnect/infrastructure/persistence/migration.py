@@ -222,6 +222,14 @@ def run_alembic_upgrade(sync_conn) -> None:
                         f"ADD COLUMN {col} {sql_type}"
                     )
                 )
+    # 0018: the charging-gun signals on the telemetry snapshots.
+    if sc_inspect.has_table("vehicle_snapshots"):
+        snap_cols = {c["name"] for c in sc_inspect.get_columns("vehicle_snapshots")}
+        for col in ("dc_input_fast_charge", "ac_input_slow_charge"):
+            if col not in snap_cols:
+                sync_conn.execute(
+                    text(f"ALTER TABLE vehicle_snapshots ADD COLUMN {col} INTEGER")
+                )
     if sc_inspect.has_table("charging_session_extras"):
         extra_cols = {
             c["name"] for c in sc_inspect.get_columns("charging_session_extras")
