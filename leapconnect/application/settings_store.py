@@ -219,14 +219,15 @@ async def recalculate_session(
     truth for finalizing a session, shared by the auto-finalize on charge stop
     and the manual "recalculate" action. Energy is left untouched when it cannot
     be measured, so a cost computed mid-session is never silently discarded.
-    Values entered by hand (``energy_manual`` / ``cost_manual``) are kept: the
-    "recalculate" action clears the flags first to re-measure them.
+    Values entered by hand (``energy_manual`` / ``cost_manual``) or billed by a
+    charging provider are kept: the "recalculate" action clears the manual
+    flags first to re-measure them.
     """
-    if not sc.energy_manual:
+    if not sc.energy_locked:
         energy = await recompute_session_energy(repo, sc)
         if energy is not None:
             sc.energy_kwh = energy
-    if not sc.cost_manual and sc.energy_kwh is not None:
+    if not sc.cost_locked and sc.energy_kwh is not None:
         sc.cost = await price_session(repo, sc)
     await price_session_extras(repo, sc)
     return sc

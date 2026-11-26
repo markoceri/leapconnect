@@ -25,6 +25,7 @@ if TYPE_CHECKING:
     from leapmotor_api.models import Vehicle
 
     from leapconnect.application.notifications import NotificationDispatcher
+    from leapconnect.application.ports.charging_provider import ChargingProvider
     from leapconnect.application.ports.repositories import AppRepository
     from leapconnect.application.vehicle_cache import VehicleStatusCache
 
@@ -43,6 +44,13 @@ MONTH_END_COSTS_FROM_DAY = 2
 MONTH_END_COSTS_SETTING = "charging_costs_last_auto_month"
 # Skipped sessions listed in the notification before truncating.
 MONTH_END_COSTS_MAX_LISTED = 10
+
+# Automatic import from the charging provider: once a day, and every
+# PROVIDER_FOLLOWUP_EVERY for PROVIDER_FOLLOWUP after a public charge ends
+# (the provider bills a session a while after it).
+PROVIDER_SYNC_DAILY = timedelta(hours=24)
+PROVIDER_FOLLOWUP = timedelta(hours=6)
+PROVIDER_FOLLOWUP_EVERY = timedelta(minutes=30)
 
 
 class VehicleDataScheduler:
@@ -73,6 +81,11 @@ class VehicleDataScheduler:
         self._detector = TransitionDetector(
             min_event_interval_seconds=self._settings.transition_min_event_interval_seconds,
         )
+
+        # Charging provider (e.g. EVDC) whose billed sessions are imported
+        self._provider: ChargingProvider | None = None
+        self._provider_last_sync: datetime | None = None
+        self._provider_followup_until: datetime | None = None
 
         # Injected at runtime by main.py when the user logs in
         self._client: AsyncLeapmotorApiClient | None = None
@@ -131,6 +144,10 @@ class VehicleDataScheduler:
     def set_on_status_callback(self, callback) -> None:
         """Set a callback invoked with (vehicle, status) after each MQTT poll."""
         self._on_status_callback = callback
+
+    def set_charging_provider(self, provider: ChargingProvider | None) -> None:
+        """Set the charging provider whose billed sessions are auto-imported."""
+        self._provider = provider
 
     def set_after_history_poll_callback(self, callback) -> None:
         """Set a callback (no arguments) awaited after each history poll."""
@@ -262,6 +279,10 @@ class VehicleDataScheduler:
                     await self._maybe_run_month_end_costs()
                 except Exception:
                     _LOGGER.exception("Scheduler: month-end charging costs failed")
+                try:
+                    await self._maybe_sync_charging_provider()
+                except Exception:
+                    _LOGGER.exception("Scheduler: charging provider import failed")
                 try:
                     await asyncio.wait_for(
                         self._history_stop.wait(),
@@ -637,6 +658,43 @@ class VehicleDataScheduler:
         if all_ok:
             await self._repo.save_setting(MONTH_END_COSTS_SETTING, target)
 
+    async def _maybe_sync_charging_provider(self, now: datetime | None = None) -> None:
+        """Import the charging provider's recent billed sessions, when due.
+
+        Due once a day, and every ``PROVIDER_FOLLOWUP_EVERY`` for
+        ``PROVIDER_FOLLOWUP`` after a public charge ends. Only sessions that
+        match a listed one are imported; nothing is created.
+        """
+        from leapconnect.application.charging_providers import auto_sync_provider
+
+        provider = self._provider
+        if not provider or not provider.connected or not provider.auto_sync:
+            return
+        if not self._vehicles:
+            return
+        now = now or datetime.now(UTC).replace(tzinfo=None)
+        last = self._provider_last_sync
+        following = (
+            self._provider_followup_until is not None
+            and now <= self._provider_followup_until
+        )
+        due = (
+            last is None
+            or now - last >= PROVIDER_SYNC_DAILY
+            or (following and now - last >= PROVIDER_FOLLOWUP_EVERY)
+        )
+        if not due:
+            return
+        self._provider_last_sync = now
+        for vehicle in self._vehicles:
+            result = await auto_sync_provider(self._repo, provider, vehicle.vin, now)
+            _LOGGER.info(
+                "%s import for %s: %d session(s) updated",
+                provider.label,
+                vehicle.vin,
+                result.applied,
+            )
+
     async def _notify_month_end_costs(
         self, vehicle, month: datetime, result, tz: tzinfo
     ) -> None:
@@ -728,6 +786,11 @@ class VehicleDataScheduler:
                     _LOGGER.debug("Charging cost: energy calc error: %s", exc)
 
                 await self._repo.upsert_session_cost(open_session)
+                if open_session.tier_id.startswith("public"):
+                    # Look for the provider's bill of this charge for a while
+                    self._provider_followup_until = (
+                        datetime.now(UTC).replace(tzinfo=None) + PROVIDER_FOLLOWUP
+                    )
                 _LOGGER.info(
                     "Charging cost: session ended for %s, energy=%.2f kWh, cost=€%.4f",
                     event.vin,

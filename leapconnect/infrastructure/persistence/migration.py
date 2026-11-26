@@ -173,8 +173,9 @@ def run_alembic_upgrade(sync_conn) -> None:
             )
 
     # Self-healing for charging_session_costs: 0014 adds zone_name, 0015 the
-    # manual flags, 0016 the manual price. Add them idempotently when the
-    # create_all + "stamp to head" path skipped the ALTER.
+    # manual flags, 0016 the manual price, 0017 the provider references. Add
+    # them idempotently when the create_all + "stamp to head" path skipped the
+    # ALTER.
     sc_inspect = sqlalchemy.inspect(sync_conn)
     if sc_inspect.has_table("charging_session_costs"):
         sc_cols = {c["name"] for c in sc_inspect.get_columns("charging_session_costs")}
@@ -200,6 +201,31 @@ def run_alembic_upgrade(sync_conn) -> None:
                 text(
                     "ALTER TABLE charging_session_costs "
                     "ADD COLUMN manual_price_kwh FLOAT"
+                )
+            )
+        # 0017: external_source/external_id/auto_link_disabled (imported from
+        # a provider).
+        for col, sql_type in (
+            ("external_source", "VARCHAR(16)"),
+            ("external_id", "VARCHAR(64)"),
+            ("auto_link_disabled", "BOOLEAN NOT NULL DEFAULT 0"),
+        ):
+            if col not in sc_cols:
+                sync_conn.execute(
+                    text(
+                        "ALTER TABLE charging_session_costs "
+                        f"ADD COLUMN {col} {sql_type}"
+                    )
+                )
+    if sc_inspect.has_table("charging_session_extras"):
+        extra_cols = {
+            c["name"] for c in sc_inspect.get_columns("charging_session_extras")
+        }
+        # 0017: source (provider an extra comes from).
+        if "source" not in extra_cols:
+            sync_conn.execute(
+                text(
+                    "ALTER TABLE charging_session_extras ADD COLUMN source VARCHAR(16)"
                 )
             )
 

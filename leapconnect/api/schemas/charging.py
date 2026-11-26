@@ -157,6 +157,7 @@ class ChargingSessionExtraIn(_ChargingSessionExtraFields):
 
 class ChargingSessionExtraResponse(_ChargingSessionExtraFields):
     id: int | None = None
+    source: str | None = None  # provider it comes from; None = the user's
     minutes: int | None = None  # billable minutes (time-based)
     cost: float | None = None  # None = can't be computed yet
 
@@ -176,6 +177,10 @@ class ChargingSessionCostResponse(BaseModel):
     cost_manual: bool = False  # entered by hand, kept by recalculations
     energy_manual: bool = False
     manual_price_kwh: float | None = None  # cost = energy × this price
+    # Imported from a charging provider: energy and cost are the billed ones
+    external_source: str | None = None
+    external_id: str | None = None
+    auto_link_disabled: bool = False
     extras: list[ChargingSessionExtraResponse] = []
     extras_total: float | None = None  # extras counted in the session cost
     total_cost: float | None = None  # energy cost + extras_total
@@ -199,6 +204,9 @@ class ChargingSessionRowSchema(BaseModel):
     cost_manual: bool = False
     energy_manual: bool = False
     manual_price_kwh: float | None = None
+    external_source: str | None = None
+    external_id: str | None = None
+    auto_link_disabled: bool = False
     extras: list[ChargingSessionExtraResponse] = []
     extras_total: float | None = None
     total_cost: float | None = None

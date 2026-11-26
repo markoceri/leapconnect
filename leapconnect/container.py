@@ -45,6 +45,7 @@ from leapconnect.application.vehicle_cache import VehicleStatusCache
 from leapconnect.domain.identity.sessions import SessionStore
 from leapconnect.domain.identity.throttle import LoginThrottle
 from leapconnect.infrastructure.abrp.service import AbrpService
+from leapconnect.infrastructure.evdc.service import EvdcService
 from leapconnect.infrastructure.logbuffer import RingBufferHandler
 from leapconnect.infrastructure.mqtt.home_assistant import HomeAssistantMqttService
 from leapconnect.infrastructure.persistence.sqlite_adapter import (
@@ -73,6 +74,7 @@ class AppContainer:
         self.scheduler: VehicleDataScheduler | None = None
         self.mqtt_service: HomeAssistantMqttService | None = None
         self.abrp_service: AbrpService | None = None
+        self.evdc_service: EvdcService | None = None
         self.vehicle_cache: VehicleStatusCache | None = None
         self.notification_dispatcher: NotificationDispatcher | None = None
         self.disk_monitor: DiskSpaceMonitor | None = None
@@ -657,6 +659,12 @@ class AppContainer:
             user_token=abrp_settings.user_token,
         )
         _LOGGER.info("ABRP service initialised: enabled=%s", abrp_settings.enabled)
+
+        # EVDC charging provider (billed sessions of public charges)
+        self.evdc_service = EvdcService(self.repo)
+        await self.evdc_service.load()
+        self.scheduler.set_charging_provider(self.evdc_service)
+        _LOGGER.info("EVDC provider: connected=%s", self.evdc_service.connected)
 
         # Initialize live refresh from saved setting
         live_raw = await self.repo.get_setting("live_refresh_interval")

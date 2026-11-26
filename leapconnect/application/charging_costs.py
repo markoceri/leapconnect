@@ -438,7 +438,9 @@ async def merge_charge_sessions(
     keeper.cost = None
     keeper.energy_manual = keeper.cost_manual = False
     keeper.manual_price_kwh = None
-    keeper.extras = [e for r in records for e in r.extras]
+    # A provider's import is for one part: the next import matches the whole
+    keeper.external_source = keeper.external_id = None
+    keeper.extras = [e for r in records for e in r.extras if not e.source]
     keeper = await repo.upsert_session_cost(keeper)
     for other in records[1:]:
         await repo.delete_session_cost(other.id)

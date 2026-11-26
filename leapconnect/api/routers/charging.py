@@ -327,6 +327,9 @@ def _cost_response(
         cost=sc.cost,
         cost_manual=sc.cost_manual,
         energy_manual=sc.energy_manual,
+        external_source=sc.external_source,
+        external_id=sc.external_id,
+        auto_link_disabled=sc.auto_link_disabled,
         manual_price_kwh=sc.manual_price_kwh,
         extras=[ChargingSessionExtraResponse(**asdict(e)) for e in sc.extras],
         extras_total=sc.extras_total,
@@ -341,15 +344,17 @@ def _apply_cost_fields(
     body: ChargingSessionCostCreate | ChargingSessionCostUpdate,
 ) -> None:
     """Apply the cost entered by hand (a total or a price per kWh; null goes
-    back to the tier's price) and the extra costs, when sent."""
+    back to the tier's price, or to the billed cost of an imported session)
+    and the user's extra costs, when sent (a provider's extras are kept)."""
     sent = body.model_fields_set
     if body.cost is not None and body.manual_price_kwh is not None:
         raise HTTPException(
             status_code=422, detail="Send either 'cost' or 'manual_price_kwh'"
         )
     if "cost" in sent:
+        if body.cost is not None or not sc.external_source:
+            sc.cost = body.cost
         sc.cost_manual = body.cost is not None
-        sc.cost = body.cost
         if sc.cost_manual:
             sc.manual_price_kwh = None
     if "manual_price_kwh" in sent:
@@ -357,7 +362,9 @@ def _apply_cost_fields(
         if sc.manual_price_kwh is not None:
             sc.cost_manual = False
     if body.extras is not None:
-        sc.extras = [ChargingSessionExtra(**e.model_dump()) for e in body.extras]
+        sc.extras = [e for e in sc.extras if e.source] + [
+            ChargingSessionExtra(**e.model_dump()) for e in body.extras
+        ]
 
 
 @router.get(
@@ -679,7 +686,7 @@ async def update_charging_cost(
         sc.energy_manual = body.energy_kwh is not None
         if sc.energy_manual:
             sc.energy_kwh = body.energy_kwh
-        else:
+        elif not sc.external_source:  # an imported session keeps the billed kWh
             sc.energy_kwh = await recompute_session_energy(repo, sc)
     _apply_cost_fields(sc, body)
     if body.peak_power_kw is not None:
@@ -690,7 +697,7 @@ async def update_charging_cost(
         # Empty string clears the zone assignment.
         sc.zone_name = body.zone_name or None
     # Recalculate cost, unless entered by hand, then the extras
-    if not sc.cost_manual and sc.energy_kwh is not None:
+    if not sc.cost_locked and sc.energy_kwh is not None:
         sc.cost = await price_session(repo, sc)
     await price_session_extras(repo, sc)
     await repo.upsert_session_cost(sc)
@@ -715,6 +722,11 @@ async def recalculate_charging_cost(vin: str, cost_id: int, repo: RepoDep):
     sc = next((c for c in costs if c.id == cost_id), None)
     if not sc:
         raise HTTPException(status_code=404, detail=f"Session cost {cost_id} not found")
+    if sc.external_source:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Energy and cost are billed by {sc.external_source}: import again",
+        )
     sc.energy_manual = sc.cost_manual = False
     await recalculate_session(repo, sc)
     await repo.upsert_session_cost(sc)

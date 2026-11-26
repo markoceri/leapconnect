@@ -19,6 +19,9 @@ SECRET_SETTING_KEYS: frozenset[str] = frozenset(
         "mqtt_password",
         "abrp_user_token",
         "mqtt_vehicle_pin",
+        "evdc_device_key",
+        "evdc_access_token",
+        "evdc_refresh_token",
     }
 )
 

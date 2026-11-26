@@ -237,6 +237,13 @@ class ChargingSessionCostRow(Base):
     energy_manual = Column(Boolean, nullable=False, default=False, server_default="0")
     # Price per kWh entered by hand: the cost follows the energy
     manual_price_kwh = Column(Float, nullable=True)
+    # Imported from a charging provider (e.g. "evdc") and its session id there
+    external_source = Column(String(16), nullable=True)
+    external_id = Column(String(64), nullable=True, index=True)
+    # Unlinked by the user: the automatic import doesn't link it again
+    auto_link_disabled = Column(
+        Boolean, nullable=False, default=False, server_default="0"
+    )
 
 
 class ChargingSessionExtraRow(Base):
@@ -262,6 +269,8 @@ class ChargingSessionExtraRow(Base):
     # Computed when the session is priced
     minutes = Column(Integer, nullable=True)
     cost = Column(Float, nullable=True)
+    # Provider it comes from (e.g. "evdc"); NULL = entered by the user
+    source = Column(String(16), nullable=True)
 
 
 # ---------------------------------------------------------------------------

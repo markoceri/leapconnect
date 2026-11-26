@@ -54,8 +54,10 @@ Enforced by `tests/test_architecture.py`.
 ### `leapconnect.application` — use cases & orchestration
 
 - `ports/` — interfaces implemented by infrastructure:
-  `repositories.py` (segregated per context, combined as `AppRepository`)
-  and `notifier.py` (`BaseNotifier`).
+  `repositories.py` (segregated per context, combined as `AppRepository`),
+  `notifier.py` (`BaseNotifier`) and `charging_provider.py`
+  (`ChargingProvider`: read-only access to the sessions a charging provider
+  such as EVDC billed).
 - `scheduler.py` — background polling loops (history, MQTT, transitions).
 - `notifications/` — event → notification pipeline: `dispatcher.py`
   (orchestrator: channels, preferences, cooldowns, mute; also owns the
@@ -80,6 +82,10 @@ Enforced by `tests/test_architecture.py`.
 - `battery_health.py` — estimated battery SOH for a vehicle (full-charge
   samples from the repository + the per-vehicle reference capacity stored
   in the settings table).
+- `charging_providers.py` — import of a charging provider's billed sessions:
+  preview, apply (matched records updated, unmatched ones created on request)
+  and the automatic import the scheduler runs; matching and the precedence
+  rules (values entered by hand are kept) are `domain.charging.providers`.
 
 ### `leapconnect.infrastructure` — driven adapters
 
@@ -92,7 +98,7 @@ Enforced by `tests/test_architecture.py`.
   session factory via `base.py`, and `sqlite_adapter.py` — the thin
   `SqlAlchemyRepository` facade composing them into `AppRepository` and owning
   the engine lifecycle. Secret fields (cloud/MQTT passwords, ABRP token,
-  vehicle PIN, Telegram bot token) are encrypted at rest via `secrets.py`
+  vehicle PIN, Telegram bot token, EVDC device key and tokens) are encrypted at rest via `secrets.py`
   (`SecretCipher`); the repos that touch them encrypt on write / decrypt on
   read, tolerating legacy plaintext.
 - `secrets.py` — Fernet `SecretCipher` + key file management
@@ -100,6 +106,10 @@ Enforced by `tests/test_architecture.py`.
 - `mqtt/home_assistant.py` — Home Assistant MQTT discovery bridge.
 - `telegram/` — bot polling (`bot.py`), notifier (`notifier.py`), config.
 - `abrp/service.py` — A Better Route Planner telemetry.
+- `evdc/service.py` — the EVDC charging provider (`ChargingProvider`) over
+  `evdc-network-api`: read-only (login, charging history, receipts); the
+  account is connected once and a device key is enrolled, so the password is
+  never stored (device key and tokens are encrypted settings).
 - `community.py` — GitHub fetcher for community maintenance packs.
 - `logbuffer.py` — in-memory ring buffer behind the log viewer.
 

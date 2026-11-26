@@ -55,8 +55,26 @@ class ChargingSessionCost:
     energy_manual: bool = False
     # Price per kWh entered by hand: the cost follows the energy
     manual_price_kwh: float | None = None
+    # Imported from a charging provider (e.g. "evdc"): its energy and cost are
+    # the billed ones, kept by the automatic recalculations
+    external_source: str | None = None
+    external_id: str | None = None
+    # Unlinked from a provider session by the user: not linked again by the
+    # automatic import (can still be linked by hand)
+    auto_link_disabled: bool = False
     # Extra costs (session fee, idle fee, parking, ...), in display order
     extras: list[ChargingSessionExtra] = field(default_factory=list)
+
+    @property
+    def energy_locked(self) -> bool:
+        """Energy not re-measured: entered by hand or billed by a provider."""
+        return self.energy_manual or self.external_source is not None
+
+    @property
+    def cost_locked(self) -> bool:
+        """Cost not re-priced with the tier: entered by hand (a total) or
+        billed by a provider."""
+        return self.cost_manual or self.external_source is not None
 
     @property
     def extras_total(self) -> float | None:
@@ -101,3 +119,6 @@ class ChargingSessionExtra:
     cap: float | None = None
     minutes: int | None = None
     cost: float | None = None
+    # Provider it comes from (e.g. "evdc"), replaced at each import; None =
+    # entered by the user
+    source: str | None = None

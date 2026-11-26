@@ -98,6 +98,13 @@ class _Repo:
             self.costs.append(sc)
         return sc
 
+    async def get_external_links(self, source):
+        return {
+            c.external_id: (c.vin, c.id)
+            for c in self.costs
+            if c.external_source == source and c.external_id
+        }
+
     async def delete_session_cost(self, cost_id):
         before = len(self.costs)
         self.costs = [c for c in self.costs if c.id != cost_id]

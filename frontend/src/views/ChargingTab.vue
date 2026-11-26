@@ -107,6 +107,14 @@
           <Calculator :size="14" /> Calculate missing costs ({{ missingCosts.total }})
         </button>
         <button
+          v-if="evdcConnected"
+          class="btn-bulk"
+          @click="evdcImportOpen = true"
+          title="Import the billed energy, cost and fees of this month's charges paid with the EVDC app"
+        >
+          <Receipt :size="14" /> Import from EVDC
+        </button>
+        <button
           v-if="filteredSessions.length > 1"
           class="btn-bulk"
           :class="{ active: mergeMode }"
@@ -176,6 +184,7 @@
             <span v-if="s.total_cost != null" :title="costBreakdown(s)">€{{ s.total_cost.toFixed(2) }}</span>
             <span v-else class="cost-none">—</span>
             <span v-if="s.extras?.length" class="extras-badge" :title="costBreakdown(s)">+{{ s.extras.length }}</span>
+            <span v-if="s.external_source" class="provider-badge" :title="`Billed energy and cost, imported from ${providerLabel(s)}`">{{ providerLabel(s) }}</span>
             <span v-if="s.cost_manual || s.manual_price_kwh != null" class="manual-badge" :title="s.cost_manual ? 'Cost entered by hand: kept by the automatic recalculations' : `Priced at €${s.manual_price_kwh}/kWh, entered by hand`">manual</span>
           </span>
           <span class="cell cell-edit">
@@ -240,6 +249,7 @@
               <Layers :size="11" />×{{ editingSession.parts }}
             </span>
             <span v-if="editingSession.duplicate_of_id" class="duplicate-badge"><CopyX :size="11" /> Possible duplicate</span>
+            <span v-if="editingSession.external_source" class="provider-badge">{{ providerLabel(editingSession) }}</span>
           </p>
           <div v-if="editingSession.duplicate_of_id" class="duplicate-note">
             <CopyX :size="14" />
@@ -307,6 +317,14 @@
           </template>
           <div v-else class="map-empty">No GPS position recorded for this session</div>
 
+          <EvdcLinkPanel
+            v-if="evdcConnected || editingSession.external_source === 'evdc'"
+            :key="`${editingSession.id}-${editingSession.start_ts}-${editingSession.external_id}`"
+            :vin="vin"
+            :session="editingSession"
+            @changed="onEvdcLinkChanged"
+          />
+
           <div class="session-edit">
             <div class="session-edit-title"><Pencil :size="13" /> Edit session</div>
             <div class="session-edit-grid">
@@ -331,9 +349,9 @@
                   <button
                     v-if="editingSession.id"
                     class="btn-recalc"
-                    :disabled="recalculatingId === editingSession.id"
+                    :disabled="recalculatingId === editingSession.id || !!editingSession.external_source"
                     @click="recalcSession(editingSession)"
-                    title="Recalculate energy &amp; cost from current data"
+                    :title="editingSession.external_source ? `Energy and cost are billed by ${providerLabel(editingSession)}: import again to refresh them` : 'Recalculate energy & cost from current data'"
                   >
                     <RotateCw :size="14" :class="{ spinning: recalculatingId === editingSession.id }" />
                   </button>
@@ -362,6 +380,13 @@
               </div>
               <div class="form-group span-2">
                 <label>Extra costs</label>
+                <ul v-if="editForm.providerExtras.length" class="provider-extras">
+                  <li v-for="(e, i) in editForm.providerExtras" :key="i">
+                    <span>{{ e.label }}</span>
+                    <span class="provider-badge">{{ providerLabel(editingSession) }}</span>
+                    <strong>€{{ (e.cost ?? 0).toFixed(2) }}</strong>
+                  </li>
+                </ul>
                 <ChargingExtrasEditor v-model="editForm.extras" :context="extrasContext" />
               </div>
               <div class="session-total span-2">
@@ -499,6 +524,16 @@
       </div>
     </Teleport>
 
+    <EvdcImportDialog
+      v-if="evdcImportOpen"
+      :vin="vin"
+      :year="selectedMonth.getFullYear()"
+      :month="selectedMonth.getMonth() + 1"
+      :month-label="monthLabel"
+      @close="evdcImportOpen = false"
+      @imported="loadData"
+    />
+
     <!-- Calculate missing costs dialog -->
     <Teleport to="body">
       <div v-if="bulkOpen" class="modal-backdrop" @click.self="closeBulkDialog">
@@ -589,7 +624,9 @@ import { accentHex } from '../utils/theme'
 import { parseUTC } from '../utils/maintenance'
 import { extraCost, extraPayload, sessionTotal } from '../utils/chargingExtras'
 import ChargingExtrasEditor from '../components/ChargingExtrasEditor.vue'
-import { Zap, TrendingUp, PieChart, Clock, CalendarDays, ChevronLeft, ChevronRight, List, Pencil, MapPin, RotateCw, Calculator, Trash2, Combine, Layers, CopyX, AlertTriangle } from 'lucide-vue-next'
+import EvdcImportDialog from '../components/EvdcImportDialog.vue'
+import EvdcLinkPanel from '../components/EvdcLinkPanel.vue'
+import { Zap, TrendingUp, PieChart, Clock, CalendarDays, ChevronLeft, ChevronRight, List, Pencil, MapPin, RotateCw, Calculator, Trash2, Combine, Layers, CopyX, AlertTriangle, Receipt } from 'lucide-vue-next'
 
 Chart.register(...registerables)
 
@@ -637,6 +674,7 @@ const liveExtrasTotal = computed(() => {
   const amounts = (editForm.value.extras || [])
     .filter(e => e.included)
     .map(e => extraCost(e, extrasContext.value))
+    .concat((editForm.value.providerExtras || []).filter(e => e.included).map(e => e.cost))
     .filter(v => v != null)
   return amounts.length ? amounts.reduce((a, b) => a + b, 0) : null
 })
@@ -648,14 +686,18 @@ const liveTotal = computed(() => {
 const autoCostHint = computed(() => {
   const s = editingSession.value
   if (!s || s.cost == null || !isAutoCost(s)) return 'Auto'
-  if (editForm.value.costMode === 'total') return `Auto: €${s.cost.toFixed(2)}`
+  const source = s.external_source ? providerLabel(s) : 'Auto'
+  if (editForm.value.costMode === 'total') return `${source}: €${s.cost.toFixed(2)}`
   return s.energy_kwh ? `Auto: €${(s.cost / s.energy_kwh).toFixed(3)}` : 'Auto'
 })
 // Under the cost field: the total of a price per kWh, the price of a total
 const costHint = computed(() => {
   const value = numOrNull(editForm.value.cost)
   const energy = liveEnergy.value
-  if (value == null) return "Priced with the tier's price"
+  if (value == null) {
+    const s = editingSession.value
+    return s?.external_source ? `Billed by ${providerLabel(s)}` : "Priced with the tier's price"
+  }
   if (editForm.value.costMode === 'per_kwh') {
     return energy == null ? 'Needs the energy' : `= €${(energy * value).toFixed(2)} (${energy.toFixed(1)} kWh × €${value.toFixed(3)})`
   }
@@ -664,6 +706,25 @@ const costHint = computed(() => {
 const editError = ref('')
 const saving = ref(false)
 const recalculatingId = ref(null)
+// Charging provider (EVDC): connected account and import dialog
+const evdcConnected = ref(false)
+const evdcImportOpen = ref(false)
+const PROVIDER_LABELS = { evdc: 'EVDC' }
+const providerLabel = s => PROVIDER_LABELS[s?.external_source] || s?.external_source || ''
+// Linked or unlinked in the session dialog: reload and show the fresh session
+async function onEvdcLinkChanged(sc) {
+  await loadData()
+  const fresh = monthSessions.value.find(s => s.id === sc.id)
+  if (fresh) editSession(fresh)
+  else closeSession()
+}
+async function loadEvdcStatus() {
+  try {
+    evdcConnected.value = (await api('GET', '/api/charging/providers/evdc')).connected
+  } catch {
+    evdcConnected.value = false
+  }
+}
 const loading = ref(true)
 const bulkOpen = ref(false)
 const bulkFallbackTier = ref(null)
@@ -887,7 +948,9 @@ function editSession(session) {
     // Only a cost entered by hand fills the field; empty = automatic
     costMode: session.manual_price_kwh != null ? 'per_kwh' : 'total',
     cost: session.manual_price_kwh ?? (session.cost_manual ? session.cost : ''),
-    extras: (session.extras || []).map(e => ({ ...e })),
+    // A provider's fees are shown read-only; the user's extras are editable
+    extras: (session.extras || []).filter(e => !e.source).map(e => ({ ...e })),
+    providerExtras: (session.extras || []).filter(e => e.source),
     note: session.note || '',
   }
   editError.value = ''
@@ -1240,6 +1303,7 @@ function skipReasonLabel(reason) {
 // Data loading
 async function loadData() {
   loading.value = true
+  loadEvdcStatus()
   try {
     const y = selectedMonth.value.getFullYear()
     const m = selectedMonth.value.getMonth()
@@ -1507,6 +1571,10 @@ watch(selectedMonth, loadData)
 .cell-cost { font-weight: 600; color: var(--amber); }
 .cell-edit { display: flex; justify-content: flex-end; }
 .cost-none { color: var(--muted); }
+.provider-badge { font-size: 9px; font-weight: 700; color: #4fc3f7; border: 1px solid color-mix(in srgb, #4fc3f7 50%, transparent); border-radius: 4px; padding: 0 4px; margin-left: 4px; vertical-align: middle; letter-spacing: 0.03em; }
+.provider-extras { list-style: none; padding: 0; margin: 0 0 8px; display: flex; flex-direction: column; gap: 4px; }
+.provider-extras li { display: flex; align-items: center; gap: 6px; font-size: 12px; border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; }
+.provider-extras li span:first-child { flex: 1; }
 .extras-badge { font-size: 9px; font-weight: 600; color: #ffb74d; border: 1px solid color-mix(in srgb, #ffb74d 50%, transparent); border-radius: 4px; padding: 0 4px; margin-left: 4px; vertical-align: middle; cursor: help; }
 .manual-badge { font-size: 9px; font-weight: 600; text-transform: uppercase; color: var(--muted); border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; margin-left: 4px; vertical-align: middle; }
 .tier-badge { font-size: 10px; padding: 2px 6px; border-radius: 4px; font-weight: 500; }

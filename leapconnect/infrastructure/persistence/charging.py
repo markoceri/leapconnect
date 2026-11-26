@@ -182,6 +182,9 @@ class SqlChargingRepository(SqlRepositoryBase, ChargingRepository):
                 cost_manual=bool(r.cost_manual),
                 energy_manual=bool(r.energy_manual),
                 manual_price_kwh=r.manual_price_kwh,
+                external_source=r.external_source,
+                external_id=r.external_id,
+                auto_link_disabled=bool(r.auto_link_disabled),
                 extras=extras.get(r.id, []),
             )
             for r in rows
@@ -207,6 +210,9 @@ class SqlChargingRepository(SqlRepositoryBase, ChargingRepository):
             row.cost_manual = sc.cost_manual
             row.energy_manual = sc.energy_manual
             row.manual_price_kwh = sc.manual_price_kwh
+            row.external_source = sc.external_source
+            row.external_id = sc.external_id
+            row.auto_link_disabled = sc.auto_link_disabled
             await session.flush()
             sc.id = row.id
             # The extras are part of the record: replaced as a whole
@@ -222,6 +228,21 @@ class SqlChargingRepository(SqlRepositoryBase, ChargingRepository):
                 extra.id = extra_row.id
             await session.commit()
             return sc
+
+    async def get_external_links(self, source: str) -> dict[str, tuple[str, int]]:
+        """Records imported from a provider, any vehicle:
+        ``{external_id: (vin, record id)}``."""
+        stmt = select(
+            ChargingSessionCostRow.external_id,
+            ChargingSessionCostRow.vin,
+            ChargingSessionCostRow.id,
+        ).where(
+            ChargingSessionCostRow.external_source == source,
+            ChargingSessionCostRow.external_id.is_not(None),
+        )
+        async with self._session_factory() as session:
+            result = await session.execute(stmt)
+            return {eid: (vin, cid) for eid, vin, cid in result.all()}
 
     async def delete_session_cost(self, cost_id: int) -> bool:
         """Delete a session cost record and its extras."""
@@ -254,6 +275,7 @@ _EXTRA_FIELDS = (
     "cap",
     "minutes",
     "cost",
+    "source",
 )
 
 

@@ -265,6 +265,11 @@ class ChargingRepository(abc.ABC):
         """Create or update a session cost record."""
 
     @abc.abstractmethod
+    async def get_external_links(self, source: str) -> dict[str, tuple[str, int]]:
+        """Records imported from a provider, any vehicle:
+        ``{external_id: (vin, record id)}``."""
+
+    @abc.abstractmethod
     async def delete_session_cost(self, cost_id: int) -> bool:
         """Delete a session cost record."""
 
