@@ -116,28 +116,36 @@ def _overlap(ps: ProviderSession, row: ChargeSessionRow) -> timedelta | None:
     return hi - lo if hi >= lo else None
 
 
-def _charger_distance_m(ps: ProviderSession, row: ChargeSessionRow) -> float | None:
-    """Metres between the charger and where the vehicle charged; ``None``
+def _distance_to_row_m(
+    latitude: float | None, longitude: float | None, row: ChargeSessionRow
+) -> float | None:
+    """Metres between a charger and where the vehicle charged; ``None``
     when either position is unknown. Some provider records have latitude and
     longitude swapped: the closer reading counts."""
-    if ps.latitude is None or ps.longitude is None or row.location is None:
+    if latitude is None or longitude is None or row.location is None:
         return None
     lat, lon = row.location
     return min(
-        haversine_distance_m(ps.latitude, ps.longitude, lat, lon),
-        haversine_distance_m(ps.longitude, ps.latitude, lat, lon),
+        haversine_distance_m(latitude, longitude, lat, lon),
+        haversine_distance_m(longitude, latitude, lat, lon),
     )
+
+
+def _charger_distance_m(ps: ProviderSession, row: ChargeSessionRow) -> float | None:
+    return _distance_to_row_m(ps.latitude, ps.longitude, row)
+
+
+def _far_problem(distance: float | None) -> list[str]:
+    if distance is not None and distance > MAX_DISTANCE_M:
+        return [f"charger {distance / 1000:.1f} km from where the car charged"]
+    return []
 
 
 def match_problems(ps: ProviderSession, row: ChargeSessionRow) -> tuple[str, ...]:
     """Why a provider session overlapping ``row`` may be another vehicle's:
     a charger far from where the vehicle charged, or an energy that doesn't
     fit the one the vehicle measured. Unknown data is no problem."""
-    problems = []
-    distance = _charger_distance_m(ps, row)
-    if distance is not None and distance > MAX_DISTANCE_M:
-        km = distance / 1000
-        problems.append(f"charger {km:.1f} km from where the car charged")
+    problems = _far_problem(_charger_distance_m(ps, row))
     measured = [p.energy_kwh for p in row.parts if p.energy_kwh]
     if measured and ps.energy_kwh:
         battery = sum(measured)
@@ -318,3 +326,52 @@ def unlink_provider_session(
     sc.external_source = sc.external_id = sc.evse_id = None
     sc.provider_account_id = None
     sc.auto_link_disabled = disable_auto_link
+
+
+# -- sessions in progress --------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class ProviderOngoingSession:
+    """A provider session in progress: no energy or cost yet (billed when it
+    ends, under the same ``external_id``), but the charging point and the
+    tariff are known. Times are naive UTC."""
+
+    provider: str
+    external_id: str
+    account_id: int | None = None
+    created_at: datetime | None = None
+    charging_started_at: datetime | None = None  # None: energy not flowing yet
+    price_kwh: float | None = None  # the applied tariff
+    pre_auth_amount: float | None = None  # held on the wallet / card
+    evse_id: str | None = None
+    operator: str | None = None
+    station: ChargingStation | None = None
+
+    @property
+    def key(self) -> tuple[str, str]:
+        return self.provider, self.external_id
+
+    @property
+    def started_at(self) -> datetime | None:
+        return self.charging_started_at or self.created_at
+
+
+def ongoing_problems(
+    ongoing: ProviderOngoingSession, row: ChargeSessionRow | None
+) -> tuple[str, ...]:
+    """Why a session in progress may not be this vehicle's charge: the
+    vehicle isn't charging, it started much earlier than the vehicle's
+    charge, or its charger is far from the car. Unknown data is no problem."""
+    if row is None:
+        return ("the car isn't charging",)
+    problems = []
+    start = ongoing.started_at
+    if start is not None and start < naive_utc(row.start_ts) - CANDIDATE_WINDOW:
+        problems.append("started long before the car's charge")
+    station = ongoing.station
+    if station is not None:
+        problems += _far_problem(
+            _distance_to_row_m(station.latitude, station.longitude, row)
+        )
+    return tuple(problems)

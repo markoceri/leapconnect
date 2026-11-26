@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import copy
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
@@ -36,10 +36,12 @@ from leapconnect.domain.charging.providers import (
     UNMATCHED,
     ProviderCandidate,
     ProviderMatch,
+    ProviderOngoingSession,
     ProviderSession,
     apply_provider_session,
     match_provider_sessions,
     new_record_for,
+    ongoing_problems,
     rank_candidates,
     unlink_provider_session,
 )
@@ -524,3 +526,94 @@ async def charge_sites(repo: AppRepository, vin: str) -> list[ChargeSite]:
     )
     stations = await repo.get_charging_stations(keys) if keys else {}
     return group_charge_sites(records, stations)
+
+
+# -- sessions in progress --------------------------------------------------------
+
+
+@dataclass
+class OngoingItem:
+    """A provider session in progress and the vehicle's charge it may be."""
+
+    session: ProviderOngoingSession
+    row: ChargeSessionRow | None  # the vehicle's open charge, if charging
+    problems: tuple[str, ...] = ()  # why it may be another vehicle's charge
+    linked_to: tuple[str, int] | None = None  # already linked (another record)
+
+    @property
+    def plausible(self) -> bool:
+        return not self.problems and self.linked_to is None
+
+    @property
+    def estimated_cost(self) -> float | None:
+        """The tariff × the energy the car took so far."""
+        energy = self.row.energy_kwh if self.row else None
+        if self.session.price_kwh is None or energy is None:
+            return None
+        return round(self.session.price_kwh * energy, 2)
+
+
+@dataclass
+class OngoingResult:
+    items: list[OngoingItem] = field(default_factory=list)
+    errors: dict[str, str] = field(default_factory=dict)  # provider -> message
+
+
+async def _with_station(
+    repo: AppRepository, provider: ChargingProvider, o: ProviderOngoingSession
+) -> ProviderOngoingSession:
+    """The session with its charging point: as it came, cached, or read."""
+    if o.station is not None or not o.evse_id:
+        if o.station is not None:
+            await repo.upsert_charging_stations([o.station])
+        return o
+    key = (o.provider, o.evse_id)
+    station = (await repo.get_charging_stations([key])).get(key)
+    if station is None:
+        try:
+            station = await provider.get_station(o.evse_id)
+        except ChargingProviderError:
+            station = None
+        if station is not None:
+            await repo.upsert_charging_stations([station])
+    return replace(o, station=station) if station is not None else o
+
+
+async def ongoing_provider_sessions(
+    repo: AppRepository,
+    providers: Sequence[ChargingProvider],
+    vin: str,
+    now: datetime,
+) -> OngoingResult:
+    """The connected accounts' sessions in progress, each with the vehicle's
+    open charge and why it may not be this vehicle's (``problems``): the car
+    isn't charging, or the charger is far from it."""
+    result = OngoingResult()
+    sessions: dict[tuple[str, str], tuple[ChargingProvider, ProviderOngoingSession]]
+    sessions = {}
+    for p in providers:
+        if not p.connected:
+            continue
+        try:
+            for o in await p.get_ongoing_sessions():
+                sessions.setdefault(o.key, (p, o))
+        except ChargingProviderError as exc:
+            result.errors[p.provider] = str(exc)
+    if not sessions:
+        return result
+    rows = await list_sessions(repo, vin, now - timedelta(days=2), now)
+    row = next((r for r in rows if r.end_ts is None), None)
+    links = await _external_links(repo, [p for p, _o in sessions.values()])
+    own = row.record.id if row and row.record else None
+    for p, o in sessions.values():
+        o = await _with_station(repo, p, o)
+        link = links.get(o.key)
+        result.items.append(
+            OngoingItem(
+                o,
+                row,
+                ongoing_problems(o, row),
+                link if link and link[1] != own else None,
+            )
+        )
+    return result

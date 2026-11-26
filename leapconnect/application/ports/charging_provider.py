@@ -9,7 +9,10 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from datetime import datetime
 
-    from leapconnect.domain.charging.providers import ProviderSession
+    from leapconnect.domain.charging.providers import (
+        ProviderOngoingSession,
+        ProviderSession,
+    )
     from leapconnect.domain.charging.stations import ChargingStation
 
 
@@ -61,6 +64,10 @@ class ChargingProvider(ABC):
     @abstractmethod
     async def fetch_sessions(self, since: datetime) -> list[ProviderSession]:
         """Billed sessions started since ``since`` (naive UTC), oldest first."""
+
+    @abstractmethod
+    async def get_ongoing_sessions(self) -> list[ProviderOngoingSession]:
+        """The account's sessions in progress (none billed yet)."""
 
     @abstractmethod
     async def get_receipt(self, external_id: str) -> tuple[str | None, bytes]:

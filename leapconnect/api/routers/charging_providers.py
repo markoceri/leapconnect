@@ -3,7 +3,7 @@ sessions, browse their charging points and the places the vehicle charged."""
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
@@ -29,6 +29,8 @@ from leapconnect.api.schemas.charging_providers import (
     ProviderLinkRequest,
     ProviderLoginRequest,
     ProviderLoginResponse,
+    ProviderOngoingResponse,
+    ProviderOngoingSchema,
     ProviderSessionSchema,
     ProvidersResponse,
     ProviderTypeSchema,
@@ -43,6 +45,7 @@ from leapconnect.application.charging_providers import (
     get_station,
     link_provider_session,
     locate_sessions,
+    ongoing_provider_sessions,
     preview_provider_import,
     unlink_provider_record,
 )
@@ -487,4 +490,51 @@ async def get_receipt(
         content=content,
         media_type="application/pdf",
         headers={"Content-Disposition": f'inline; filename="{name}"'},
+    )
+
+
+@router.get(
+    "/api/vehicles/{vin}/charging-costs/ongoing",
+    response_model=ProviderOngoingResponse,
+)
+async def get_ongoing_sessions(
+    vin: str, repo: RepoDep, registry: RegistryDep
+) -> ProviderOngoingResponse:
+    """The connected accounts' sessions in progress: charging point and
+    tariff, the cost estimated on the energy the car took so far, and
+    whether it is plausibly this vehicle's charge."""
+    now = datetime.now(UTC).replace(tzinfo=None)
+    result = await ongoing_provider_sessions(repo, registry.connected(), vin, now)
+    sessions = []
+    for item in result.items:
+        o = item.session
+        account = registry.get(o.account_id) if o.account_id is not None else None
+        sessions.append(
+            ProviderOngoingSchema(
+                provider=o.provider,
+                provider_label=_label(o.provider),
+                account_id=o.account_id,
+                account_username=account.username if account else None,
+                external_id=o.external_id,
+                created_at=o.created_at.isoformat() if o.created_at else None,
+                charging_started_at=o.charging_started_at.isoformat()
+                if o.charging_started_at
+                else None,
+                price_kwh=o.price_kwh,
+                pre_auth_amount=o.pre_auth_amount,
+                operator=o.operator,
+                evse_id=o.evse_id,
+                station=_station_schema(o.station) if o.station else None,
+                row_start_ts=item.row.start_ts.isoformat() if item.row else None,
+                energy_kwh=item.row.energy_kwh if item.row else None,
+                estimated_cost=item.estimated_cost,
+                problems=list(item.problems),
+                plausible=item.plausible,
+                linked_vin=item.linked_to[0] if item.linked_to else None,
+                linked_cost_id=item.linked_to[1] if item.linked_to else None,
+            )
+        )
+    return ProviderOngoingResponse(
+        sessions=sessions,
+        errors={_label(k): v for k, v in result.errors.items()},
     )

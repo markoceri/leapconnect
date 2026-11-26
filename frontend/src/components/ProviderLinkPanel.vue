@@ -37,6 +37,12 @@
       </div>
     </template>
 
+    <!-- Still charging: the provider bills it when it ends -->
+    <template v-else-if="!session.end_ts">
+      <p class="note">Still charging: its billed session is linked once the provider bills it.</p>
+      <ProviderOngoingStrip :vin="vin" />
+    </template>
+
     <!-- Not linked -->
     <template v-else>
       <p v-if="session.auto_link_disabled" class="note">Unlinked by you: the automatic import won't link it again.</p>
@@ -93,6 +99,7 @@ import { FileText, MapPin, Receipt } from 'lucide-vue-next'
 import { api } from '../composables/useApi'
 import { parseUTC } from '../utils/maintenance'
 import { plugLabel, statusClass } from '../utils/chargingStations'
+import ProviderOngoingStrip from './ProviderOngoingStrip.vue'
 
 const props = defineProps({
   vin: { type: String, required: true },
@@ -162,7 +169,7 @@ async function loadCandidates() {
 onMounted(() => {
   if (props.session.external_source) {
     if (props.session.evse_id) loadStation()
-  } else {
+  } else if (props.session.end_ts) {
     loadCandidates()
   }
 })

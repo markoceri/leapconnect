@@ -190,3 +190,34 @@ class ProviderLinkRequest(BaseModel):
     # The session: its record, or its start when seen only in the history
     cost_id: int | None = None
     start_ts: str | None = None
+
+
+# -- sessions in progress --------------------------------------------------------
+
+
+class ProviderOngoingSchema(BaseModel):
+    provider: str
+    provider_label: str
+    account_id: int | None = None
+    account_username: str | None = None
+    external_id: str
+    created_at: str | None = None
+    charging_started_at: str | None = None  # None: energy not flowing yet
+    price_kwh: float | None = None  # the applied tariff
+    pre_auth_amount: float | None = None
+    operator: str | None = None
+    evse_id: str | None = None
+    station: ChargingStationSchema | None = None
+    # The vehicle's open charge it matches
+    row_start_ts: str | None = None
+    energy_kwh: float | None = None  # taken by the car so far
+    estimated_cost: float | None = None  # tariff × energy so far
+    problems: list[str] = []  # why it may be another vehicle's charge
+    plausible: bool = False
+    linked_vin: str | None = None
+    linked_cost_id: int | None = None
+
+
+class ProviderOngoingResponse(BaseModel):
+    sessions: list[ProviderOngoingSchema]
+    errors: dict[str, str] = {}

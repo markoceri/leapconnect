@@ -24,6 +24,7 @@ from evdc_network_api import (
     EvdcApiError,
     EvdcAuthError,
     EvdcTwoFactorRequiredError,
+    Evse,
 )
 
 from leapconnect.application.ports.charging_provider import (
@@ -31,11 +32,15 @@ from leapconnect.application.ports.charging_provider import (
     ChargingProviderError,
 )
 from leapconnect.domain.charging.models import ChargingProviderAccount
-from leapconnect.domain.charging.providers import ProviderFee, ProviderSession
+from leapconnect.domain.charging.providers import (
+    ProviderFee,
+    ProviderOngoingSession,
+    ProviderSession,
+)
 from leapconnect.domain.charging.stations import ChargingStation
 
 if TYPE_CHECKING:
-    from evdc_network_api import ChargingSession, Evse
+    from evdc_network_api import ChargingSession, OngoingSession
 
     from leapconnect.application.ports.repositories import AppRepository
 
@@ -45,6 +50,9 @@ PROVIDER = "evdc"
 LABEL = "EVDC"
 DEVICE_MODEL = "LeapConnect"
 HISTORY_PAGE_SIZE = 20
+
+# Sessions in progress: polled while the car charges, read at most this often
+ONGOING_CACHE_TTL = 30.0  # seconds
 
 # Charging points search: a bounded walk (the backend pages nearest first,
 # with no radius of its own), and a short cache for map pans back and forth
@@ -158,6 +166,33 @@ def to_provider_session(
     )
 
 
+def to_ongoing_session(
+    s: OngoingSession, account_id: int | None = None
+) -> ProviderOngoingSession | None:
+    """A session in progress; ``None`` for a failed or stopped one."""
+    external_id = s.session_id
+    if not external_id or s.is_failed or s.is_stop:
+        return None
+    station_data = s.raw.get("chargingStation")
+    station = None
+    if isinstance(station_data, dict) and station_data:
+        station = to_station(Evse.from_dict(station_data), s.evse_id)
+    return ProviderOngoingSession(
+        provider=PROVIDER,
+        external_id=external_id,
+        account_id=account_id,
+        created_at=_naive_utc(s.created_at),
+        charging_started_at=_naive_utc(s.charging_start)
+        if s.is_charging_started
+        else None,
+        price_kwh=s.cost_per_kwh,
+        pre_auth_amount=s.pre_auth_amount,
+        evse_id=s.evse_id,
+        operator=s.operator,
+        station=station,
+    )
+
+
 def _error(exc: EvdcApiError) -> ChargingProviderError:
     return ChargingProviderError(f"{LABEL}: {exc}", auth=isinstance(exc, EvdcAuthError))
 
@@ -177,6 +212,7 @@ class EvdcService(ChargingProvider):
         self._pending: AsyncEvdcApiClient | None = None  # waiting for a 2FA code
         self._lock = asyncio.Lock()
         self._stations_cache: dict[tuple, tuple[float, list[ChargingStation]]] = {}
+        self._ongoing_cache: tuple[float, list[ProviderOngoingSession]] | None = None
         c = self.account.credentials
         if self.account.username and c.get("device_key") and c.get("user_id"):
             self._client = AsyncEvdcApiClient(
@@ -341,6 +377,26 @@ class EvdcService(ChargingProvider):
                 await self._save_tokens()
             await self._record(error=None)
             return sorted(sessions, key=lambda s: s.started_at)
+
+    async def get_ongoing_sessions(self) -> list[ProviderOngoingSession]:
+        now = time.monotonic()
+        if self._ongoing_cache and now - self._ongoing_cache[0] < ONGOING_CACHE_TTL:
+            return self._ongoing_cache[1]
+        async with self._lock:
+            client = self._require_client()
+            try:
+                found = await client.get_ongoing_sessions()
+            except EvdcApiError as exc:
+                raise _error(exc) from exc
+            finally:
+                await self._save_tokens()
+        sessions = [
+            o
+            for s in found
+            if (o := to_ongoing_session(s, self.account.id)) is not None
+        ]
+        self._ongoing_cache = (now, sessions)
+        return sessions
 
     async def get_receipt(self, external_id: str) -> tuple[str | None, bytes]:
         async with self._lock:

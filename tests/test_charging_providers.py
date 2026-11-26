@@ -1,6 +1,7 @@
 """Charging providers (EVDC, ...): matching, applying and importing billed
 sessions, charging points and charge sites."""
 
+from dataclasses import replace
 from datetime import datetime, timedelta
 
 import pytest
@@ -254,8 +255,9 @@ class FakeProvider(ChargingProvider):
     provider = "evdc"
     label = "EVDC"
 
-    def __init__(self, sessions, connected=True, account_id=7, stations=()):
+    def __init__(self, sessions, connected=True, account_id=7, stations=(), ongoing=()):
         self.sessions = list(sessions)
+        self.ongoing = list(ongoing)
         self._connected = connected
         self._account_id = account_id
         self._auto_sync = True
@@ -286,6 +288,9 @@ class FakeProvider(ChargingProvider):
 
     async def fetch_sessions(self, since):
         return [s for s in self.sessions if s.started_at >= since]
+
+    async def get_ongoing_sessions(self):
+        return list(self.ongoing)
 
     async def get_receipt(self, external_id):
         return "receipt.pdf", b"%PDF-1.4 receipt " + external_id.encode()
@@ -822,3 +827,102 @@ async def test_the_first_version_evdc_account_is_moved(sql_repo):
     # Once only
     await registry.load()
     assert len(await sql_repo.get_provider_accounts()) == 1
+
+
+# -- sessions in progress --------------------------------------------------------
+
+
+def test_evdc_ongoing_session_mapping():
+    from evdc_network_api import OngoingSession
+
+    from leapconnect.infrastructure.evdc.service import to_ongoing_session
+
+    raw = {
+        "sessionId": "S9",
+        "evseId": "IT*EWI*E1",
+        "operator": "Ewiva",
+        "amount": 0,
+        "createdAt": "2026-11-26T10:00:00Z",
+        "isChargingStarted": True,
+        "notificationDetails": {"chargingStart": "2026-11-26T10:02:00Z"},
+        "pricingDetails": {"costKwh": 0.59, "PreAuthHoldAmount": 30},
+        "chargingStation": {
+            "EvseData": {
+                "EvseID": "IT*EWI*E1",
+                "ChargingFacilities": [{"Power": 150, "PowerType": "DC"}],
+            }
+        },
+    }
+    o = to_ongoing_session(OngoingSession.from_dict(raw), account_id=3)
+    assert (o.external_id, o.account_id, o.price_kwh, o.pre_auth_amount) == (
+        "S9",
+        3,
+        0.59,
+        30,
+    )
+    assert o.charging_started_at == datetime(2026, 11, 26, 10, 2)  # naive UTC
+    assert o.station.is_dc is True
+    stopped = OngoingSession.from_dict({**raw, "isStop": True})
+    assert to_ongoing_session(stopped) is None
+
+
+def _ongoing(**kwargs):
+    from leapconnect.domain.charging.providers import ProviderOngoingSession
+
+    fields = dict(
+        provider="evdc",
+        external_id="S9",
+        account_id=7,
+        created_at=T0,
+        charging_started_at=T0,
+        price_kwh=0.59,
+        evse_id=STATION.evse_id,
+    )
+    return ProviderOngoingSession(**{**fields, **kwargs})
+
+
+def test_ongoing_session_plausibility():
+    from leapconnect.domain.charging.providers import ongoing_problems
+
+    open_row = ChargeSessionRow(
+        start_ts=T0,
+        end_ts=None,
+        parts=(
+            DetectedChargeSession(
+                start_ts=T0, end_ts=None, latitude=MILANO[0], longitude=MILANO[1]
+            ),
+        ),
+    )
+    assert ongoing_problems(_ongoing(station=STATION), open_row) == ()
+    far = replace(STATION, latitude=TORINO[0], longitude=TORINO[1])
+    assert (
+        "km from where the car charged"
+        in (ongoing_problems(_ongoing(station=far), open_row)[0])
+    )
+    assert ongoing_problems(_ongoing(), None) == ("the car isn't charging",)
+
+
+async def test_ongoing_sessions_use_case():
+    from leapconnect.application.charging_providers import ongoing_provider_sessions
+
+    now = T0 + timedelta(hours=1, minutes=10)
+    snaps = _snaps(MILANO, start=T0)  # still charging
+    repo = _Repo(snaps=snaps)
+    provider = FakeProvider([], ongoing=[_ongoing()], stations=[STATION])
+    result = await ongoing_provider_sessions(repo, [provider], "V1", now)
+    [item] = result.items
+    # The charging point read from the provider (and cached)
+    assert item.session.station == STATION
+    assert item.row is not None and item.row.end_ts is None
+    assert item.plausible
+    assert item.estimated_cost == round(0.59 * item.row.energy_kwh, 2)
+
+
+def test_ongoing_endpoint(auth_client, provider):
+    provider.ongoing = [_ongoing(station=STATION)]
+    response = auth_client.get("/api/vehicles/V1/charging-costs/ongoing")
+    assert response.status_code == 200
+    [item] = response.json()["sessions"]
+    assert item["price_kwh"] == 0.59 and item["station"]["name"] == "Ewiva Milano"
+    # No open charge of the car: not plausible
+    assert item["plausible"] is False and item["problems"] == ["the car isn't charging"]
