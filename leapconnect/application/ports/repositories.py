@@ -13,9 +13,11 @@ from typing import Any
 
 from leapconnect.domain.charging.models import (
     ChargingPriceTier,
+    ChargingProviderAccount,
     ChargingSessionCost,
     ChargingTimeBand,
 )
+from leapconnect.domain.charging.stations import ChargingStation
 from leapconnect.domain.notifications.models import (
     NotificationChannel,
     NotificationPreference,
@@ -265,8 +267,42 @@ class ChargingRepository(abc.ABC):
         """Create or update a session cost record."""
 
     @abc.abstractmethod
+    async def get_external_links(self, source: str) -> dict[str, tuple[str, int]]:
+        """Records imported from a provider, any vehicle:
+        ``{external_id: (vin, record id)}``."""
+
+    @abc.abstractmethod
     async def delete_session_cost(self, cost_id: int) -> bool:
         """Delete a session cost record."""
+
+
+class ChargingProviderRepository(abc.ABC):
+    """Connected charging provider accounts and the cached charging points."""
+
+    @abc.abstractmethod
+    async def get_provider_accounts(self) -> list[ChargingProviderAccount]:
+        """All the connected accounts, oldest first."""
+
+    @abc.abstractmethod
+    async def save_provider_account(
+        self, account: ChargingProviderAccount
+    ) -> ChargingProviderAccount:
+        """Create or update an account (its credentials encrypted at rest)."""
+
+    @abc.abstractmethod
+    async def delete_provider_account(self, account_id: int) -> bool:
+        """Forget an account (the sessions imported with it stay)."""
+
+    @abc.abstractmethod
+    async def upsert_charging_stations(self, stations: list[ChargingStation]) -> None:
+        """Cache the details of charging points (live fields are not kept)."""
+
+    @abc.abstractmethod
+    async def get_charging_stations(
+        self, keys: list[tuple[str, str]] | None = None
+    ) -> dict[tuple[str, str], ChargingStation]:
+        """Cached charging points by ``(provider, evse_id)``; all when
+        ``keys`` is ``None``."""
 
 
 class MaintenanceRepository(abc.ABC):
@@ -359,6 +395,7 @@ class AppRepository(
     NotificationRepository,
     ZoneRepository,
     ChargingRepository,
+    ChargingProviderRepository,
     MaintenanceRepository,
 ):
     """Combined persistence port implemented by the SQLite adapter.

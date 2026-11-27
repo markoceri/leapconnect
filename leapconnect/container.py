@@ -45,6 +45,7 @@ from leapconnect.application.vehicle_cache import VehicleStatusCache
 from leapconnect.domain.identity.sessions import SessionStore
 from leapconnect.domain.identity.throttle import LoginThrottle
 from leapconnect.infrastructure.abrp.service import AbrpService
+from leapconnect.infrastructure.charging_providers import ChargingProviderRegistry
 from leapconnect.infrastructure.logbuffer import RingBufferHandler
 from leapconnect.infrastructure.mqtt.home_assistant import HomeAssistantMqttService
 from leapconnect.infrastructure.persistence.sqlite_adapter import (
@@ -73,6 +74,9 @@ class AppContainer:
         self.scheduler: VehicleDataScheduler | None = None
         self.mqtt_service: HomeAssistantMqttService | None = None
         self.abrp_service: AbrpService | None = None
+        self.charging_providers: ChargingProviderRegistry | None = None
+        # Charging sessions already looked up for their position (charge sites)
+        self.located_sessions: set[int] = set()
         self.vehicle_cache: VehicleStatusCache | None = None
         self.notification_dispatcher: NotificationDispatcher | None = None
         self.disk_monitor: DiskSpaceMonitor | None = None
@@ -658,6 +662,14 @@ class AppContainer:
         )
         _LOGGER.info("ABRP service initialised: enabled=%s", abrp_settings.enabled)
 
+        # Charging provider accounts (billed sessions of public charges)
+        self.charging_providers = ChargingProviderRegistry(self.repo)
+        await self.charging_providers.load()
+        self.scheduler.set_charging_providers(self.charging_providers.all)
+        _LOGGER.info(
+            "Charging providers: %d account(s)", len(self.charging_providers.all())
+        )
+
         # Initialize live refresh from saved setting
         live_raw = await self.repo.get_setting("live_refresh_interval")
         self.live_refresh_interval = int(live_raw) if live_raw else 30
@@ -722,6 +734,8 @@ class AppContainer:
             await self.disk_monitor.stop()
         if self.abrp_service:
             await self.abrp_service.stop()
+        if self.charging_providers:
+            await self.charging_providers.close()
         if self.mqtt_service:
             await self.mqtt_service.stop()
         if self.scheduler:

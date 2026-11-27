@@ -114,6 +114,8 @@
             <div class="charging-sub">Voltage</div>
           </div>
         </div>
+        <!-- Public charge paid with a charging provider: charger, tariff, cost so far -->
+        <ProviderOngoingStrip v-if="vehicle?.vin" :vin="vehicle.vin" />
       </div>
     </div>
 
@@ -387,6 +389,7 @@
 </template>
 
 <script setup>
+import ProviderOngoingStrip from '../components/ProviderOngoingStrip.vue'
 import { ref, computed, watch, toValue, nextTick } from 'vue'
 import { useAppStore } from '../stores/appStore'
 import { useToast } from '../composables/useToast'

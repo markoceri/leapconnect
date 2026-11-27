@@ -11,6 +11,7 @@ dependencies = [
     "aiosqlite>=0.20.0",
     "alembic>=1.13.0",
     "leapmotor-api==0.6.0",
+    "evdc-network-api[live]==0.1.0",
     "Pillow>=10.0.0",
     "aiomqtt>=2.0.0",
     "httpx>=0.28.1",

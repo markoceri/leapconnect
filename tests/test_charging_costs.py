@@ -51,14 +51,15 @@ def _zone(tier="home_solar"):
     )
 
 
-def _snaps(pos, *, charge_state=1, kwh=(40.0, 50.0), start=T0, charging=True):
+def _snaps(pos, *, dc=False, kwh=(40.0, 50.0), start=T0, charging=True):
     """Two snapshots one hour apart, energy rising from kwh[0] to kwh[1]."""
     return [
         VehicleSnapshot(
             vin="V1",
             timestamp=start + timedelta(hours=i),
             battery_dump_energy=e * 1000,
-            battery_charge_state=charge_state,
+            battery_charge_state=1,  # charging, whatever the current type
+            battery_charging_power_kw=40.0 if dc else 7.4,
             battery_is_charging=charging,
             vehicle_latitude=pos[0] if pos else None,
             vehicle_longitude=pos[1] if pos else None,
@@ -97,6 +98,22 @@ class _Repo:
             sc.id = self._next_id
             self.costs.append(sc)
         return sc
+
+    async def get_external_links(self, source):
+        return {
+            c.external_id: (c.vin, c.id)
+            for c in self.costs
+            if c.external_source == source and c.external_id
+        }
+
+    async def upsert_charging_stations(self, stations):
+        stored = self.__dict__.setdefault("stations", {})
+        for st in stations:
+            stored[(st.provider, st.evse_id)] = st
+
+    async def get_charging_stations(self, keys=None):
+        stored = self.__dict__.get("stations", {})
+        return {k: v for k, v in stored.items() if keys is None or k in keys}
 
     async def delete_session_cost(self, cost_id):
         before = len(self.costs)
@@ -175,7 +192,7 @@ async def test_unknown_tier_uses_fallback():
 
 
 async def test_dc_snapshot_resolves_public_dc():
-    repo = _Repo(snaps=_snaps(None, charge_state=2))
+    repo = _Repo(snaps=_snaps(None, dc=True))
     result = await calculate_missing_costs(repo, "V1", [_detected()])
     assert result.calculated == 1
     assert repo.costs[0].tier_id == "public_dc"
@@ -474,7 +491,7 @@ def test_session_row_reports_where_it_charged():
     # Merged session: the latest run has no GPS fix, so the earlier one is used
     runs = detect_charge_sessions(
         [
-            *_snaps(HOME, charge_state=2),
+            *_snaps(HOME, dc=True),
             _idle(T0 + timedelta(hours=2)),
             *_snaps(None, start=T0 + timedelta(hours=3)),
         ]
@@ -704,3 +721,28 @@ def test_preferences_expose_auto_monthly_costs(auth_client):
     assert resp.json()["auto_calculate_monthly_costs"] is False
     bad = auth_client.put("/api/preferences", json={"auto_calculate_monthly_costs": 1})
     assert bad.status_code == 422
+
+
+def test_dc_detected_from_gun_signal_or_power():
+    from leapconnect.domain.charging.location import is_dc_charge
+
+    assert is_dc_charge(1, None)  # the fast-charge gun is inserted
+    assert is_dc_charge(None, 40.5)  # no signal, but only DC delivers 40 kW
+    assert not is_dc_charge(None, 7.4)  # AC power
+    assert not is_dc_charge(0, 11.0)
+    assert not is_dc_charge(None, None)
+
+
+def test_charge_state_is_not_a_dc_marker():
+    # charge_state 2 means "finished": a run reporting it is not DC
+    snaps = [
+        VehicleSnapshot(
+            vin="V1",
+            timestamp=T0,
+            battery_is_charging=True,
+            battery_charge_state=2,
+            battery_charging_power_kw=7.0,
+        )
+    ]
+    [run] = detect_charge_sessions(snaps)
+    assert not run.is_dc

@@ -15,6 +15,9 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from leapconnect.application.ports.repositories import AppRepository
 from leapconnect.infrastructure.persistence.account import SqlAccountRepository
 from leapconnect.infrastructure.persistence.charging import SqlChargingRepository
+from leapconnect.infrastructure.persistence.charging_providers import (
+    SqlChargingProviderRepository,
+)
 from leapconnect.infrastructure.persistence.maintenance import SqlMaintenanceRepository
 from leapconnect.infrastructure.persistence.migration import run_alembic_upgrade
 from leapconnect.infrastructure.persistence.notifications import (
@@ -42,6 +45,7 @@ class SqlAlchemyRepository(
     SqlNotificationRepository,
     SqlZoneRepository,
     SqlChargingRepository,
+    SqlChargingProviderRepository,
     SqlMaintenanceRepository,
     AppRepository,
 ):

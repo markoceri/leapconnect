@@ -15,6 +15,7 @@ from leapconnect import config
 from leapconnect.api.deps import PUBLIC_PATHS, SESSION_COOKIE_NAME
 from leapconnect.api.routers import (
     charging,
+    charging_providers,
     commands,
     connection,
     history,
@@ -92,6 +93,7 @@ def create_app() -> FastAPI:
     app.include_router(commands.router)
     app.include_router(trips.router)
     app.include_router(charging.router)
+    app.include_router(charging_providers.router)
     app.include_router(maintenance.router)
     app.include_router(notifications.router)
     app.include_router(zones.router)

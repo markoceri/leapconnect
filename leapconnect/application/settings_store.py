@@ -13,6 +13,13 @@ from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
 
 from leapconnect.domain.charging.costing import calculate_tou_cost, flat_cost
+from leapconnect.domain.charging.extras import (
+    AFTER_CHARGE_WINDOW,
+    find_departure,
+    find_unplug,
+    needs_after_charge,
+    price_extras,
+)
 from leapconnect.domain.charging.sessions import detect_charge_sessions
 from leapconnect.domain.settings.models import (
     AbrpSettings,
@@ -182,6 +189,8 @@ async def price_session(repo: AppRepository, sc: ChargingSessionCost) -> float |
     """
     if sc.energy_kwh is None:
         return None
+    if sc.manual_price_kwh is not None:
+        return flat_cost(sc.energy_kwh, sc.manual_price_kwh)
     runs = _measured_runs(await _session_window(repo, sc)) if sc.start_ts else []
     if len(runs) < 2:
         return await calculate_session_cost(
@@ -210,16 +219,49 @@ async def recalculate_session(
     truth for finalizing a session, shared by the auto-finalize on charge stop
     and the manual "recalculate" action. Energy is left untouched when it cannot
     be measured, so a cost computed mid-session is never silently discarded.
-    Values entered by hand (``energy_manual`` / ``cost_manual``) are kept: the
-    "recalculate" action clears the flags first to re-measure them.
+    Values entered by hand (``energy_manual`` / ``cost_manual``) or billed by a
+    charging provider are kept: the "recalculate" action clears the manual
+    flags first to re-measure them.
     """
-    if not sc.energy_manual:
+    if not sc.energy_locked:
         energy = await recompute_session_energy(repo, sc)
         if energy is not None:
             sc.energy_kwh = energy
-    if not sc.cost_manual and sc.energy_kwh is not None:
+    if not sc.cost_locked and sc.energy_kwh is not None:
         sc.cost = await price_session(repo, sc)
+    await price_session_extras(repo, sc)
     return sc
+
+
+async def price_session_extras(
+    repo: AppRepository, sc: ChargingSessionCost, history: list | None = None
+) -> None:
+    """Compute the extra costs of a session in place.
+
+    The unplug and departure times are looked for in ``history`` (the
+    snapshots after the charge are fetched when not given), only when a
+    time-based extra needs them.
+    """
+    unplug = departure = None
+    if sc.end_ts is not None and needs_after_charge(sc.extras):
+        if history is None:
+            history = await repo.get_history(
+                sc.vin,
+                from_date=sc.end_ts.date().isoformat(),
+                to_date=(sc.end_ts + AFTER_CHARGE_WINDOW).date().isoformat(),
+                max_points=None,
+            )
+        unplug = find_unplug(history, sc.end_ts)
+        departure = find_departure(history, sc.end_ts)
+    price_extras(
+        sc.extras,
+        energy_kwh=sc.energy_kwh,
+        energy_cost=sc.cost,
+        start_ts=sc.start_ts,
+        end_ts=sc.end_ts,
+        unplug_ts=unplug,
+        departure_ts=departure,
+    )
 
 
 async def load_mqtt_settings(repo: AppRepository | None) -> MqttSettings:

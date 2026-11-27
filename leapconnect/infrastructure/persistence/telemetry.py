@@ -48,6 +48,8 @@ class SqlTelemetryRepository(SqlRepositoryBase, TelemetryRepository):
             tire_rl_pressure=snapshot.tire_rear_left_pressure,
             tire_rr_pressure=snapshot.tire_rear_right_pressure,
             is_regening=snapshot.vehicle_is_regening,
+            dc_input_fast_charge=snapshot.battery_dc_input_fast_charge,
+            ac_input_slow_charge=snapshot.battery_ac_input_slow_charge,
         )
         async with self._session_factory() as session:
             session.add(row)
@@ -206,6 +208,8 @@ class SqlTelemetryRepository(SqlRepositoryBase, TelemetryRepository):
                 tire_rear_left_pressure=r.tire_rl_pressure,
                 tire_rear_right_pressure=r.tire_rr_pressure,
                 vehicle_is_regening=r.is_regening,
+                battery_dc_input_fast_charge=r.dc_input_fast_charge,
+                battery_ac_input_slow_charge=r.ac_input_slow_charge,
             )
             for r in rows
         ]

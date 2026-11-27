@@ -173,8 +173,9 @@ def run_alembic_upgrade(sync_conn) -> None:
             )
 
     # Self-healing for charging_session_costs: 0014 adds zone_name, 0015 the
-    # manual flags. Add them idempotently when the create_all + "stamp to head"
-    # path skipped the ALTER.
+    # manual flags, 0016 the manual price, 0017 the provider references. Add
+    # them idempotently when the create_all + "stamp to head" path skipped the
+    # ALTER.
     sc_inspect = sqlalchemy.inspect(sync_conn)
     if sc_inspect.has_table("charging_session_costs"):
         sc_cols = {c["name"] for c in sc_inspect.get_columns("charging_session_costs")}
@@ -194,6 +195,69 @@ def run_alembic_upgrade(sync_conn) -> None:
                         f"ADD COLUMN {col} BOOLEAN NOT NULL DEFAULT 0"
                     )
                 )
+        # 0016: manual_price_kwh (price per kWh entered by hand).
+        if "manual_price_kwh" not in sc_cols:
+            sync_conn.execute(
+                text(
+                    "ALTER TABLE charging_session_costs "
+                    "ADD COLUMN manual_price_kwh FLOAT"
+                )
+            )
+        # 0017: external_source/external_id/auto_link_disabled/
+        # provider_account_id/evse_id (imported from a provider) and
+        # latitude/longitude (where the car charged).
+        for col, sql_type in (
+            ("external_source", "VARCHAR(16)"),
+            ("external_id", "VARCHAR(64)"),
+            ("auto_link_disabled", "BOOLEAN NOT NULL DEFAULT 0"),
+            ("provider_account_id", "INTEGER"),
+            ("evse_id", "VARCHAR(64)"),
+            ("latitude", "FLOAT"),
+            ("longitude", "FLOAT"),
+        ):
+            if col not in sc_cols:
+                sync_conn.execute(
+                    text(
+                        "ALTER TABLE charging_session_costs "
+                        f"ADD COLUMN {col} {sql_type}"
+                    )
+                )
+    # 0018: the charging-gun signals on the telemetry snapshots.
+    if sc_inspect.has_table("vehicle_snapshots"):
+        snap_cols = {c["name"] for c in sc_inspect.get_columns("vehicle_snapshots")}
+        for col in ("dc_input_fast_charge", "ac_input_slow_charge"):
+            if col not in snap_cols:
+                sync_conn.execute(
+                    text(f"ALTER TABLE vehicle_snapshots ADD COLUMN {col} INTEGER")
+                )
+    if sc_inspect.has_table("charging_provider_accounts"):
+        # Created by create_all; columns added after its first release are
+        # added here (no Alembic migration for this table).
+        acc_cols = {
+            c["name"] for c in sc_inspect.get_columns("charging_provider_accounts")
+        }
+        for col, sql_type in (
+            ("low_balance_threshold", "FLOAT"),
+            ("low_balance_alerted", "BOOLEAN NOT NULL DEFAULT 0"),
+        ):
+            if col not in acc_cols:
+                sync_conn.execute(
+                    text(
+                        "ALTER TABLE charging_provider_accounts "
+                        f"ADD COLUMN {col} {sql_type}"
+                    )
+                )
+    if sc_inspect.has_table("charging_session_extras"):
+        extra_cols = {
+            c["name"] for c in sc_inspect.get_columns("charging_session_extras")
+        }
+        # 0017: source (provider an extra comes from).
+        if "source" not in extra_cols:
+            sync_conn.execute(
+                text(
+                    "ALTER TABLE charging_session_extras ADD COLUMN source VARCHAR(16)"
+                )
+            )
 
     # Self-healing: seed default charging price tiers and time-of-use bands.
     # Migration 0007's upgrade() seeds these, but when Base.metadata.create_all

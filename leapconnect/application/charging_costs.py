@@ -15,17 +15,23 @@ for the previous month, finding the sessions server-side.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta, tzinfo
 from typing import TYPE_CHECKING
 
 from leapconnect.application.settings_store import (
     calculate_session_cost,
     load_user_timezone,
+    price_session_extras,
     recalculate_session,
 )
+from leapconnect.domain.charging.extras import (
+    EXTRA_TIME,
+    find_departure,
+    find_unplug,
+)
 from leapconnect.domain.charging.location import (
-    DC_CHARGE_STATE,
+    is_dc_charge,
     resolve_charge_location,
 )
 from leapconnect.domain.charging.models import ChargingSessionCost
@@ -100,7 +106,11 @@ async def _locate_from_snapshots(
     positioned = next(
         (s for s in window if s.vehicle_latitude and s.vehicle_longitude), None
     )
-    is_dc = any(s.battery_charge_state == DC_CHARGE_STATE for s in window)
+    is_dc = any(
+        is_dc_charge(s.battery_dc_input_fast_charge, s.battery_charging_power_kw)
+        for s in window
+        if s.battery_is_charging
+    )
     return resolve_charge_location(
         await repo.get_zones(vin),
         positioned.vehicle_latitude if positioned else None,
@@ -190,7 +200,8 @@ async def list_sessions(
     """Charging sessions starting in ``[start, end)`` (naive UTC), newest first.
 
     Sessions are detected from the full (not downsampled) snapshots and paired
-    with the stored cost records.
+    with the stored cost records. Each row gets the unplug and departure times
+    after the charge; extra costs still waiting for them are priced and saved.
     """
     # Repository dates are UTC days (whole days, end inclusive).
     history = await repo.get_history(
@@ -199,12 +210,35 @@ async def list_sessions(
         to_date=(end + HISTORY_MARGIN).date().isoformat(),
         max_points=None,
     )
-    return pair_sessions(
+    rows = pair_sessions(
         detect_charge_sessions(history),
         await repo.get_session_costs(vin),
         start,
         end,
     )
+    result = []
+    for row in rows:
+        row = replace(
+            row,
+            unplug_ts=find_unplug(history, row.end_ts),
+            departure_ts=find_departure(history, row.end_ts),
+        )
+        sc = row.record
+        changed = False
+        if sc is not None and sc.latitude is None and row.location is not None:
+            # Where it charged, for the charge sites map
+            sc.latitude, sc.longitude = row.location
+            changed = True
+        if sc is not None and any(
+            e.kind == EXTRA_TIME and e.cost is None for e in sc.extras
+        ):
+            before = [(e.minutes, e.cost) for e in sc.extras]
+            await price_session_extras(repo, sc, history)
+            changed = changed or [(e.minutes, e.cost) for e in sc.extras] != before
+        if changed:
+            await repo.upsert_session_cost(sc)
+        result.append(row)
+    return result
 
 
 async def list_month_sessions(
@@ -408,10 +442,16 @@ async def merge_charge_sessions(
     keeper.peak_power_kw = max(peaks) if peaks else keeper.peak_power_kw
     notes = [r.note for r in records if r.note]
     keeper.note = " · ".join(dict.fromkeys(notes)) or None
-    # A new session: values entered by hand on one of its parts don't apply
+    # A new session: values entered by hand on one of its parts don't apply,
+    # but the extra costs of every part are kept (priced on the whole session)
     keeper.energy_kwh = None
     keeper.cost = None
     keeper.energy_manual = keeper.cost_manual = False
+    keeper.manual_price_kwh = None
+    # A provider's import is for one part: the next import matches the whole
+    keeper.external_source = keeper.external_id = keeper.evse_id = None
+    keeper.provider_account_id = None
+    keeper.extras = [e for r in records for e in r.extras if not e.source]
     keeper = await repo.upsert_session_cost(keeper)
     for other in records[1:]:
         await repo.delete_session_cost(other.id)

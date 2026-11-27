@@ -92,6 +92,13 @@
                     {{ store.abrpStatus.is_running ? 'Running' : store.abrpStatus.enabled ? 'Stopped' : 'Disabled' }}
                   </span>
                 </div>
+                <div class="svc-row" :title="chargingProvidersTitle">
+                  <span class="svc-dot" :class="chargingProvidersState" />
+                  <span class="svc-label">Charging Providers</span>
+                  <span class="svc-value" :class="chargingProvidersState === 'off' ? '' : chargingProvidersState">
+                    {{ chargingProvidersValue }}
+                  </span>
+                </div>
                 <div class="svc-row">
                   <span class="svc-dot" :class="store.notificationStatus.enabled ? 'on' : 'off'" />
                   <span class="svc-label">Notifications</span>
@@ -444,12 +451,31 @@ function handleLogout() {
   store.logout()
 }
 
+// Charging providers row: on = all connected accounts fine, warn = one not
+// connected or whose last import failed, off = none configured
+const chargingProvidersState = computed(() => {
+  const s = store.chargingProvidersStatus
+  if (!s.total) return 'off'
+  return s.failing ? 'warn' : 'on'
+})
+const chargingProvidersValue = computed(() => {
+  const s = store.chargingProvidersStatus
+  if (!s.total) return 'None'
+  if (s.failing) return s.connected ? `${s.failing} with errors` : 'Disconnected'
+  return s.connected === 1 ? s.labels[0] : `${s.connected} connected`
+})
+const chargingProvidersTitle = computed(() => {
+  const s = store.chargingProvidersStatus
+  return s.total ? `${s.connected}/${s.total} account(s) connected: ${s.labels.join(', ') || '—'}` : 'No charging provider: Settings → Charging Providers'
+})
+
 function toggleUserMenu() {
   showUserMenu.value = !showUserMenu.value
   if (showUserMenu.value) {
     store.loadMqttStatus()
     store.loadLiveRefreshStatus()
     store.loadAbrpStatus()
+    store.loadChargingProvidersStatus()
     store.loadNotificationStatus()
   }
 }
@@ -506,6 +532,7 @@ onMounted(async () => {
     store.loadMqttStatus()
     store.loadLiveRefreshStatus()
     store.loadAbrpStatus()
+    store.loadChargingProvidersStatus()
     store.loadNotificationStatus()
     unreadInterval = setInterval(() => store.loadUnreadCount(), 60000)
   }

@@ -105,6 +105,17 @@ EVENT_CATALOG: list[dict] = [
         "has_image": False,
         "configurable": False,
     },
+    {
+        "event_type": "charging_provider_low_balance",
+        "label": "Charging provider balance low",
+        "description": (
+            "Notify when the wallet of a charging provider account (e.g. EVDC) "
+            "drops below the threshold set in Settings → Charging Providers"
+        ),
+        "category": "charging",
+        "has_image": False,
+        "configurable": False,
+    },
     # Driving
     {
         "event_type": "driving_start",
@@ -410,6 +421,13 @@ MESSAGE_TEMPLATES: dict[str, dict[str, str]] = {
             "{month}: {calculated} session(s) costed automatically, "
             "{skipped} need a manual cost.\n{sessions_list}\n"
             "Open the Charging tab to assign them."
+        ),
+    },
+    "charging_provider_low_balance": {
+        "title": "💳 {provider} balance low",
+        "body": (
+            "{account}: €{balance} left (alert under €{threshold}).\n"
+            "Top up the wallet in the {provider} app before the next public charge."
         ),
     },
     "software_update_available": {

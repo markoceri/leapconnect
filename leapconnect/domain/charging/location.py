@@ -11,8 +11,15 @@ from dataclasses import dataclass
 
 from leapconnect.domain.zones import Zone, zone_contains
 
-# Battery charge_state reported for a DC fast charge.
-DC_CHARGE_STATE = 2
+# AC charging tops out around 11 kW on these cars: more than this can only be DC.
+# (``charge_state`` says nothing about the current type: 1 = charging, 2 = finished.)
+DC_MIN_POWER_KW = 12.0
+
+
+def is_dc_charge(dc_gun: int | None, power_kw: float | None) -> bool:
+    """Whether a charge reading is DC: the fast-charge gun is detected as
+    inserted, else the power exceeds what AC can deliver."""
+    return dc_gun == 1 or (power_kw or 0) > DC_MIN_POWER_KW
 
 
 @dataclass(frozen=True)
