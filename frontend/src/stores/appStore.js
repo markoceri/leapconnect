@@ -271,6 +271,24 @@ export const useAppStore = defineStore('app', () => {
     }
   }
 
+  // Charging providers (EVDC, ...): accounts connected, and any in trouble
+  const chargingProvidersStatus = ref({ total: 0, connected: 0, failing: 0, labels: [] })
+
+  async function loadChargingProvidersStatus() {
+    try {
+      const { accounts } = await api('GET', '/api/charging/providers')
+      const connected = accounts.filter(a => a.connected)
+      chargingProvidersStatus.value = {
+        total: accounts.length,
+        connected: connected.length,
+        failing: accounts.filter(a => !a.connected || a.last_error).length,
+        labels: [...new Set(connected.map(a => a.label))],
+      }
+    } catch {
+      // ignore
+    }
+  }
+
   const notificationStatus = ref({ enabled: false, channel: null })
 
   async function loadNotificationStatus() {
@@ -604,6 +622,8 @@ export const useAppStore = defineStore('app', () => {
     loadLiveRefreshStatus,
     abrpStatus,
     loadAbrpStatus,
+    chargingProvidersStatus,
+    loadChargingProvidersStatus,
     notificationStatus,
     loadNotificationStatus,
     commandHistory,
