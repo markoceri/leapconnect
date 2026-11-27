@@ -181,6 +181,17 @@ onMounted(() => {
 </script>
 
 <style scoped>
+/* Teleported to <body>: the Charging tab's (scoped) modal styles don't reach it */
+.modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 1000; display: flex; align-items: center; justify-content: center; }
+.modal-dialog { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 24px; width: calc(100% - 32px); max-width: 640px; max-height: 90vh; overflow-y: auto; }
+.modal-dialog h3 { font-size: 16px; font-weight: 700; color: var(--text); margin: 0 0 4px; }
+.edit-date { font-size: 12px; color: var(--muted); margin: 0 0 12px; }
+.modal-actions { display: flex; gap: 8px; align-items: center; margin-top: 16px; }
+.modal-actions-spacer { flex: 1; }
+.btn-cancel { background: var(--btn-bg); border: 1px solid var(--btn-border); border-radius: 8px; padding: 8px 16px; color: var(--muted); cursor: pointer; font-size: 13px; }
+.btn-save { background: var(--green); border: none; border-radius: 8px; padding: 8px 16px; color: #000; font-weight: 600; cursor: pointer; font-size: 13px; }
+.btn-save:disabled { opacity: 0.5; cursor: default; }
+.field-error { color: #ff5252; font-size: 12px; margin-top: 8px; }
 .state { font-size: 13px; color: var(--muted); margin: 10px 0; }
 .choices { display: flex; flex-direction: column; gap: 6px; margin: 4px 0 12px; }
 .choice { display: flex; align-items: center; gap: 8px; font-size: 13px; border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; cursor: pointer; overflow-wrap: anywhere; }

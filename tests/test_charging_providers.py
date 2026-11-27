@@ -1252,3 +1252,15 @@ async def test_scheduler_imports_and_alerts_once_a_day():
     # Not due again within the day
     await sched._maybe_sync_charging_provider(now=now + timedelta(hours=1))
     assert len(dispatcher.sent) == 1
+
+
+def test_import_preview_of_a_session_to_create(auth_client, provider):
+    # Not in the vehicle history: proposed as a new record (no id yet)
+    provider.sessions = [_ps()]
+    response = auth_client.post(
+        "/api/vehicles/V1/charging-costs/import/preview",
+        json={"year": 2026, "month": 10},
+    )
+    assert response.status_code == 200
+    [item] = response.json()["items"]
+    assert item["status"] == "unmatched" and item["proposed"]["id"] is None

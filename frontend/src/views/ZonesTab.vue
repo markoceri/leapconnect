@@ -100,9 +100,9 @@
               <span class="layer-label">{{ p.label }} <small>· live status &amp; price</small></span>
             </label>
             <label v-if="stationProviders.length" class="layer-row small">
-              <span class="layer-label">Range</span>
-              <select v-model.number="stationRadiusKm" class="layer-select" @change="onChargerSourcesChanged">
-                <option v-for="km in RADIUS_OPTIONS_KM" :key="km" :value="km">{{ km }} km from the map centre</option>
+              <span class="layer-label">Range from the centre</span>
+              <select v-model.number="stationRadiusKm" class="layer-select range-select" @change="onChargerSourcesChanged">
+                <option v-for="km in RADIUS_OPTIONS_KM" :key="km" :value="km">{{ km }} km</option>
               </select>
             </label>
             <p v-for="(msg, name) in stationErrors" :key="name" class="layer-note">{{ msg }}</p>
@@ -1219,6 +1219,7 @@ onBeforeUnmount(() => {
 .layer-sub { display: flex; flex-direction: column; gap: 5px; margin: -2px 0 2px 28px; padding-left: 8px; border-left: 1px solid var(--border); }
 .layer-row.small { font-size: 11px; }
 .layer-row.small small { color: var(--muted); }
+.range-select { flex: 0 0 auto; }
 .layer-select { flex: 1; min-width: 0; background: var(--input); border: 1px solid var(--border); border-radius: 6px; padding: 2px 4px; color: var(--text); font-size: 11px; }
 .layer-attrib { font-size: 10px; color: var(--muted2); margin: 4px 0 0; }
 .spin { animation: spin 1s linear infinite; }

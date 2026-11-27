@@ -163,7 +163,8 @@ class ChargingSessionExtraResponse(_ChargingSessionExtraFields):
 
 
 class ChargingSessionCostResponse(BaseModel):
-    id: int
+    # None for a record not stored yet (an import or link preview)
+    id: int | None = None
     vin: str
     start_ts: str
     end_ts: str | None = None
