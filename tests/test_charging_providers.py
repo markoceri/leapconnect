@@ -263,6 +263,10 @@ class FakeProvider(ChargingProvider):
         self._auto_sync = True
         self.stations = list(stations)
         self.searches = 0
+        self.wallets = []
+        self.payments = []
+        self._threshold = None
+        self._alerted = False
 
     @property
     def account_id(self):
@@ -291,6 +295,26 @@ class FakeProvider(ChargingProvider):
 
     async def get_ongoing_sessions(self):
         return list(self.ongoing)
+
+    @property
+    def low_balance_threshold(self):
+        return self._threshold
+
+    @property
+    def low_balance_alerted(self):
+        return self._alerted
+
+    async def set_low_balance(self, threshold=None, *, alerted=None):
+        if alerted is None:
+            self._threshold, self._alerted = threshold, False
+        else:
+            self._alerted = alerted
+
+    async def get_wallets(self):
+        return list(self.wallets)
+
+    async def get_payments(self, since):
+        return [p for p in self.payments if p.created_at >= since]
 
     async def get_receipt(self, external_id):
         return "receipt.pdf", b"%PDF-1.4 receipt " + external_id.encode()
@@ -1006,3 +1030,225 @@ async def test_estimate_uses_the_charger_reading():
     assert car_only.estimated_cost == 5.9
     with_live = OngoingItem(_ongoing(live=ProviderLiveProgress(energy_kwh=12.0)), row)
     assert with_live.estimated_cost == 7.08
+
+
+# -- wallets and payments ----------------------------------------------------------
+
+
+def _wallet(balance, *, token=False, rate=None):
+    from leapconnect.domain.charging.wallets import ProviderWallet
+
+    return ProviderWallet(
+        provider="evdc",
+        currency="EVDC Token" if token else "EUR",
+        balance=balance,
+        is_token=token,
+        token_rate=rate,
+    )
+
+
+def _payment(amount, session_id="S1", *, token=False, pid="P1"):
+    from leapconnect.domain.charging.wallets import ProviderPayment
+
+    return ProviderPayment(
+        provider="evdc",
+        payment_id=pid,
+        amount=amount,
+        is_token=token,
+        category="charging",
+        session_id=session_id,
+        created_at=T0 + timedelta(hours=3),
+    )
+
+
+def test_spendable_balance_counts_tokens_at_their_rate():
+    from leapconnect.domain.charging.wallets import is_low, spendable
+
+    wallets = [_wallet(4.0), _wallet(516030, token=True, rate=51603.0)]
+    assert spendable(wallets) == 14.0
+    assert is_low(wallets, 15) and not is_low(wallets, 10) and not is_low(wallets, None)
+    # Token worth unknown: only the money counts
+    assert spendable([_wallet(4.0), _wallet(1000, token=True)]) == 4.0
+
+
+def test_payments_are_checked_against_the_bill():
+    from leapconnect.domain.charging.wallets import (
+        PAID_ENERGY,
+        PAID_OTHER,
+        PAID_TOTAL,
+        check_payments,
+    )
+
+    rate = 51603.0
+    tokens = [_payment(-6.55 * rate, token=True), _payment(-1, "OTHER", pid="P2")]
+    paid = check_payments(tokens, "S1", 6.55, 0.5, rate)
+    assert (paid.paid, paid.matches, len(paid.payments)) == (6.55, PAID_TOTAL, 1)
+    energy_only = check_payments([_payment(-6.05)], "S1", 6.55, 0.5)
+    assert energy_only.matches == PAID_ENERGY
+    refunded = check_payments([_payment(-10), _payment(3.45, pid="R")], "S1", 6.55)
+    assert (refunded.paid, refunded.refunded, refunded.matches) == (
+        6.55,
+        3.45,
+        PAID_TOTAL,
+    )
+    assert check_payments([_payment(-9)], "S1", 6.55).matches == PAID_OTHER
+    assert check_payments([], "S1", 6.55).matches is None
+
+
+def test_evdc_wallet_and_payment_mapping():
+    from evdc_network_api import Wallet, WalletTransaction
+
+    from leapconnect.infrastructure.evdc.service import to_payment, to_wallet
+
+    w = to_wallet(
+        Wallet.from_dict(
+            {
+                "_id": "w1",
+                "balance": 516030,
+                "currency": "EVDC Token",
+                "isToken": True,
+                "currencyDetails": {"name": "EVDC Token", "type": "TOKEN"},
+            }
+        ),
+        token_rate=51603.0,
+    )
+    assert (w.is_token, w.money_value) == (True, 10.0)
+    p = to_payment(
+        WalletTransaction.from_dict(
+            {
+                "_id": "t1",
+                "transactionAmount": -338000,
+                "currency": "EVDC Token",
+                "isToken": True,
+                "category": "charging",
+                "metaData": {"sessionId": "S1"},
+                "createdAt": "2026-10-24T15:45:00Z",
+            }
+        )
+    )
+    assert (p.amount, p.session_id, p.created_at) == (
+        -338000,
+        "S1",
+        datetime(2026, 10, 24, 15, 45),
+    )
+
+
+async def test_low_balance_alert_once_per_drop():
+    from leapconnect.application.charging_providers import check_low_balance
+
+    provider = FakeProvider([])
+    provider.wallets = [_wallet(3.0)]
+    assert (await check_low_balance(provider)).alert is False  # no threshold
+    await provider.set_low_balance(5.0)
+    assert (await check_low_balance(provider)).alert is True
+    assert (await check_low_balance(provider)).alert is False  # once
+    provider.wallets = [_wallet(20.0)]
+    await check_low_balance(provider)
+    assert provider.low_balance_alerted is False  # re-armed
+    provider.wallets = [_wallet(2.0)]
+    assert (await check_low_balance(provider)).alert is True
+
+
+async def test_session_payments():
+    from leapconnect.application.charging_providers import session_payments
+
+    record = _record(external_source="evdc", external_id="S1", provider_account_id=7)
+    billed = _ps(cost=6.55, fees=(ProviderFee("Parking fee", 0.5),))
+    provider = FakeProvider([billed])
+    provider.payments = [_payment(-6.55)]
+    result = await session_payments(_Repo(costs=[record]), [provider], "V1", 1)
+    assert (result.check.paid, result.check.matches) == (6.55, "total")
+    assert (result.billed_total, result.billed_fees) == (6.55, 0.5)
+
+
+def test_wallet_and_payment_endpoints(auth_client, provider):
+    provider.wallets = [_wallet(3.0)]
+    url = "/api/charging/providers/7"
+    body = auth_client.put(url, json={"low_balance_threshold": 5}).json()
+    assert body["low_balance_threshold"] == 5 and body["auto_sync"] is True
+    wallets = auth_client.get(f"{url}/wallets").json()
+    assert (wallets["spendable"], wallets["low"]) == (3.0, True)
+    off = auth_client.put(url, json={"low_balance_threshold": None}).json()
+    assert off["low_balance_threshold"] is None
+
+    record = _create_record(auth_client)
+    provider.sessions = [_ps()]
+    auth_client.post(
+        "/api/vehicles/V1/charging-costs/link",
+        json={"account_id": 7, "external_id": "S1", "cost_id": record["id"]},
+    )
+    provider.payments = [_payment(-6.55)]
+    paid = auth_client.get(f"{COSTS_URL}/{record['id']}/payments").json()
+    assert (paid["paid"], paid["matches"]) == (6.55, "total")
+
+
+async def test_account_low_balance_columns_are_added_to_an_older_table(tmp_path):
+    import sqlite3
+
+    from leapconnect.infrastructure.persistence.sqlite_adapter import (
+        SqlAlchemyRepository,
+    )
+
+    db = tmp_path / "old.db"
+    repo = SqlAlchemyRepository(f"sqlite+aiosqlite:///{db}")
+    await repo.init_db()
+    await repo.close()
+    # The table as first released, without the low balance columns
+    con = sqlite3.connect(db)
+    con.execute("DROP TABLE charging_provider_accounts")
+    con.execute(
+        "CREATE TABLE charging_provider_accounts (id INTEGER PRIMARY KEY, "
+        "provider VARCHAR(16) NOT NULL, username VARCHAR(256) NOT NULL, "
+        "credentials TEXT NOT NULL, auto_sync BOOLEAN NOT NULL, "
+        "last_sync VARCHAR(40), last_error TEXT, created_at DATETIME NOT NULL)"
+    )
+    con.commit()
+    con.close()
+    repo = SqlAlchemyRepository(f"sqlite+aiosqlite:///{db}")
+    await repo.init_db()
+    from leapconnect.domain.charging.models import ChargingProviderAccount
+
+    saved = await repo.save_provider_account(
+        ChargingProviderAccount(provider="evdc", username="a", low_balance_threshold=5)
+    )
+    [loaded] = await repo.get_provider_accounts()
+    assert (loaded.id, loaded.low_balance_threshold) == (saved.id, 5)
+    await repo.close()
+
+
+async def test_scheduler_imports_and_alerts_once_a_day():
+    from types import SimpleNamespace
+
+    from leapconnect.application.scheduler import VehicleDataScheduler
+
+    class _Dispatcher:
+        def __init__(self):
+            self.sent = []
+
+        async def dispatch_system(self, event_type, sender, ctx):
+            self.sent.append((event_type, sender, ctx))
+            return 1
+
+    record = _record(energy_kwh=12.16)
+    repo = _Repo(costs=[record])
+    provider = FakeProvider([_ps()])
+    provider.wallets = [_wallet(3.0)]
+    await provider.set_low_balance(5.0)
+    dispatcher = _Dispatcher()
+    sched = VehicleDataScheduler(repo=repo, notification_dispatcher=dispatcher)
+    sched._vehicles = [SimpleNamespace(vin="V1", vehicle_nickname="Car", car_type=None)]
+    sched.set_charging_providers(lambda: [provider])
+
+    now = END + timedelta(days=1)
+    await sched._maybe_sync_charging_provider(now=now)
+    assert record.external_id == "S1"
+    [(event, sender, ctx)] = dispatcher.sent
+    assert (event, sender, ctx["balance"], ctx["threshold"]) == (
+        "charging_provider_low_balance",
+        "EVDC",
+        "3.00",
+        "5.00",
+    )
+    # Not due again within the day
+    await sched._maybe_sync_charging_provider(now=now + timedelta(hours=1))
+    assert len(dispatcher.sent) == 1

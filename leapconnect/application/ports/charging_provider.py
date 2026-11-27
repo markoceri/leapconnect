@@ -14,6 +14,7 @@ if TYPE_CHECKING:
         ProviderSession,
     )
     from leapconnect.domain.charging.stations import ChargingStation
+    from leapconnect.domain.charging.wallets import ProviderPayment, ProviderWallet
 
 
 class ChargingProviderError(Exception):
@@ -57,6 +58,22 @@ class ChargingProvider(ABC):
     async def set_auto_sync(self, enabled: bool) -> None:
         """Turn the automatic import on or off (saved)."""
 
+    @property
+    @abstractmethod
+    def low_balance_threshold(self) -> float | None:
+        """Alert under this spendable balance (money); ``None``: off."""
+
+    @property
+    @abstractmethod
+    def low_balance_alerted(self) -> bool:
+        """The low balance alert was sent (not again until back over)."""
+
+    @abstractmethod
+    async def set_low_balance(
+        self, threshold: float | None = None, *, alerted: bool | None = None
+    ) -> None:
+        """Set the threshold (and/or whether the alert was sent); saved."""
+
     @abstractmethod
     async def disconnect(self) -> None:
         """Revoke this client's access to the account."""
@@ -68,6 +85,15 @@ class ChargingProvider(ABC):
     @abstractmethod
     async def get_ongoing_sessions(self) -> list[ProviderOngoingSession]:
         """The account's sessions in progress (none billed yet)."""
+
+    @abstractmethod
+    async def get_wallets(self) -> list[ProviderWallet]:
+        """The account's wallets with their balance (token wallets with
+        their rate, when known)."""
+
+    @abstractmethod
+    async def get_payments(self, since: datetime) -> list[ProviderPayment]:
+        """The wallet movements since ``since`` (naive UTC), newest first."""
 
     @abstractmethod
     async def get_receipt(self, external_id: str) -> tuple[str | None, bytes]:

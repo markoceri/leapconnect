@@ -23,6 +23,32 @@
           </span>
           <ToggleSwitch :modelValue="a.auto_sync" @update:modelValue="v => setAutoSync(a, v)" />
         </div>
+        <!-- Wallet: balances and the low balance alert -->
+        <div v-if="a.connected" class="row wallet-row">
+          <span class="row-text">
+            <span v-if="wallets[a.id]?.error" class="sub err">Balance unavailable: {{ wallets[a.id].error }}</span>
+            <span v-else-if="wallets[a.id]">
+              Balance
+              <b :class="{ low: wallets[a.id].low }">{{ wallets[a.id].spendable != null ? `€${wallets[a.id].spendable.toFixed(2)}` : '—' }}</b>
+              <span v-for="w in wallets[a.id].wallets" :key="w.currency" class="sub wallet">
+                · {{ formatWallet(w) }}
+              </span>
+            </span>
+            <span v-else class="sub">Loading the balance…</span>
+          </span>
+          <label class="threshold" title="Telegram / notification alert when the balance drops under this amount (empty: off)">
+            <span class="sub">Alert under €</span>
+            <input
+              :value="a.low_balance_threshold ?? ''"
+              class="input input-sm"
+              type="number"
+              min="0"
+              step="1"
+              placeholder="off"
+              @change="e => setThreshold(a, e.target.value)"
+            />
+          </label>
+        </div>
         <div v-if="a.last_error" class="error">Last import failed: {{ a.last_error }}</div>
       </li>
     </ul>
@@ -86,6 +112,30 @@ const busy = ref(false)
 const error = ref('')
 
 const type = computed(() => types.value.find(t => t.id === form.provider) || null)
+const wallets = reactive({}) // account id -> wallets response | { error }
+
+async function loadWallets() {
+  for (const a of accounts.value.filter(x => x.connected)) {
+    try {
+      wallets[a.id] = await api('GET', `${URL}/${a.id}/wallets`)
+    } catch (e) {
+      wallets[a.id] = { error: e.message || 'request failed' }
+    }
+  }
+}
+
+function formatWallet(w) {
+  const amount = w.is_token
+    ? `${Math.round(w.balance).toLocaleString('en-GB')} ${w.name || w.currency}`
+    : `${w.symbol || '€'}${w.balance.toFixed(2)}`
+  return w.is_token && w.money_value != null ? `${amount} (≈ €${w.money_value.toFixed(2)})` : amount
+}
+
+const setThreshold = (a, raw) => run(async () => {
+  const value = raw === '' ? null : Number(raw)
+  Object.assign(a, await api('PUT', `${URL}/${a.id}`, { low_balance_threshold: value }))
+  wallets[a.id] = await api('GET', `${URL}/${a.id}/wallets`).catch(() => wallets[a.id])
+})
 
 async function run(fn) {
   busy.value = true
@@ -106,6 +156,7 @@ async function load() {
     accounts.value = data.accounts
   })
   loaded.value = true
+  loadWallets()
 }
 
 function startAdd() {
@@ -179,5 +230,10 @@ onMounted(load)
 .btn-ghost { background: none; border: 1px solid var(--border); color: var(--text); }
 .btn-danger { background: none; border: 1px solid var(--red); color: var(--red); }
 .add-btn { margin-top: 2px; }
+.wallet-row { flex-wrap: wrap; }
+.wallet { white-space: nowrap; }
+.low { color: var(--red); }
+.threshold { display: inline-flex; align-items: center; gap: 6px; }
+.input-sm { flex: 0 0 72px; padding: 5px 8px; font-size: 12px; }
 .error { font-size: 12px; color: var(--red); margin-top: 6px; }
 </style>

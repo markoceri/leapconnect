@@ -298,6 +298,10 @@ class ChargingProviderAccountRow(Base):
     auto_sync = Column(Boolean, nullable=False, default=True)
     last_sync = Column(String(40), nullable=True)
     last_error = Column(Text, nullable=True)
+    low_balance_threshold = Column(Float, nullable=True)
+    low_balance_alerted = Column(
+        Boolean, nullable=False, default=False, server_default="0"
+    )
     created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(UTC))
 
 

@@ -75,6 +75,8 @@ class ProviderSession:
     longitude: float | None = None
     account_id: int | None = None  # the provider account it was read with
     station: ChargingStation | None = None  # the charging point, when known
+    # Paid in the provider's tokens: tokens per unit of money (None: money)
+    token_rate: float | None = None
 
     @property
     def key(self) -> tuple[str, str]:

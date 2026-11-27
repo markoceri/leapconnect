@@ -676,7 +676,8 @@ class VehicleDataScheduler:
 
         Due once a day, and every ``PROVIDER_FOLLOWUP_EVERY`` for
         ``PROVIDER_FOLLOWUP`` after a public charge ends. Only sessions that
-        match a listed one are imported; nothing is created.
+        match a listed one are imported; nothing is created. The wallet
+        balance is checked at the same time (low balance alert).
         """
         from leapconnect.application.charging_providers import auto_sync_provider
         from leapconnect.application.ports.charging_provider import (
@@ -691,7 +692,9 @@ class VehicleDataScheduler:
             and now <= self._provider_followup_until
         )
         for provider in self._providers():
-            if not provider.connected or not provider.auto_sync:
+            if not provider.connected or not (
+                provider.auto_sync or provider.low_balance_threshold is not None
+            ):
                 continue
             last = self._provider_last_sync.get(provider.account_id or 0)
             due = (
@@ -702,6 +705,9 @@ class VehicleDataScheduler:
             if not due:
                 continue
             self._provider_last_sync[provider.account_id or 0] = now
+            await self._check_provider_balance(provider)
+            if not provider.auto_sync:
+                continue
             for vehicle in self._vehicles:
                 try:
                     result = await auto_sync_provider(
@@ -722,6 +728,35 @@ class VehicleDataScheduler:
                     vehicle.vin,
                     result.applied,
                 )
+
+    async def _check_provider_balance(self, provider: ChargingProvider) -> None:
+        """Send the ``charging_provider_low_balance`` alert, once per drop
+        under the account's threshold."""
+        from leapconnect.application.charging_providers import check_low_balance
+        from leapconnect.application.ports.charging_provider import (
+            ChargingProviderError,
+        )
+
+        try:
+            result = await check_low_balance(provider)
+        except ChargingProviderError as exc:
+            _LOGGER.warning("%s balance check failed: %s", provider.label, exc)
+            return
+        if not result.alert or not self._notification_dispatcher:
+            return
+        try:
+            await self._notification_dispatcher.dispatch_system(
+                "charging_provider_low_balance",
+                provider.label,
+                {
+                    "provider": provider.label,
+                    "account": provider.username or "",
+                    "balance": f"{result.spendable:.2f}",
+                    "threshold": f"{provider.low_balance_threshold:.2f}",
+                },
+            )
+        except Exception as exc:
+            _LOGGER.warning("Low balance notification failed: %s", exc)
 
     async def _notify_month_end_costs(
         self, vehicle, month: datetime, result, tz: tzinfo

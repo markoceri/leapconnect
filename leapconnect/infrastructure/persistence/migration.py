@@ -230,6 +230,23 @@ def run_alembic_upgrade(sync_conn) -> None:
                 sync_conn.execute(
                     text(f"ALTER TABLE vehicle_snapshots ADD COLUMN {col} INTEGER")
                 )
+    if sc_inspect.has_table("charging_provider_accounts"):
+        # Created by create_all; columns added after its first release are
+        # added here (no Alembic migration for this table).
+        acc_cols = {
+            c["name"] for c in sc_inspect.get_columns("charging_provider_accounts")
+        }
+        for col, sql_type in (
+            ("low_balance_threshold", "FLOAT"),
+            ("low_balance_alerted", "BOOLEAN NOT NULL DEFAULT 0"),
+        ):
+            if col not in acc_cols:
+                sync_conn.execute(
+                    text(
+                        "ALTER TABLE charging_provider_accounts "
+                        f"ADD COLUMN {col} {sql_type}"
+                    )
+                )
     if sc_inspect.has_table("charging_session_extras"):
         extra_cols = {
             c["name"] for c in sc_inspect.get_columns("charging_session_extras")

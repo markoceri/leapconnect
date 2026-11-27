@@ -52,6 +52,12 @@ from leapconnect.domain.charging.stations import (
     group_charge_sites,
     unique_by_evse,
 )
+from leapconnect.domain.charging.wallets import (
+    PaymentCheck,
+    check_payments,
+    is_low,
+    spendable,
+)
 
 if TYPE_CHECKING:
     from leapconnect.application.ports.repositories import AppRepository
@@ -629,3 +635,76 @@ async def ongoing_provider_sessions(
             )
         )
     return result
+
+
+# -- wallets and payments ----------------------------------------------------------
+
+# Wallet movements are read from this long before a session (the payment can
+# come before the bill, e.g. a pre-authorisation)
+PAYMENTS_MARGIN = timedelta(days=1)
+
+
+@dataclass
+class LowBalance:
+    """The outcome of a balance check."""
+
+    spendable: float | None
+    alert: bool = False  # under the threshold, not alerted yet: send it now
+
+
+async def check_low_balance(provider: ChargingProvider) -> LowBalance:
+    """Check the account's spendable balance against its threshold: alert
+    once when it goes under, re-arm when it's back over."""
+    threshold = provider.low_balance_threshold
+    if threshold is None:
+        return LowBalance(None)
+    wallets = await provider.get_wallets()
+    total = spendable(wallets)
+    if is_low(wallets, threshold):
+        if not provider.low_balance_alerted:
+            await provider.set_low_balance(alerted=True)
+            return LowBalance(total, alert=True)
+    elif provider.low_balance_alerted and total is not None:
+        await provider.set_low_balance(alerted=False)
+    return LowBalance(total)
+
+
+@dataclass
+class SessionPayments:
+    check: PaymentCheck
+    billed_total: float | None
+    billed_fees: float
+    token_rate: float | None
+
+
+async def session_payments(
+    repo: AppRepository, providers: Sequence[ChargingProvider], vin: str, cost_id: int
+) -> SessionPayments:
+    """What was paid for an imported session (its wallet movements), checked
+    against what the provider billed."""
+    sc = await _record(repo, vin, cost_id)
+    provider = _account_for(providers, sc)
+    since = naive_utc(sc.start_ts) - PAYMENTS_MARGIN
+    billed = next(
+        (
+            s
+            for s in await provider.fetch_sessions(since)
+            if s.external_id == sc.external_id
+        ),
+        None,
+    )
+    fees = round(sum(f.amount for f in billed.fees), 4) if billed else 0.0
+    rate = billed.token_rate if billed else None
+    payments = await provider.get_payments(since)
+    return SessionPayments(
+        check_payments(
+            payments,
+            sc.external_id,
+            billed.cost if billed else None,
+            fees,
+            rate,
+        ),
+        billed.cost if billed else None,
+        fees,
+        rate,
+    )

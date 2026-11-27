@@ -38,10 +38,16 @@ from leapconnect.domain.charging.providers import (
     ProviderSession,
 )
 from leapconnect.domain.charging.stations import ChargingStation
+from leapconnect.domain.charging.wallets import ProviderPayment, ProviderWallet
 from leapconnect.infrastructure.evdc.live import EvdcLiveFeed
 
 if TYPE_CHECKING:
-    from evdc_network_api import ChargingSession, OngoingSession
+    from evdc_network_api import (
+        ChargingSession,
+        OngoingSession,
+        Wallet,
+        WalletTransaction,
+    )
 
     from leapconnect.application.ports.repositories import AppRepository
 
@@ -164,6 +170,42 @@ def to_provider_session(
         longitude=s.station.longitude if s.station else None,
         account_id=account_id,
         station=station,
+        token_rate=_token_rate(s),
+    )
+
+
+def _token_rate(s: ChargingSession) -> float | None:
+    """Tokens per unit of money, for a session paid with tokens."""
+    rate = s.token_conversion_rate
+    return rate if rate and rate != 1 else None
+
+
+def to_wallet(w: Wallet, token_rate: float | None = None) -> ProviderWallet:
+    return ProviderWallet(
+        provider=PROVIDER,
+        currency=w.currency or w.currency_name or "",
+        balance=w.balance or 0.0,
+        is_token=bool(w.is_token),
+        is_primary=bool(w.is_primary),
+        name=w.currency_name,
+        symbol=w.currency_symbol,
+        token_rate=token_rate if w.is_token else None,
+    )
+
+
+def to_payment(t: WalletTransaction) -> ProviderPayment | None:
+    if not t.id or t.amount is None:
+        return None
+    return ProviderPayment(
+        provider=PROVIDER,
+        payment_id=t.id,
+        amount=t.amount,
+        currency=t.currency,
+        is_token=bool(t.is_token),
+        category=t.category,
+        description=t.description,
+        session_id=t.session_id,
+        created_at=_naive_utc(t.created_at),
     )
 
 
@@ -214,6 +256,8 @@ class EvdcService(ChargingProvider):
         self._lock = asyncio.Lock()
         self._stations_cache: dict[tuple, tuple[float, list[ChargingStation]]] = {}
         self._ongoing_cache: tuple[float, list[ProviderOngoingSession]] | None = None
+        # Tokens per unit of money, from the latest session paid with tokens
+        self._token_rate: float | None = None
         # Live progress of the sessions in progress (socket opened on demand)
         self.live = EvdcLiveFeed(
             lambda: self._client.client if self._client is not None else None
@@ -330,6 +374,25 @@ class EvdcService(ChargingProvider):
                 _LOGGER.warning("EVDC: disconnecting the account failed: %s", exc)
             await client.close()
 
+    @property
+    def low_balance_threshold(self) -> float | None:
+        return self.account.low_balance_threshold
+
+    @property
+    def low_balance_alerted(self) -> bool:
+        return self.account.low_balance_alerted
+
+    async def set_low_balance(
+        self, threshold: float | None = None, *, alerted: bool | None = None
+    ) -> None:
+        if alerted is None:
+            # A new threshold: alert again when under it
+            self.account.low_balance_threshold = threshold
+            self.account.low_balance_alerted = False
+        else:
+            self.account.low_balance_alerted = alerted
+        await self._repo.save_provider_account(self.account)
+
     async def set_auto_sync(self, enabled: bool) -> None:
         self.account.auto_sync = enabled
         await self._repo.save_provider_account(self.account)
@@ -382,6 +445,13 @@ class EvdcService(ChargingProvider):
             finally:
                 await self._save_tokens()
             await self._record(error=None)
+            latest = max(
+                (s for s in sessions if s.token_rate and s.started_at),
+                key=lambda s: s.started_at,
+                default=None,
+            )
+            if latest is not None:
+                self._token_rate = latest.token_rate
             return sorted(sessions, key=lambda s: s.started_at)
 
     async def get_ongoing_sessions(self) -> list[ProviderOngoingSession]:
@@ -413,6 +483,57 @@ class EvdcService(ChargingProvider):
         ]
         self._ongoing_cache = (now, sessions)
         return sessions
+
+    async def _latest_token_rate(self, client: AsyncEvdcApiClient) -> float | None:
+        """The token rate of the latest session paid with tokens (first
+        history page)."""
+        if self._token_rate is None:
+            page = await client.get_charge_history(1, HISTORY_PAGE_SIZE)
+            rates = [_token_rate(s) for s in page.sessions]  # newest first
+            self._token_rate = next((r for r in rates if r), None)
+        return self._token_rate
+
+    async def get_wallets(self) -> list[ProviderWallet]:
+        async with self._lock:
+            client = self._require_client()
+            try:
+                wallets = await client.get_wallets()
+                rate = (
+                    await self._latest_token_rate(client)
+                    if any(w.is_token for w in wallets)
+                    else None
+                )
+            except EvdcApiError as exc:
+                raise _error(exc) from exc
+            finally:
+                await self._save_tokens()
+            return [to_wallet(w, rate) for w in wallets]
+
+    async def get_payments(self, since: datetime) -> list[ProviderPayment]:
+        async with self._lock:
+            client = self._require_client()
+            payments: list[ProviderPayment] = []
+            page = 1
+            try:
+                while True:  # newest first: stop at the first page before `since`
+                    result = await client.get_wallet_transactions(
+                        page, HISTORY_PAGE_SIZE
+                    )
+                    mapped = [p for t in result.transactions if (p := to_payment(t))]
+                    payments += [
+                        p for p in mapped if p.created_at and p.created_at >= since
+                    ]
+                    oldest = min(
+                        (p.created_at for p in mapped if p.created_at), default=None
+                    )
+                    if not result.has_next or (oldest is not None and oldest < since):
+                        break
+                    page += 1
+            except EvdcApiError as exc:
+                raise _error(exc) from exc
+            finally:
+                await self._save_tokens()
+            return payments
 
     async def get_receipt(self, external_id: str) -> tuple[str | None, bytes]:
         async with self._lock:

@@ -39,7 +39,7 @@ One subpackage per **bounded context**:
 |-----------------|----------|
 | `telemetry`     | `VehicleSnapshot`, `VehicleEvent`, `TransitionDetector` (state-change rules), battery SOH estimate from full-charge readings (`battery_health.py`) |
 | `trips`         | trip segmentation/merging, similarity scoring, charge-session detection (`analysis.py`) — trips are derived on the fly, there is no persistent Trip aggregate |
-| `charging`      | price tiers, time-of-use bands, session costs, TOU cost calculation (`costing.py`), charging provider sessions and their matching (`providers.py`), charging points and the charge sites grouping (`stations.py`) |
+| `charging`      | price tiers, time-of-use bands, session costs, TOU cost calculation (`costing.py`), charging provider sessions and their matching (`providers.py`), charging points and the charge sites grouping (`stations.py`), provider wallets and the payment check (`wallets.py`) |
 | `maintenance`   | plan items/records/alerts, the due/overdue engine (`engine.py`), pack normalization (`packs.py`), model resolver (`resolver.py`) |
 | `notifications` | channels/preferences/Telegram users, the event catalog + message templates (`event_catalog.py`) |
 | `zones`         | `Zone` model, zone geometry (`geometry.py`), pure enter/exit transition detection (`detection.py`) — a reusable location concept consumed by notifications (alerts) and charging (tier-by-zone) |

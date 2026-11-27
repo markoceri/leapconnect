@@ -28,6 +28,7 @@ class ProviderAccountResponse(BaseModel):
     auto_sync: bool = True
     last_sync: str | None = None
     last_error: str | None = None
+    low_balance_threshold: float | None = None  # alert under this (€)
 
 
 class ProvidersResponse(BaseModel):
@@ -53,7 +54,50 @@ class ProviderVerifyRequest(BaseModel):
 
 
 class ProviderAccountUpdate(BaseModel):
-    auto_sync: bool
+    """Only the fields sent change; ``low_balance_threshold: null`` turns
+    the alert off."""
+
+    auto_sync: bool | None = None
+    low_balance_threshold: float | None = Field(default=None, ge=0, le=10_000)
+
+
+class ProviderWalletSchema(BaseModel):
+    currency: str
+    name: str | None = None
+    symbol: str | None = None
+    balance: float
+    is_token: bool = False
+    is_primary: bool = False
+    token_rate: float | None = None  # tokens per €
+    money_value: float | None = None  # in €
+
+
+class ProviderWalletsResponse(BaseModel):
+    wallets: list[ProviderWalletSchema]
+    spendable: float | None = None  # € (token wallets at their rate)
+    low: bool = False  # under the account's threshold
+
+
+class ProviderPaymentSchema(BaseModel):
+    payment_id: str
+    amount: float  # signed, in currency: negative pays
+    currency: str | None = None
+    is_token: bool = False
+    category: str | None = None
+    description: str | None = None
+    created_at: str | None = None
+
+
+class SessionPaymentsResponse(BaseModel):
+    payments: list[ProviderPaymentSchema]
+    paid: float  # €, net of refunds
+    refunded: float
+    # How it compares with the bill: "total" | "energy" (total without the
+    # fees) | "other"; None: no payment found
+    matches: str | None = None
+    billed_total: float | None = None
+    billed_fees: float = 0.0
+    token_rate: float | None = None
 
 
 # -- charging points --------------------------------------------------------------

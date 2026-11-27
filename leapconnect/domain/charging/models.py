@@ -148,3 +148,7 @@ class ChargingProviderAccount:
     auto_sync: bool = True
     last_sync: str | None = None  # ISO timestamp
     last_error: str | None = None
+    # Alert when the spendable balance drops under this (money; None: off),
+    # once until it's back over it
+    low_balance_threshold: float | None = None
+    low_balance_alerted: bool = False

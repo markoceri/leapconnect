@@ -31,10 +31,14 @@ from leapconnect.api.schemas.charging_providers import (
     ProviderLoginResponse,
     ProviderOngoingResponse,
     ProviderOngoingSchema,
+    ProviderPaymentSchema,
     ProviderSessionSchema,
     ProvidersResponse,
     ProviderTypeSchema,
     ProviderVerifyRequest,
+    ProviderWalletSchema,
+    ProviderWalletsResponse,
+    SessionPaymentsResponse,
 )
 from leapconnect.application.charging_providers import (
     apply_provider_import,
@@ -47,6 +51,7 @@ from leapconnect.application.charging_providers import (
     locate_sessions,
     ongoing_provider_sessions,
     preview_provider_import,
+    session_payments,
     unlink_provider_record,
 )
 from leapconnect.application.ports.charging_provider import (
@@ -57,6 +62,7 @@ from leapconnect.application.settings_store import load_preferences, resolve_tim
 from leapconnect.domain.charging.providers import ProviderSession
 from leapconnect.domain.charging.sessions import month_bounds
 from leapconnect.domain.charging.stations import ChargingStation
+from leapconnect.domain.charging.wallets import is_low, spendable
 from leapconnect.infrastructure.charging_providers import (
     PROVIDER_TYPES,
     ChargingProviderRegistry,
@@ -98,6 +104,7 @@ def _account(p: ChargingProvider) -> ProviderAccountResponse:
         auto_sync=p.auto_sync,
         last_sync=account.last_sync if account else None,
         last_error=account.last_error if account else None,
+        low_balance_threshold=p.low_balance_threshold,
     )
 
 
@@ -174,12 +181,49 @@ async def verify_provider(
 async def update_provider(
     account_id: int, body: ProviderAccountUpdate, registry: RegistryDep
 ) -> ProviderAccountResponse:
-    """Turn an account's automatic import on or off."""
+    """Change an account's settings: the automatic import, the low balance
+    alert threshold."""
     p = registry.get(account_id)
     if p is None:
         raise HTTPException(status_code=404, detail="Charging provider not found")
-    await p.set_auto_sync(body.auto_sync)
+    if body.auto_sync is not None:
+        await p.set_auto_sync(body.auto_sync)
+    if "low_balance_threshold" in body.model_fields_set:
+        await p.set_low_balance(body.low_balance_threshold)
     return _account(p)
+
+
+@router.get(
+    "/api/charging/providers/{account_id}/wallets",
+    response_model=ProviderWalletsResponse,
+)
+async def get_provider_wallets(
+    account_id: int, registry: RegistryDep
+) -> ProviderWalletsResponse:
+    """An account's wallets and balances (token wallets also in €, at the
+    rate of the latest session paid with tokens)."""
+    [p] = _connected(registry, account_id)
+    try:
+        wallets = await p.get_wallets()
+    except ChargingProviderError as exc:
+        raise _provider_error(exc) from exc
+    return ProviderWalletsResponse(
+        wallets=[
+            ProviderWalletSchema(
+                currency=w.currency,
+                name=w.name,
+                symbol=w.symbol,
+                balance=w.balance,
+                is_token=w.is_token,
+                is_primary=w.is_primary,
+                token_rate=w.token_rate,
+                money_value=w.money_value,
+            )
+            for w in wallets
+        ],
+        spendable=spendable(wallets),
+        low=is_low(wallets, p.low_balance_threshold),
+    )
 
 
 @router.delete("/api/charging/providers/{account_id}", status_code=204)
@@ -546,4 +590,43 @@ async def get_ongoing_sessions(
     return ProviderOngoingResponse(
         sessions=sessions,
         errors={_label(k): v for k, v in result.errors.items()},
+    )
+
+
+@router.get(
+    "/api/vehicles/{vin}/charging-costs/{cost_id}/payments",
+    response_model=SessionPaymentsResponse,
+)
+async def get_session_payments(
+    vin: str, cost_id: int, repo: RepoDep, registry: RegistryDep
+) -> SessionPaymentsResponse:
+    """What was paid for an imported session (its wallet movements), and
+    whether it matches the billed total, the total without the fees, or
+    neither."""
+    try:
+        result = await session_payments(repo, registry.all(), vin, cost_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ChargingProviderError as exc:
+        raise _provider_error(exc) from exc
+    check = result.check
+    return SessionPaymentsResponse(
+        payments=[
+            ProviderPaymentSchema(
+                payment_id=p.payment_id,
+                amount=p.amount,
+                currency=p.currency,
+                is_token=p.is_token,
+                category=p.category,
+                description=p.description,
+                created_at=p.created_at.isoformat() if p.created_at else None,
+            )
+            for p in check.payments
+        ],
+        paid=check.paid,
+        refunded=check.refunded,
+        matches=check.matches,
+        billed_total=result.billed_total,
+        billed_fees=result.billed_fees,
+        token_rate=result.token_rate,
     )

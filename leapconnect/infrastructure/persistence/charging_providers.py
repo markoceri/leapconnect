@@ -51,6 +51,8 @@ class SqlChargingProviderRepository(SqlRepositoryBase, ChargingProviderRepositor
             auto_sync=bool(r.auto_sync),
             last_sync=r.last_sync,
             last_error=r.last_error,
+            low_balance_threshold=r.low_balance_threshold,
+            low_balance_alerted=bool(r.low_balance_alerted),
         )
 
     async def get_provider_accounts(self) -> list[ChargingProviderAccount]:
@@ -80,6 +82,8 @@ class SqlChargingProviderRepository(SqlRepositoryBase, ChargingProviderRepositor
             row.auto_sync = account.auto_sync
             row.last_sync = account.last_sync
             row.last_error = account.last_error
+            row.low_balance_threshold = account.low_balance_threshold
+            row.low_balance_alerted = account.low_balance_alerted
             await session.commit()
             account.id = row.id
             return account

@@ -14,6 +14,24 @@
         <button class="btn btn-ghost" :disabled="busy" @click="unlink">Unlink</button>
       </div>
 
+      <!-- What was paid for it (wallet movements), against the bill -->
+      <div v-if="session.id" class="paid">
+        <span v-if="paymentsLoading" class="note">Looking for the payment…</span>
+        <template v-else-if="payments">
+          <template v-if="payments.matches">
+            <span>
+              Paid <b>€{{ payments.paid.toFixed(2) }}</b>
+              <span v-for="p in payments.payments" :key="p.payment_id" class="sub">
+                · {{ formatPayment(p) }}
+              </span>
+              <span v-if="payments.refunded" class="sub"> · €{{ payments.refunded.toFixed(2) }} refunded</span>
+            </span>
+            <span class="match" :class="payments.matches">{{ matchLabel }}</span>
+          </template>
+          <span v-else class="note">No wallet payment found for it (paid by card?)</span>
+        </template>
+      </div>
+
       <!-- The charging point used -->
       <div v-if="session.evse_id" class="station">
         <div v-if="stationLoading && !station" class="note">Loading the charging point…</div>
@@ -125,6 +143,35 @@ const candidates = ref([])
 const pickedKey = ref(null)
 const station = ref(null)
 const stationLoading = ref(false)
+const payments = ref(null)
+const paymentsLoading = ref(false)
+
+const matchLabel = computed(() => {
+  const p = payments.value
+  if (!p) return ''
+  if (p.matches === 'total') return 'matches the bill'
+  if (p.matches === 'energy') return `the bill without its fees (€${(p.billed_total - p.billed_fees).toFixed(2)})`
+  return p.billed_total != null ? `differs from the bill (€${p.billed_total.toFixed(2)})` : 'bill not found'
+})
+
+function formatPayment(p) {
+  const amount = p.is_token
+    ? `${Math.round(Math.abs(p.amount)).toLocaleString('en-GB')} ${p.currency || 'tokens'}`
+    : `€${Math.abs(p.amount).toFixed(2)}`
+  const when = p.created_at ? ` on ${formatDateTime(p.created_at)}` : ''
+  return `${p.amount > 0 ? 'refund ' : ''}${amount}${when}`
+}
+
+async function loadPayments() {
+  paymentsLoading.value = true
+  try {
+    payments.value = await api('GET', `${base.value}/${props.session.id}/payments`)
+  } catch {
+    payments.value = null // best-effort (account not connected, provider down)
+  } finally {
+    paymentsLoading.value = false
+  }
+}
 
 const keyOf = c => `${c.session.account_id}:${c.session.external_id}`
 const picked = computed(() => candidates.value.find(c => keyOf(c) === pickedKey.value) || null)
@@ -169,6 +216,8 @@ async function loadCandidates() {
 onMounted(() => {
   if (props.session.external_source) {
     if (props.session.evse_id) loadStation()
+    // Records linked before the account id was kept: any account of the provider
+    if (props.session.id && props.accounts.some(a => a.connected && a.provider === props.session.external_source)) loadPayments()
   } else if (props.session.end_ts) {
     loadCandidates()
   }
@@ -237,4 +286,8 @@ async function unlink() {
 .btn-primary { background: var(--accent); color: var(--card); }
 .btn-ghost { background: none; border: 1px solid var(--border); color: var(--text); }
 .error { color: var(--red); margin-top: 6px; }
+.paid { display: flex; align-items: center; gap: 4px 10px; flex-wrap: wrap; margin-top: 8px; }
+.match { font-size: 10px; font-weight: 600; border-radius: 4px; padding: 1px 6px; border: 1px solid var(--border); color: var(--muted); }
+.match.total { border-color: #22c55e; color: #22c55e; }
+.match.energy, .match.other { border-color: #ffb74d; color: #ffb74d; }
 </style>
